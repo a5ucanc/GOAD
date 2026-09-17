@@ -206,10 +206,12 @@
       }
       Set-Location ($siteCode +":")
 
-      # distribute operating system image
+      # distribute boot images (no x86 boot image with ADK for Windows 11 and later : 32-bit WinPE was removed)
       Start-CMContentDistribution -BootImageName "Boot image (x64)" -DistributionPointName $distributionPoint
-      Start-CMContentDistribution -BootImageName "Boot image (x86)" -DistributionPointName $distributionPoint
-      # distribute boot image
+      if ($null -ne (Get-CMBootImage -Name "Boot image (x86)")) {
+        Start-CMContentDistribution -BootImageName "Boot image (x86)" -DistributionPointName $distributionPoint
+      }
+      # distribute operating system image
       Start-CMContentDistribution -OperatingSystemImageName "Windows_10_22h2" -DistributionPointName $distributionPoint
 
       # distribute Configuration manager client package

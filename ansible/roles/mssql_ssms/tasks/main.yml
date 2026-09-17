@@ -1,25 +1,118 @@
-- name: check SQL Server Manager Studio installer exists
-  win_stat:
-    path: c:\setup\mssql\SSMS_installer.exe
-  register: ssms_installer_file
+# SQL Server Management Studio 22 (installed with the Visual Studio Installer, no standalone msi anymore)
+# https://learn.microsoft.com/en-us/ssms/install/command-line-parameters
+# https://learn.microsoft.com/en-us/ssms/system-requirements (Windows Server 2019+, .NET 4.8 required)
+# SSMS is a GUI helper only : nothing in the labs depends on it, so the install is best effort (warning, no failure)
 
-- name: get the installer
-  win_get_url:
-      url: 'https://aka.ms/ssmsfullsetup'
-      dest: 'c:\setup\mssql\SSMS_installer.exe'
-  when: not ssms_installer_file.stat.exists
+- name: create directory to store the install files
+  win_file:
+    path: c:\setup\mssql
+    state: directory
 
-- name: check SSMS installation already done
+- name: check SQL Server Management Studio installation already done
   win_stat:
-    path: "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 18"
+    path: "{{ item }}"
   register: ssms_installation
+  loop:
+    - "C:\\Program Files\\Microsoft SQL Server Management Studio 22\\Release\\Common7\\IDE\\Ssms.exe"
+    - "C:\\Program Files\\Microsoft SQL Server Management Studio 21\\Release\\Common7\\IDE\\Ssms.exe"
+    - "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 20\\Common7\\IDE\\Ssms.exe"
+    - "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 18\\Common7\\IDE\\Ssms.exe"
 
-- name: Install SSMS
-  win_command: c:\setup\mssql\SSMS_installer.exe /install /quiet /norestart
-  register: install_ssmss
-  when: not ssms_installation.stat.exists
+- name: set fact ssms_installed
+  set_fact:
+    ssms_installed: "{{ ssms_installation.results | map(attribute='stat.exists') | select | list | length > 0 }}"
+
+# .NET Framework 4.8 prerequisite (Release >= 528040), the SSMS installer fails with
+# "Package 'Microsoft.Net.4.8.FullRedist' failed to install ... Return code: 16389" if it cannot install it itself
+- name: get the .NET Framework 4.x release
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full
+    name: Release
+  register: net_release
+  when: not ssms_installed
+
+- name: set fact net48_installed
+  set_fact:
+    net48_installed: "{{ ssms_installed or (net_release.exists and (net_release.value | int) >= 528040) }}"
+
+- name: download the .NET Framework 4.8 offline installer
+  win_get_url:
+    url: https://go.microsoft.com/fwlink/?linkid=2088631
+    dest: 'c:\setup\ndp48.exe'
+  register: net48_download
+  until: net48_download is success
+  retries: 3
+  delay: 10
+  when: not net48_installed
+
+- name: install the .NET Framework 4.8 (best effort)
+  win_package:
+    path: 'c:\setup\ndp48.exe'
+    arguments: /q /norestart
+    product_id: '{92FB6C44-E685-45AD-9B20-CADF4CABA132}'
+    expected_return_code: [0, 1641, 3010]
+  register: net48_install
+  ignore_errors: true
+  when: not net48_installed
+
+- name: reboot after the .NET Framework 4.8 installation
+  win_reboot:
+    reboot_timeout: 900
+  when: not net48_installed and net48_install is succeeded and net48_install.changed
+
+- name: get the .NET Framework 4.x release after install
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full
+    name: Release
+  register: net_release_after
+  when: not net48_installed
+
+- name: set fact net48_installed after install
+  set_fact:
+    net48_installed: "{{ net48_installed or (net_release_after.exists and (net_release_after.value | int) >= 528040) }}"
+
+- name: warn if SSMS can not be installed (.NET Framework 4.8 missing)
+  debug:
+    msg: "WARNING: .NET Framework 4.8 could not be installed ({{ net48_install.msg | default('') }}), SQL Server Management Studio 22 is skipped. Install windows updates on this host then rerun servers.yml if you need SSMS."
+  when: not net48_installed
+
+- name: check SQL Server Management Studio installer exists
+  win_stat:
+    path: c:\setup\mssql\vs_SSMS.exe
+  register: ssms_installer_file
+  when: not ssms_installed and net48_installed
+
+- name: get the installer (SSMS 22 bootstrapper)
+  win_get_url:
+    url: 'https://aka.ms/ssms/22/release/vs_SSMS.exe'
+    dest: 'c:\setup\mssql\vs_SSMS.exe'
+  register: ssms_download
+  until: ssms_download is success
+  retries: 3
+  delay: 10
+  when: not ssms_installed and net48_installed and not ssms_installer_file.stat.exists
+
+# The bootstrapper downloads the product (~1GB) then installs it, --wait returns only when the install is finished
+# launched with Start-Process -Wait : win_command with --wait was reported to return before the end of the install (issue #468)
+- name: Install SSMS (take a while, the bootstrapper download the product)
+  win_shell: |
+    $p = Start-Process -FilePath "c:\setup\mssql\vs_SSMS.exe" -ArgumentList "--quiet --norestart --wait" -Wait -PassThru
+    if ($p.ExitCode -ne 0) {
+      Get-ChildItem "$env:TEMP\dd_setup_*_errors.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content | Select-Object -First 30
+    }
+    exit $p.ExitCode
+  register: install_ssms
+  # 0 = ok, 3010 = ok reboot required, 862968 = installed but a reboot is required to finish, 1641 = reboot initiated
+  failed_when: install_ssms.rc not in [0, 3010, 862968, 1641]
+  ignore_errors: true
+  when: not ssms_installed and net48_installed
+
+- name: warn if the SSMS installation failed
+  debug:
+    msg: "WARNING: SQL Server Management Studio 22 installation failed (rc={{ install_ssms.rc }}), continuing without SSMS. Output : {{ install_ssms.stdout_lines | default([]) }}"
+  when: not ssms_installed and net48_installed and install_ssms is failed
 
 - name: Reboot after install
   win_reboot:
     reboot_timeout: 600
-  when: not ssms_installation.stat.exists
+  when: not ssms_installed and net48_installed and install_ssms is succeeded

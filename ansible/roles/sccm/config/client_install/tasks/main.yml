@@ -1,3 +1,34 @@
+# Get-CMDevice lists the "All Systems" collection members : a freshly discovered computer is only visible
+# after the collection is updated, so refresh it first
+- name: Update the All Systems collection
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param (
+          [String]
+          $siteCode,
+
+          [String]
+          $sccmFQDN
+      )
+      Import-Module $env:SMS_ADMIN_UI_PATH.Replace("\bin\i386","\bin\configurationmanager.psd1") -force
+      $sc = Get-PSDrive -PSProvider CMSITE
+      if ($null -eq $sc) {
+        New-PSDrive -Name $siteCode -PSProvider "CMSite" -Root $sccmFQDN -Description "primary site"
+      }
+      Set-Location ($siteCode +":")
+      Get-CMCollection -Name "All Systems" | Invoke-CMCollectionUpdate
+      Start-Sleep -Seconds 60
+      $Ansible.Changed = $false
+    parameters:
+      siteCode: "{{site_code}}"
+      sccmFQDN: "{{sccm_server}}.{{domain}}"
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_username}}"
+    ansible_become_password: "{{domain_password}}"
+
 - name: Install client
   ansible.windows.win_powershell:
     script: |

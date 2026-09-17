@@ -15,6 +15,29 @@
     sccm_server: "{{lab.domains[domain].sccm.sccm_server | default('')}}"
     sccm_mssql_server: "{{lab.domains[domain].sccm.sccm_mssql_server | default('')}}"
 
+# The account running the WSUS post-install and the MECM setup (admin_user) must be sysadmin on the site database server
+# (admin_user is not always "administrator", ex: goadmin on aws/azure/proxmox)
+- name: "Grant sysadmin to the setup account on the site database server"
+  hosts: mssql
+  tasks:
+    - name: Add the setup account as MSSQL sysadmin
+      win_shell: |
+        SqlCmd {{connection_type}} -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '{{domain_username}}') CREATE LOGIN [{{domain_username}}] FROM WINDOWS"
+        SqlCmd {{connection_type}} -Q "IF IS_SRVROLEMEMBER('sysadmin', '{{domain_username}}') = 0 EXEC sp_addsrvrolemember '{{domain_username}}', 'sysadmin'"
+      become: yes
+      become_method: runas
+      become_user: "{{SQLSVCACCOUNT}}"
+      vars:
+        ansible_become_pass: "{{SQLSVCPASSWORD}}"
+  vars:
+    domain: "{{lab.hosts[dict_key].domain}}"
+    domain_username: "{{domain}}\\{{admin_user}}"
+    SQLSVCACCOUNT_NAME: "{{lab.hosts[dict_key].mssql.svcaccount| default('NT AUTHORITY\\NETWORK SERVICE')}}"
+    SQLSVCACCOUNT_NAMEDOMAIN: "{{domain}}\\{{SQLSVCACCOUNT_NAME}}"
+    SQLSVCACCOUNT: "{{SQLSVCACCOUNT_NAME if SQLSVCACCOUNT_NAME == 'NT AUTHORITY\\NETWORK SERVICE' else SQLSVCACCOUNT_NAMEDOMAIN }}"
+    SQLSVCPASSWORD: "{{lab.domains[domain].users[SQLSVCACCOUNT_NAME].password| default('')}}"
+    connection_type: "{{ '-S 127.0.0.1,1433' if (sql_version | default('MSSQL_2019')) == 'MSSQL_2022' else '-E' }}"
+
 - name: "Install SCCM"
   hosts: sccm
   roles:

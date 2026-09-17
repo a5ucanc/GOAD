@@ -4,8 +4,10 @@ Jinja2
 pyyaml
 # Ansible
 ansible_runner
-# ansible-core 2.12.6 min version python 3.8
-ansible-core==2.12.6
+# ansible-core 2.16 : control node python 3.10 to 3.12 (ubuntu 22.04 jumpbox)
+# (ansible-core 2.12 galaxy client can no longer resolve collections with many versions on galaxy.ansible.com,
+#  ex: community.general -> "Unexpected Exception ... /api/v3/plugin/ansible/content/published/collections/index/community/general/versions/")
+ansible-core==2.16.14
 pywinrm
 # AZURE
 azure-identity

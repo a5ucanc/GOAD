@@ -24,17 +24,36 @@
 
 - name: Enable update service
   ansible.windows.win_service:
-    name: Windows Update
+    name: wuauserv
     state: started
     start_mode: auto
 
+- name: check if .NET Framework 3.5 is already enabled
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $Ansible.Result = ((Get-WindowsOptionalFeature -Online -FeatureName NetFx3).State -eq "Enabled")
+  register: netfx3_state
+
+# DISM can stay alive after "Image session has been closed. Reboot required=yes" : give it a bounded time (async)
 - name: install .NET Framework 3.5 with DISM
-  win_shell: DISM /Online /Enable-Feature /FeatureName:NetFx3 /All
+  win_shell: DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart
   vars:
     ansible_become: yes
     ansible_become_method: runas
     ansible_become_user: "{{domain_username}}"
     ansible_become_password: "{{domain_password}}"
+  async: 1800
+  poll: 30
+  register: netfx3_install
+  # 3010 = success, restart required
+  failed_when: netfx3_install.rc is defined and netfx3_install.rc not in [0, 3010]
+  when: not netfx3_state.result
+
+- name: reboot after the .NET Framework 3.5 installation if required
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+  when: not netfx3_state.result and (netfx3_install.rc == 3010 or (netfx3_install.stdout is defined and 'restart is required' in netfx3_install.stdout))
 
 - name: install IIS feature and other components
   win_feature:

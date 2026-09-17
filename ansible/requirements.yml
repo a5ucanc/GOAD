@@ -3,14 +3,20 @@ collections:
   # Install a collection from Ansible Galaxy.
   - name: ansible.windows
     version: 1.11.0
+  # versions pinned to the last releases supporting ansible-core 2.16 (requirements.yml)
   - name: community.general
+    version: 10.7.9
   - name: community.windows
     version: 1.11.0
   - name: chocolatey.chocolatey
+    version: 1.5.3
   - name: community.crypto
+    version: 2.26.9
   - name: community.mysql
+    version: 3.16.1
   - name: scicore.guacamole
   - name: ansible.posix
+    version: 1.6.2
 # - name: goad.windows
 #   type: dir
 #   source: ./collections/goad/windows

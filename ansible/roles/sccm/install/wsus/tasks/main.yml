@@ -1,5 +1,18 @@
-# Step 11 – Install WSUS Role
+# Install the WSUS role (software update point prerequisite) with the database on the remote SQL Server
+# https://learn.microsoft.com/en-us/intune/configmgr/sum/plan-design/plan-for-software-updates#wsus-requirements
 # --------------------------------------------------------------
+
+# a pending restart (IIS / .NET 3.5 / ADK) makes the WSUS feature install fail with
+# "Feature name WCF-HTTP-Activation45 is unknown. Error: 0x800706be"
+- name: check for a pending reboot before installing WSUS
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending
+  register: cbs_reboot_pending
+
+- name: reboot before installing WSUS if a restart is pending
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+  when: cbs_reboot_pending.exists
 
 - name: install WSUS
   win_feature:
@@ -8,6 +21,9 @@
       - UpdateServices-DB
     include_management_tools: yes
   register: wsus_install_result
+  until: wsus_install_result is success
+  retries: 3
+  delay: 60
 
 - name: "Reboot and wait for the AD system to restart"
   win_reboot:
@@ -20,8 +36,14 @@
     path: C:\sources\WSUS
     state: directory
 
+- name: check if the WSUS post-installation is already done
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup
+    name: ContentDir
+  register: wsus_content_dir
+
+# The post install must be run by a sysadmin of the remote SQL Server instance (the domain admin is, see config.json mssql.sysadmins)
 # %COMPUTERNAME% won't work. Neither $env:computername.
-# So, I put a hardcoded server name for now.
 - name: WSUS Post-installation (setup the link with the SQL Server database and a directory to store updates)
   win_shell: .\wsusutil.exe PostInstall SQL_INSTANCE_NAME={{sccm_mssql_server}} CONTENT_DIR=C:\sources\WSUS
   args:
@@ -32,3 +54,8 @@
     domain_name: "{{domain}}"
     ansible_become_user: "{{domain_username}}"
     ansible_become_password: "{{domain_password}}"
+  register: wsus_postinstall
+  until: wsus_postinstall is success
+  retries: 3
+  delay: 60
+  when: not wsus_content_dir.exists

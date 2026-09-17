@@ -1,0 +1,11 @@
+# Windows ADK 10.1.26100.2454 (December 2024) + Windows PE add-on
+# Supported by Configuration Manager 2403, 2503, 2509 and 2603
+# (ADK for Windows 10 version 2004 is end of support and no longer supported by current ConfigMgr versions)
+# https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
+# https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/support-for-windows-adk
+adk_version: "10.1.26100.2454"
+adk_setup_url: "https://go.microsoft.com/fwlink/?linkid=2289980"
+adk_winpe_setup_url: "https://go.microsoft.com/fwlink/?linkid=2289981"
+adk_setup_file: "adksetup_{{ adk_version }}.exe"
+adk_winpe_setup_file: "adkwinpesetup_{{ adk_version }}.exe"
+adk_install_root: 'C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit'

@@ -25,7 +25,18 @@ class LocalJumpBox(JumpBox):
             # if is windows convert line ending
             self.run_command("sudo apt update && sudo apt install -y dos2unix", '~')
             self.run_command("dos2unix setup.sh", '~')
-        self.run_command('bash setup.sh', '~')
+        result = self.run_command('bash setup.sh', '~')
+        if not result:
+            Log.error('jumpbox setup script failed (see errors above), the provisioning will probably fail')
+        return result
+
+    def install_requirements(self):
+        """
+        setup.sh installs the python and galaxy requirements of the upstream clone : reinstall them from the
+        local (synced) requirements files so the jumpbox matches the repository being deployed
+        """
+        self.run_command('python3 -m pip install -q -r requirements.yml', '~/GOAD')
+        return self.run_command('/home/vagrant/.local/bin/ansible-galaxy install --force -r requirements.yml', '~/GOAD/ansible')
 
     def get_jumpbox_key(self, creation=False):
         if not creation:
@@ -41,12 +52,29 @@ class LocalJumpBox(JumpBox):
     def sync_sources(self):
         """
         rsync ansible folder to the jumpbox ip
-        local_vm already got GOAD installed in ~/GOAD so the only thing to sync is the workspace folder
+        local_vm got GOAD cloned from github in ~/GOAD, so we push the local ansible sources
+        (ansible/, ad/<lab>/, extensions/, playbooks.yml) on top of it to keep local changes,
+        then sync the workspace folder
         :return:
         """
         if Utils.is_valid_ipv4(self.ip):
             # Copy the globalsettings.ini file to the jumpbox
             self.command.scp(GoadPath.get_global_inventory_path(), f'{self.username}@{self.ip}:~/GOAD/globalsettings.ini', self.ssh_key, self.instance_path)
+            # Copy the local provisioning sources (override the github clone with local changes)
+            project_path = GoadPath.get_project_path()
+            local_sources = [
+                (project_path + 'ansible', '~/GOAD/'),
+                (project_path + 'extensions', '~/GOAD/'),
+                (project_path + 'playbooks.yml', '~/GOAD/playbooks.yml'),
+                (project_path + 'scripts', '~/GOAD/'),
+                (GoadPath.get_lab_path(self.lab_name), '~/GOAD/ad/'),
+            ]
+            for source, destination in local_sources:
+                if os.path.exists(source):
+                    self.command.scp(f'-r "{source}"', f'{self.username}@{self.ip}:{destination}', self.ssh_key, self.instance_path)
+            if Utils.is_windows():
+                # if is windows convert line ending of shell scripts
+                self.run_command("find ~/GOAD/ansible ~/GOAD/extensions ~/GOAD/ad ~/GOAD/scripts -type f -name '*.sh' -exec dos2unix -q {} +", '~')
             # create workspace dir if not exist
             self.run_command('mkdir -p ~/GOAD/workspace/' + self.instance_id, '~')
             # workspace inventory files (no need -r as it will copy all the provider folder)

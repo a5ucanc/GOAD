@@ -20,8 +20,13 @@ boxes.append(
 )
 {% endif %}
 
+  # virtual hardware compatibility of the vms (the boxes are built with an old hardware version)
+  # 22 = Workstation Pro 25H2 or later, 21 = Workstation 17.x
+  vmware_hardware_version = "22"
+
   config.vm.provider "vmware_desktop" do |v|
     v.force_vmware_license = "workstation"  # force the licence for fix some vagrant plugin issue
+    v.vmx["virtualhw.version"] = vmware_hardware_version
     # v.gui = true
   end
 
@@ -33,7 +38,7 @@ boxes.append(
     config.vbguest.auto_update = false
   end
 
-  config.vm.boot_timeout = 600
+  config.vm.boot_timeout = 1200  # first boot of the windows boxes can be slow when several vms start at once
   config.vm.graceful_halt_timeout = 600
   config.winrm.retry_limit = 30
   config.winrm.retry_delay = 10

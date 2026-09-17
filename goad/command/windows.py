@@ -17,14 +17,16 @@ class WindowsCommand(Command):
             Log.success(f'File {file} present in the file system')
         return exist
 
-    def is_in_path(self, bin_file):
-        command = f'where {bin_file} >nul'
+    def is_in_path(self, bin_file, show_log=True):
+        command = f'where {bin_file} >nul 2>nul'
         try:
             subprocess.run(command, shell=True, check=True)
-            Log.success(f'{bin_file} found in PATH')
+            if show_log:
+                Log.success(f'{bin_file} found in PATH')
             return True
         except subprocess.CalledProcessError as e:
-            Log.error(f'{bin_file} not found in PATH')
+            if show_log:
+                Log.error(f'{bin_file} not found in PATH')
             return False
 
     # CHECK
@@ -33,7 +35,9 @@ class WindowsCommand(Command):
         pass
 
     def check_vmware(self):
-        return self.file_exist("c:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe")
+        # Workstation 17.x installs in Program Files (x86), Workstation 25H2 and later in Program Files
+        return (self.file_exist("c:\\Program Files\\VMware\\VMware Workstation\\vmrun.exe")
+                or self.file_exist("c:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe"))
 
     def check_vmware_utility(self):
         return self.file_exist("c:\\Program Files\\VagrantVMwareUtility\\vagrant-vmware-utility.exe")

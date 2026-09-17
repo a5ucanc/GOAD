@@ -1,4 +1,6 @@
-# Step 7 – Installing Windows ADK version 2004
+# Install the Windows ADK + Windows PE add-on (version pinned in defaults/main.yml)
+# The ADK version must be supported by the Configuration Manager version installed :
+# https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/support-for-windows-adk
 # --------------------------------------------------------------
 
 - name: create directory to store the install files
@@ -11,36 +13,81 @@
     path: C:\setup\adk
     state: directory
 
-- name: check ADK version 2004 installation exists
+- name: check if the ADK Deployment Tools are already installed
   win_stat:
-    path: C:\setup\adk\adksetup.exe
+    path: "{{ adk_install_root }}\\Deployment Tools\\amd64\\DISM\\dism.exe"
+  register: adk_deployment_tools
+
+- name: check if the ADK User State Migration Tool is already installed
+  win_stat:
+    path: "{{ adk_install_root }}\\User State Migration Tool\\amd64\\scanstate.exe"
+  register: adk_usmt
+
+- name: check if the ADK Windows PE add-on is already installed
+  win_stat:
+    path: "{{ adk_install_root }}\\Windows Preinstallation Environment\\amd64\\en-us\\winpe.wim"
+  register: adk_winpe
+
+- name: check ADK installer exists
+  win_stat:
+    path: "C:\\setup\\adk\\{{ adk_setup_file }}"
   register: adksetup_installer_file
 
-# Must be ADK version 2004 for MECM 2303
-# Check if the file has already been downloaded (?)
-- name: download ADK version 2004
+- name: download ADK {{ adk_version }}
   ansible.windows.win_get_url:
-    url: https://go.microsoft.com/fwlink/?linkid=2120254
-    dest: C:\setup\adk\adksetup.exe
+    url: "{{ adk_setup_url }}"
+    dest: "C:\\setup\\adk\\{{ adk_setup_file }}"
+  register: adk_download
+  until: adk_download is success
+  retries: 3
+  delay: 10
   when: not adksetup_installer_file.stat.exists
 
-- name: check ADK adkwinpesetup exists
+- name: check ADK Windows PE add-on installer exists
   win_stat:
-    path: C:\setup\adk\adkwinpesetup.exe
+    path: "C:\\setup\\adk\\{{ adk_winpe_setup_file }}"
   register: adkwinpesetup_installer_file
 
-- name: download PE add-on
+- name: download ADK {{ adk_version }} Windows PE add-on
   ansible.windows.win_get_url:
-    url: https://go.microsoft.com/fwlink/?linkid=2120253
-    dest: C:\setup\adk\adkwinpesetup.exe
+    url: "{{ adk_winpe_setup_url }}"
+    dest: "C:\\setup\\adk\\{{ adk_winpe_setup_file }}"
+  register: adk_winpe_download
+  until: adk_winpe_download is success
+  retries: 3
+  delay: 10
   when: not adkwinpesetup_installer_file.stat.exists
 
-- name: installing ADK version 2004
-  win_shell: .\adksetup.exe /quiet /features OptionId.DeploymentTools OptionId.UserStateMigrationTool
-  args:
-    chdir: C:\setup\adk 
-
-- name: installing PE add-on
-  win_shell: .\adkwinpesetup.exe /quiet /features OptionId.WindowsPreinstallationEnvironment
+# The bootstrapper downloads the selected features from the internet (~ 1.5GB) and installs them
+- name: installing ADK {{ adk_version }} (Deployment Tools + USMT)
+  win_shell: ".\\{{ adk_setup_file }} /quiet /norestart /features OptionId.DeploymentTools OptionId.UserStateMigrationTool"
   args:
     chdir: C:\setup\adk
+  register: adk_install
+  when: not (adk_deployment_tools.stat.exists and adk_usmt.stat.exists)
+  # 0 = success, 3010 = success reboot required
+  failed_when: adk_install.rc is defined and adk_install.rc not in [0, 3010]
+
+- name: installing ADK {{ adk_version }} Windows PE add-on
+  win_shell: ".\\{{ adk_winpe_setup_file }} /quiet /norestart /features OptionId.WindowsPreinstallationEnvironment"
+  args:
+    chdir: C:\setup\adk
+  register: adk_winpe_install
+  when: not adk_winpe.stat.exists
+  failed_when: adk_winpe_install.rc is defined and adk_winpe_install.rc not in [0, 3010]
+
+- name: verify the ADK Deployment Tools installation
+  win_stat:
+    path: "{{ adk_install_root }}\\Deployment Tools\\amd64\\DISM\\dism.exe"
+  register: adk_deployment_tools_check
+  failed_when: not adk_deployment_tools_check.stat.exists
+
+- name: verify the ADK Windows PE add-on installation
+  win_stat:
+    path: "{{ adk_install_root }}\\Windows Preinstallation Environment\\amd64\\en-us\\winpe.wim"
+  register: adk_winpe_check
+  failed_when: not adk_winpe_check.stat.exists
+
+- name: reboot after ADK installation if required
+  ansible.windows.win_reboot:
+  when: (adk_install.rc is defined and adk_install.rc == 3010) or (adk_winpe_install.rc is defined and adk_winpe_install.rc == 3010)

@@ -134,6 +134,7 @@ class Goad(cmd.Cmd):
             Log.info('provision <playbook>')
         else:
             start = time.time()
+            self.do_sync_source_jumpbox()
             # run playbook
             self.lab_manager.get_current_instance_provisioner().run(arg)
             time_provision = time.ctime(time.time() - start)[11:19]
@@ -141,6 +142,7 @@ class Goad(cmd.Cmd):
 
     def do_provision_lab(self, arg=''):
         start = time.time()
+        self.do_sync_source_jumpbox()
         provision_result = self.lab_manager.get_current_instance_provisioner().run()
         if provision_result:
             self.lab_manager.get_current_instance().set_status(READY)
@@ -150,6 +152,7 @@ class Goad(cmd.Cmd):
 
     def do_provision_lab_from(self, arg):
         start = time.time()
+        self.do_sync_source_jumpbox()
         provision_result = self.lab_manager.get_current_instance_provisioner().run_from(arg)
         if provision_result:
             self.lab_manager.get_current_instance().set_status(READY)

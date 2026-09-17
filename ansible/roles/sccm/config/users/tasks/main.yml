@@ -26,6 +26,7 @@
       } else {
         $Ansible.Changed = $false
       }
+    error_action: stop
     parameters:
       siteCode: "{{site_code}}"
       username: "{{item}}"

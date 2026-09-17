@@ -1,3 +1,5 @@
+import subprocess
+import time
 from goad.command.cmd_factory import CommandFactory
 from goad.log import Log
 from goad.utils import *
@@ -67,7 +69,37 @@ class JumpBox:
         else:
             Log.error('Can not sync source jumpbox ip is invalid')
 
+    def is_reachable(self):
+        ssh_cmd = f'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -i {self.ssh_key} {self.username}@{self.ip} true'
+        try:
+            result = subprocess.run(ssh_cmd, cwd=project_path, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def is_playbook_running(self, playbook, wait=300):
+        """
+        check if a playbook started by scripts/run_playbook_detached.sh is still running on the jumpbox
+        (wait up to `wait` seconds for the jumpbox to be reachable again)
+        """
+        pid_file = '/tmp/goad_' + playbook.replace('/', '_').replace('.', '_') + '.pid'
+        ssh_cmd = f'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -i {self.ssh_key} {self.username}@{self.ip} "test -f {pid_file} && kill -0 $(cat {pid_file})"'
+        waited = 0
+        while waited <= wait:
+            if not self.is_reachable():
+                time.sleep(15)
+                waited += 15
+                continue
+            try:
+                result = subprocess.run(ssh_cmd, cwd=project_path, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return result.returncode == 0
+            except Exception:
+                return False
+        return False
+
     def run_command(self, command, path):
-        ssh_cmd = f'ssh -t -o StrictHostKeyChecking=no -i {self.ssh_key} {self.username}@{self.ip} "cd {path} && {command}"'
+        # keepalives : the ansible playbooks can run for hours with no output (ex: MECM setup), without them the
+        # ssh session can be reset ("client_loop: send disconnect: Connection reset") and the provisioning aborted
+        ssh_cmd = f'ssh -t -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i {self.ssh_key} {self.username}@{self.ip} "cd {path} && {command}"'
         result = self.command.run_command(ssh_cmd, project_path)
         return result

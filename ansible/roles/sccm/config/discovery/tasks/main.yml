@@ -45,13 +45,14 @@
       # To run AD Forest Discovery now
       Invoke-CMForestDiscovery -SiteCode $siteCode -Verbose
 
-      # Group
+      # Group (no last logon / password age filtering : a freshly joined lab computer that never logged on
+      # to the domain has no lastLogonTimestamp and would be excluded, ex: CLIENT never got the client pushed)
       try {
         Set-CMDiscoveryMethod -SiteCode $siteCode `
         -ActiveDirectoryGroupDiscovery -Enabled $true `
         -EnableDeltaDiscovery $true -DeltaDiscoveryIntervalMinutes 5 `
-        -EnableFilteringExpiredLogon $true -TimeSinceLastLogonDays 90 `
-        -EnableFilteringExpiredPassword $true -TimeSinceLastPasswordUpdateDays 90 `
+        -EnableFilteringExpiredLogon $false `
+        -EnableFilteringExpiredPassword $false `
         -DiscoverDistributionGroupsMembership $true `
         -AddGroupDiscoveryScope (New-CMADGroupDiscoveryScope `
             -name MyScope -SiteCode $siteCode -LdapLocation $group_ldap -RecursiveSearch $true)
@@ -66,8 +67,8 @@
 
       (Get-Service SMS_SITE_COMPONENT_MANAGER -ComputerName $computer).start()
 
-      # To run Group Discovery now
-      Invoke-CMForestDiscovery -SiteCode $siteCode -Verbose
+      # To run Group Discovery now (full sync)
+      Invoke-CMGroupDiscovery -SiteCode $siteCode
     error_action: stop
     parameters:
       siteCode: "{{site_code}}"

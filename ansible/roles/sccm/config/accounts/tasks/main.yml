@@ -30,6 +30,7 @@
       } else {
         $Ansible.Changed = $false
       }
+    error_action: stop
     parameters:
       siteCode: "{{site_code}}"
       sccmFQDN: "{{sccm_server}}.{{domain}}"

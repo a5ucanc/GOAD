@@ -1,18 +1,24 @@
-# Step 3 - Creating the System Management Container
+# Prepare Active Directory for Configuration Manager site publishing
+# https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/network/extend-the-active-directory-schema
 # --------------------------------------------------------------
 
+# Step 1 - Create the System Management container
 - name: create the System Management Container
   ansible.windows.win_powershell:
     script: |
       $systemDN = "CN=System," + (Get-ADDomain).DistinguishedName
-      New-ADObject -Type container -Name "System Management" -Path $systemDN
+      $systemMgmtDN = "CN=System Management," + $systemDN
+      $exists = Get-ADObject -LDAPFilter "(objectClass=container)" -SearchBase $systemDN -SearchScope OneLevel | Where-Object { $_.DistinguishedName -eq $systemMgmtDN }
+      if ($null -eq $exists) {
+        New-ADObject -Type container -Name "System Management" -Path $systemDN
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+    error_action: stop
 
-# Step 4 - Grant SCCM Server Permissions on System Management Container
-# --------------------------------------------------------------
-
-# Not children inherited (is it bad?)
-# SRV01 is hardcoded
-- name: create the System Management Container
+# Step 2 - Grant the site server computer account Full Control on the System Management container (and children)
+- name: grant the SCCM site server full control on the System Management Container
   ansible.windows.win_powershell:
     script: |
       [CmdletBinding()]
@@ -23,54 +29,97 @@
       $systemMgmtDN = "CN=System Management,CN=System," + (Get-ADDomain).DistinguishedName
       $acl = Get-ACL -Path "AD:\$systemMgmtDN"
       $sccmIdentity = Get-ADComputer -Identity $SCCMServer
-      $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule $sccmIdentity.SID, "GenericAll", "Allow"
-      $acl.AddAccessRule($ace)
-      Set-ACL -Path "AD:\$systemMgmtDN" -AclObject $acl
+      $existing = $acl.Access | Where-Object { $_.IdentityReference -eq "$((Get-ADDomain).NetBIOSName)\$($sccmIdentity.SamAccountName)" -and $_.ActiveDirectoryRights -eq "GenericAll" -and $_.InheritanceType -eq "All" }
+      if ($null -eq $existing) {
+        $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+          [System.Security.Principal.IdentityReference]$sccmIdentity.SID,
+          [System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
+          [System.Security.AccessControl.AccessControlType]::Allow,
+          [System.DirectoryServices.ActiveDirectorySecurityInheritance]::All)
+        $acl.AddAccessRule($ace)
+        Set-ACL -Path "AD:\$systemMgmtDN" -AclObject $acl
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+    error_action: stop
     parameters:
       SCCMServer: "{{sccm_server}}"
 
-# Step 5 – Extending Active Directory Schema
+# Step 3 - Extend the Active Directory schema (extadsch.exe from the installation media)
 # --------------------------------------------------------------
 
 - name: create directory to store the downloaded prerequisite files
   ansible.windows.win_file:
-    path: C:\setup
+    path: "{{ mecm_setup_path }}"
     state: directory
 
-# Must be run as a member of the Schema Admins security group (we'll go with a domain administrator)
-# Check if the file has already been downloaded (?)
+- name: check if the Active Directory schema is already extended for Configuration Manager
+  ansible.windows.win_powershell:
+    script: |
+      $schemaDN = (Get-ADRootDSE).schemaNamingContext
+      $attr = Get-ADObject -LDAPFilter "(cn=MS-SMS-Site-Code)" -SearchBase $schemaDN -ErrorAction SilentlyContinue
+      $Ansible.Changed = $false
+      $Ansible.Result = ($null -ne $attr)
+  register: schema_extended
+
 - name: check MECM installation media exists
   win_stat:
-    path: C:\setup\MCM_Configmgr_2303.exe
-  register: mecm_installer_file
+    path: "{{ mecm_setup_path }}\\{{ mecm_installer_file }}"
+  register: mecm_installer_file_stat
+  when: not schema_extended.result
 
-- name: download MECM installation media
+- name: download MECM installation media (~1.2GB)
   ansible.windows.win_get_url:
-    url: https://go.microsoft.com/fwlink/p/?LinkID=2195628&clcid=0x409&culture=en-us&country=us
-    dest: C:\setup\MCM_Configmgr_2303.exe
-  when: not mecm_installer_file.stat.exists
+    url: "{{ mecm_installer_url }}"
+    dest: "{{ mecm_setup_path }}\\{{ mecm_installer_file }}"
+  register: mecm_download
+  until: mecm_download is success
+  retries: 3
+  delay: 30
+  when: not schema_extended.result and not mecm_installer_file_stat.stat.exists
 
-- name: Remove directory if exist
+- name: Remove extracted media directory if exist
   ansible.windows.win_file:
-    path: C:\setup\cd.retail.LN
+    path: "{{ mecm_extract_path }}"
     state: absent
+  when: not schema_extended.result
 
 - name: extract MECM installation media
-  win_shell: .\MCM_Configmgr_2303.exe -s
+  win_shell: ".\\{{ mecm_installer_file }} -s"
   args:
-    chdir: C:\setup
+    chdir: "{{ mecm_setup_path }}"
+  when: not schema_extended.result
 
-#- name: move the MECM installation media to C:\
-#  ansible.windows.win_powershell:
-#    script: Move-Item -Path C:\Windows\Temp\cd.retail.LN -Destination C:\
+- name: check extracted media
+  win_stat:
+    path: "{{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64\\extadsch.exe"
+  register: extadsch_file
+  when: not schema_extended.result
 
+- name: fail if the installation media was not extracted
+  fail:
+    msg: "extadsch.exe not found in {{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64, the MECM media extraction failed"
+  when: not schema_extended.result and not extadsch_file.stat.exists
+
+# Must be run as a member of the Schema Admins security group (the domain administrator is)
 - name: launching the Active Directory schema extension
   win_shell: .\extadsch.exe
   args:
-    chdir: C:\setup\cd.retail.LN\SMSSETUP\BIN\X64
+    chdir: "{{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64"
   vars:
     ansible_become: yes
     ansible_become_method: runas
-    domain_name: "{{domain}}"
     ansible_become_user: "{{domain_username}}"
     ansible_become_password: "{{domain_password}}"
+  when: not schema_extended.result
+
+- name: verify the Active Directory schema extension result (C:\ExtADSch.log)
+  ansible.windows.win_powershell:
+    script: |
+      $log = Get-Content -Path "C:\ExtADSch.log" -ErrorAction SilentlyContinue
+      $Ansible.Changed = $false
+      $Ansible.Result = ($null -ne ($log | Select-String -Pattern "Successfully extended the Active Directory schema"))
+  register: extadsch_result
+  failed_when: not extadsch_result.result
+  when: not schema_extended.result

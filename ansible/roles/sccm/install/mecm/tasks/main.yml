@@ -1,88 +1,144 @@
+# Install the Configuration Manager primary site (unattended)
+# https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/use-a-command-line-to-install-sites
+# https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/list-of-prerequisite-checks
+# --------------------------------------------------------------
+
 - name: create directory to store the downloaded prerequisite files
   ansible.windows.win_file:
-    path: C:\setup
+    path: "{{ mecm_setup_path }}"
     state: directory
 
-- name: Download Visual C++ 2017 Redistributable
-  ansible.windows.win_get_url:
-    url: https://aka.ms/vs/15/release/vc_redist.x64.exe
-    dest: C:\setup\vc_redist.x64.exe
-  register: download_vc_redist
+# Site already installed ? (SMS_EXECUTIVE service is created by setup)
+- name: check if the Configuration Manager site is already installed
+  ansible.windows.win_service_info:
+    name: SMS_EXECUTIVE
+  register: sms_executive
 
-- name: Install Visual C++ 2017 Redistributable
+- name: set fact mecm_installed
+  set_fact:
+    mecm_installed: "{{ sms_executive.exists }}"
+
+# Prerequisites : Visual C++ redistributable + ODBC driver 18 for SQL Server
+# --------------------------------------------------------------
+
+- name: Download Visual C++ 2015-2022 Redistributable
+  ansible.windows.win_get_url:
+    url: "{{ vc_redist_url }}"
+    dest: "{{ mecm_setup_path }}\\vc_redist.x64.exe"
+  register: download_vc_redist
+  until: download_vc_redist is success
+  retries: 3
+  delay: 10
+
+- name: Install Visual C++ 2015-2022 Redistributable
   ansible.windows.win_package:
-    path: C:\setup\vc_redist.x64.exe
-    arguments: /quiet /norestart
-  when: download_vc_redist.changed
+    path: "{{ mecm_setup_path }}\\vc_redist.x64.exe"
+    arguments: /install /quiet /norestart
+  register: vc_redist_install
+  # 1638 = another version of this product is already installed
+  failed_when: vc_redist_install.rc is defined and vc_redist_install.rc not in [0, 1638, 3010]
 
 - name: Install ODBC Mssql 18 driver
   ansible.windows.win_package:
     arguments: "IACCEPTMSODBCSQLLICENSETERMS=YES ALLUSERS=1"
-    path: https://go.microsoft.com/fwlink/?linkid=2266640&clcid=0x409&culture=en-us&country=us
+    path: "{{ odbc_driver_url }}"
     state: present
-    creates_path: "%ProgramFiles%\\Microsoft SQL Server\\Client SDK\\ODBC"
+    creates_path: "%ProgramFiles%\\Microsoft SQL Server\\Client SDK\\ODBC\\180"
   register: odbc_install
   until: odbc_install is success
   retries: 3  # Try 3 times just in case it failed to download the URL
-  delay: 1
+  delay: 10
 
 - name: reboot after installing ODBC if required
   ansible.windows.win_reboot:
   when: odbc_install.reboot_required
 
-# Step 14 – Download SCCM 1902 Baseline Media
+# Download and extract the baseline media
 # --------------------------------------------------------------
-
-- name: create directory to store the downloaded prerequisite files
-  ansible.windows.win_file:
-    path: C:\setup
-    state: directory
 
 - name: MECM installation media exists
   win_stat:
-    path: C:\setup\MCM_Configmgr_2303.exe
-  register: mecm_installer_file
+    path: "{{ mecm_setup_path }}\\{{ mecm_installer_file }}"
+  register: mecm_installer_file_stat
 
-- name: download MECM installation media
+- name: download MECM installation media (~1.2GB)
   ansible.windows.win_get_url:
-    url: https://go.microsoft.com/fwlink/p/?LinkID=2195628&clcid=0x409&culture=en-us&country=us
-    dest: C:\setup\MCM_Configmgr_2303.exe
-  when: not mecm_installer_file.stat.exists
+    url: "{{ mecm_installer_url }}"
+    dest: "{{ mecm_setup_path }}\\{{ mecm_installer_file }}"
+  register: mecm_download
+  until: mecm_download is success
+  retries: 3
+  delay: 30
+  when: not mecm_installed and not mecm_installer_file_stat.stat.exists
+
+- name: check extracted media
+  win_stat:
+    path: "{{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64\\setup.exe"
+  register: mecm_setup_file
 
 - name: Remove directory cd.retail.LN if exist
   ansible.windows.win_file:
-    path: C:\setup\cd.retail.LN
+    path: "{{ mecm_extract_path }}"
     state: absent
   ignore_errors: true
+  when: not mecm_installed and not mecm_setup_file.stat.exists
 
-# We should verify if the cd.retail.LN directory exists first.
-# If yes, remove it.
 - name: extract MECM installation media
-  win_shell: .\MCM_Configmgr_2303.exe -s
+  win_shell: ".\\{{ mecm_installer_file }} -s"
   args:
-    chdir: C:\setup\
+    chdir: "{{ mecm_setup_path }}"
+  when: not mecm_installed and not mecm_setup_file.stat.exists
 
-#- name: move the MECM installation media to C:\
-#  ansible.windows.win_powershell:
-#    script: Move-Item -Path C:\Windows\Temp\cd.retail.LN -Destination C:\
+- name: check extracted media
+  win_stat:
+    path: "{{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64\\setup.exe"
+  register: mecm_setup_file
+  failed_when: not mecm_installed and not mecm_setup_file.stat.exists
 
 - name: create directory to store the downloaded prerequisite files
   ansible.windows.win_file:
-    path: C:\updates
+    path: "{{ mecm_prereq_path }}"
     state: directory
 
-- name: download prerequisite files
-  win_shell: .\setupdl.exe /NoUI C:\updates
+# Setup downloader : prerequisite redistributable files (the ODBC driver must be installed before running it)
+- name: download prerequisite files (setupdl.exe)
+  win_shell: ".\\setupdl.exe /NoUI {{ mecm_prereq_path }}"
   args:
-    chdir: C:\setup\cd.retail.LN\SMSSETUP\BIN\X64
+    chdir: "{{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64"
+  register: setupdl
+  until: setupdl is success
+  retries: 3
+  delay: 30
+  when: not mecm_installed
 
-# Step 15 – Install SCCM 1902 using Baseline Media
+# The redist folder contains the ODBC driver version validated for this baseline : install it to be sure
+# the "ODBC driver for SQL Server" prerequisite check pass (min 18.4.1.1 from ConfigMgr 2503)
+- name: check the ODBC driver downloaded by setupdl.exe
+  win_stat:
+    path: "{{ mecm_prereq_path }}\\msodbcsql.msi"
+  register: prereq_odbc
+
+- name: Install the ODBC driver downloaded by setupdl.exe
+  ansible.windows.win_package:
+    path: "{{ mecm_prereq_path }}\\msodbcsql.msi"
+    arguments: "IACCEPTMSODBCSQLLICENSETERMS=YES ALLUSERS=1"
+    state: present
+  register: prereq_odbc_install
+  # 1638 = a newer version of this product is already installed
+  failed_when: prereq_odbc_install.rc is defined and prereq_odbc_install.rc not in [0, 1638, 3010]
+  when: not mecm_installed and prereq_odbc.stat.exists
+
+- name: reboot after installing the ODBC driver if required
+  ansible.windows.win_reboot:
+  when: prereq_odbc_install.reboot_required is defined and prereq_odbc_install.reboot_required
+
+# Install the primary site
 # --------------------------------------------------------------
 
 - name: copy the configuration file
   win_template:
     src: files/ConfigMgrAutoSave.ini
-    dest: C:\setup\ConfigMgrAutoSave.ini
+    dest: "{{ mecm_setup_path }}\\ConfigMgrAutoSave.ini"
 
 - name: Fix MSSQL generate certificate issue (change crypto rsa permissions)
   ansible.windows.win_acl:
@@ -94,13 +150,160 @@
     inherit: ContainerInherit, ObjectInherit
     propagation: 'InheritOnly'
 
+# Setup fails the prerequisite check if a restart is pending
+- name: reboot before the site installation to clear any pending restart
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+  when: not mecm_installed
+
+# setup.exe was seen hanging after the site was installed (0 CPU, stuck after
+# "ERROR: Failed to create local group for distributed view access") : bounded run (async), then the result is
+# checked on the SMS_EXECUTIVE service instead of the exit code
 - name: install MECM (this one take an eternity ~ 1 hour  )
-  win_shell: .\setup.exe /SCRIPT "C:\setup\ConfigMgrAutoSave.ini"
+  win_shell: ".\\setup.exe /SCRIPT \"{{ mecm_setup_path }}\\ConfigMgrAutoSave.ini\""
   args:
-    chdir: C:\setup\cd.retail.LN\SMSSETUP\BIN\X64
+    chdir: "{{ mecm_extract_path }}\\SMSSETUP\\BIN\\X64"
   vars:
     ansible_become: yes
     ansible_become_method: runas
     domain_name: "{{domain}}"
     ansible_become_user: "{{domain_username}}"
     ansible_become_password: "{{domain_password}}"
+  async: 7200
+  poll: 60
+  register: mecm_setup
+  failed_when: false
+  when: not mecm_installed
+
+- name: kill a hung MECM setup (site already installed, setup never returned)
+  ansible.windows.win_powershell:
+    script: |
+      $p = Get-Process -Name setup, setupwpf -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "*SMSSETUP*" }
+      $Ansible.Changed = $false
+      if ($null -ne $p) {
+        $p | Stop-Process -Force
+        $Ansible.Changed = $true
+      }
+  when: not mecm_installed
+
+# Setup exit code is not reliable : verify the log and the SMS_EXECUTIVE service
+- name: get the prerequisite check failures (C:\ConfigMgrPrereq.log)
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $log = Get-Content -Path "C:\ConfigMgrPrereq.log" -ErrorAction SilentlyContinue
+      $Ansible.Result = @($log | Select-String -Pattern ";\s*Error;" | ForEach-Object { $_.Line })
+  register: prereq_errors
+  when: not mecm_installed
+
+- name: check the Configuration Manager site installation
+  ansible.windows.win_service_info:
+    name: SMS_EXECUTIVE
+  register: sms_executive_check
+
+- name: fail if the Configuration Manager site installation failed
+  fail:
+    msg: "MECM setup failed, SMS_EXECUTIVE service not found. Prerequisite errors : {{ prereq_errors.result | default([]) }}. See C:\\ConfigMgrSetup.log and C:\\ConfigMgrPrereq.log on {{ sccm_server }}"
+  when: not sms_executive_check.exists
+
+# Configuration Manager console (needed by the sccm/config roles : ConfigurationManager.psd1 in SMS_ADMIN_UI_PATH)
+# setup.exe installs it at the very end, which may not happen (see above). Since version 2403 the console
+# requires .NET Framework 4.8 and does not install it itself.
+# https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/install-consoles
+# --------------------------------------------------------------
+- name: find the Configuration Manager console installation
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param ([String] $defaultDir)
+      $Ansible.Changed = $false
+      $candidates = @()
+      $reg = Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\ConfigMgr10\Setup" -ErrorAction SilentlyContinue
+      if ($null -ne $reg -and $reg."UI Installation Directory") { $candidates += $reg."UI Installation Directory".TrimEnd("\") }
+      $env_path = [Environment]::GetEnvironmentVariable("SMS_ADMIN_UI_PATH", "Machine")
+      if ($env_path) { $candidates += $env_path.Replace("\bin\i386", "") }
+      $candidates += $defaultDir
+      $candidates += "C:\Program Files (x86)\Microsoft Configuration Manager\AdminConsole"
+      $candidates += "C:\Program Files (x86)\Microsoft Endpoint Manager\AdminConsole"
+      $found = $candidates | Where-Object { Test-Path (Join-Path $_ "bin\ConfigurationManager.psd1") } | Select-Object -First 1
+      $Ansible.Result = @{ found = ($null -ne $found); dir = $found }
+    parameters:
+      defaultDir: "{{ mecm_console_dir }}"
+  register: console_check
+
+- name: get the .NET Framework 4.x release
+  ansible.windows.win_reg_stat:
+    path: 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full'
+    name: Release
+  register: net_release
+  when: not console_check.result.found
+
+- name: download the .NET Framework 4.8 offline installer
+  win_get_url:
+    url: "{{ net48_url }}"
+    dest: "{{ mecm_setup_path }}\\ndp48.exe"
+  register: net48_download
+  until: net48_download is success
+  retries: 3
+  delay: 10
+  when: not console_check.result.found and (net_release.value | default(0) | int) < 528040
+
+- name: install the .NET Framework 4.8 (required by the console since 2403)
+  win_package:
+    path: "{{ mecm_setup_path }}\\ndp48.exe"
+    arguments: /q /norestart
+    product_id: '{92FB6C44-E685-45AD-9B20-CADF4CABA132}'
+    expected_return_code: [0, 1641, 3010]
+  register: net48_install
+  until: net48_install is success
+  retries: 2
+  delay: 60
+  when: not console_check.result.found and (net_release.value | default(0) | int) < 528040
+
+- name: reboot after the .NET Framework 4.8 installation
+  win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+  when: net48_install is changed
+
+# note : ConsoleSetup may ignore TargetDir and use its default (C:\Program Files (x86)\Microsoft Configuration Manager\AdminConsole)
+- name: install the Configuration Manager console
+  win_shell: ".\\ConsoleSetup.exe /q \"TargetDir={{ mecm_console_dir }}\" DefaultSiteServerName={{ sccm_server }}.{{ domain }}"
+  args:
+    chdir: "{{ mecm_install_dir }}\\tools\\ConsoleSetup"
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_username}}"
+    ansible_become_password: "{{domain_password}}"
+  async: 1800
+  poll: 30
+  register: console_install
+  when: not console_check.result.found
+
+- name: find the Configuration Manager console installation after install
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param ([String] $defaultDir)
+      $Ansible.Changed = $false
+      $candidates = @()
+      $reg = Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\ConfigMgr10\Setup" -ErrorAction SilentlyContinue
+      if ($null -ne $reg -and $reg."UI Installation Directory") { $candidates += $reg."UI Installation Directory".TrimEnd("\") }
+      $candidates += $defaultDir
+      $candidates += "C:\Program Files (x86)\Microsoft Configuration Manager\AdminConsole"
+      $candidates += "C:\Program Files (x86)\Microsoft Endpoint Manager\AdminConsole"
+      $found = $candidates | Where-Object { Test-Path (Join-Path $_ "bin\ConfigurationManager.psd1") } | Select-Object -First 1
+      $Ansible.Result = @{ found = ($null -ne $found); dir = $found }
+    parameters:
+      defaultDir: "{{ mecm_console_dir }}"
+  register: console_check_after
+  failed_when: not console_check_after.result.found
+
+- name: make sure SMS_ADMIN_UI_PATH is set (machine environment)
+  ansible.windows.win_environment:
+    name: SMS_ADMIN_UI_PATH
+    value: "{{ console_check_after.result.dir }}\\bin\\i386"
+    level: machine
+    state: present

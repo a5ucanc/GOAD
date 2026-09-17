@@ -1,6 +1,7 @@
 from goad.log import Log
 from goad.provisioner.ansible.ansible import Ansible
 from goad.utils import *
+import time
 
 
 class VmAnsibleProvisioner(Ansible):
@@ -19,6 +20,8 @@ class VmAnsibleProvisioner(Ansible):
             if self.jumpbox.ssh_key is not None:
                 self.jumpbox.provision()
                 self.jumpbox.sync_sources()
+                if hasattr(self.jumpbox, 'install_requirements'):
+                    self.jumpbox.install_requirements()
             else:
                 Log.error("The ssh key for the provider can't be found, error.")
         else:
@@ -45,16 +48,27 @@ class VmAnsibleProvisioner(Ansible):
         remote_inventories = []
         for inventory in inventories:
             remote_inventories.append(Utils.transform_local_path_to_remote_path(inventory, self.remote_project_path))
-        command = f'/home/vagrant/.local/bin/ansible-playbook -i {" -i ".join(remote_inventories)} {playbook}'
+        ansible_command = f'/home/vagrant/.local/bin/ansible-playbook -i {" -i ".join(remote_inventories)} {playbook}'
 
         Log.info(f'Run playbook : {playbook} with inventory file(s) : {", ".join(remote_inventories)}')
-        Log.cmd('command')
+        Log.cmd(ansible_command)
 
         run_complete = False
         nb_try = 0
         while not run_complete:
             nb_try += 1
+            # the playbook is started detached on the jumpbox (scripts/run_playbook_detached.sh) and its log
+            # streamed : if the ssh session drops during a long task (ex: MECM setup, ~1h without output) the
+            # playbook keeps running and the retry re-attaches to it instead of starting a new one.
+            # the token change on each retry after a real failure, so a failed playbook is run again.
+            token = f'{int(time.time())}-{nb_try}'
+            command = f'bash {self.remote_project_path}/scripts/run_playbook_detached.sh {token} {playbook} -i {" -i ".join(remote_inventories)} {playbook}'
             run_complete = self.jumpbox.run_command(command, playbook_path)
+            # ssh drop while the playbook is still running : re-attach with the same token (not a failure)
+            while not run_complete and self.jumpbox.is_playbook_running(playbook):
+                Log.warning('ssh session lost while the playbook is still running on the jumpbox, re-attaching')
+                time.sleep(10)
+                run_complete = self.jumpbox.run_command(command, playbook_path)
 
             if not run_complete and nb_try > tries:
                 Log.error('3 fails abort.')

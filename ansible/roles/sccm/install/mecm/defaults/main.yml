@@ -1,0 +1,26 @@
+# Configuration Manager current branch baseline media (evaluation, 180 days)
+# https://www.microsoft.com/en-us/evalcenter/evaluate-microsoft-endpoint-configuration-manager
+# This fwlink currently resolves to MCM_Configmgr_2403.exe (baseline 2403).
+# Keep the ODBC / ADK versions below aligned with the baseline you install :
+# https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/support-for-windows-adk
+# https://learn.microsoft.com/en-us/intune/configmgr/core/servers/deploy/install/list-of-prerequisite-checks#odbc-driver-for-sql-server
+mecm_installer_url: "https://go.microsoft.com/fwlink/p/?LinkID=2195628&clcid=0x409&culture=en-us&country=us"
+mecm_installer_file: "MCM_Configmgr_baseline.exe"
+mecm_setup_path: 'C:\setup'
+mecm_extract_path: 'C:\setup\cd.retail.LN'
+mecm_prereq_path: 'C:\updates'
+mecm_install_dir: 'C:\Program Files\Microsoft Configuration Manager'
+
+# Microsoft Visual C++ 2015-2022 Redistributable (x64) - required by ODBC driver and site server
+vc_redist_url: "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
+# Microsoft ODBC Driver 18 for SQL Server (x64) - 18.3.3.1 (validated with ConfigMgr 2403, min 18.4.1.1 from 2503)
+# Do not use 18.6.1.1 or 18.7.1.1 (known issues that block site configuration)
+# The redist folder downloaded by setupdl.exe also contains the msodbcsql.msi validated for the baseline, it is
+# installed after the download (see tasks) so the driver always match the baseline requirements.
+odbc_driver_url: "https://go.microsoft.com/fwlink/?linkid=2266640&clcid=0x409&culture=en-us&country=us"
+
+# Configuration Manager console (installed by setup.exe, or by the role if setup did not reach that step)
+mecm_console_dir: 'C:\Program Files (x86)\Microsoft Endpoint Manager\AdminConsole'
+# .NET Framework 4.8 offline installer (required by the console since ConfigMgr 2403, Server 2019 ships 4.7.2)
+net48_url: "https://go.microsoft.com/fwlink/?linkid=2088631"

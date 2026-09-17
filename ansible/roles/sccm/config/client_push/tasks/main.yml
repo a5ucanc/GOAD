@@ -22,6 +22,7 @@
       Set-Location ($siteCode +":")
       $property = "SMSSITECODE=" + $siteCode
 
+      # note : the cmdlet parameter is really spelled AllownNTLMFallback (sic)
       Set-CMClientPushInstallation `
       -SiteCode $siteCode `
       -EnableAutomaticClientPushInstallation $True `
@@ -30,8 +31,15 @@
       -AllownNTLMFallback $True `
       -EnableSystemTypeWorkstation $True `
       -InstallClientToDomainController $false `
-      -AddAccount $pushAccount `
       -InstallationProperty $property
+
+      # add the client push account (ignore if already added)
+      try {
+        Set-CMClientPushInstallation -SiteCode $siteCode -AddAccount $pushAccount
+      } catch {
+        if ($_.Exception.Message -notmatch "already") { throw }
+      }
+    error_action: stop
     parameters:
       siteCode: "{{site_code}}"
       sccmFQDN: "{{sccm_server}}.{{domain}}"

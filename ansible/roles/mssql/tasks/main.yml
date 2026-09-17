@@ -47,16 +47,36 @@
     src: files/sql_conf.ini.{{sql_version}}.j2
     dest: c:\setup\mssql\sql_conf.ini
 
+# MSSQL 2019 : SSEI bootstrapper (download + install)
 - name: check downloaded file exists
   win_stat:
     path: c:\setup\mssql\sql_installer.exe
   register: installer_file
+  when: sql_version != "MSSQL_2022"
 
 - name: get the installer
   win_get_url:
       url: "{{download_url}}"
       dest: 'c:\setup\mssql\sql_installer.exe'
-  when: not installer_file.stat.exists
+  when: sql_version != "MSSQL_2022" and not installer_file.stat.exists
+
+# MSSQL 2022 : the SSEI bootstrapper (SQL2022-SSEI-Eval.exe) hangs silently when launched from a WinRM session,
+# so the evaluation ISO is downloaded directly and setup.exe is run from the mounted image
+- name: check downloaded iso exists
+  win_stat:
+    path: c:\setup\mssql\SQLServer2022-x64-ENU.iso
+  register: iso_file
+  when: sql_version == "MSSQL_2022"
+
+- name: get the iso (~1.1GB)
+  win_get_url:
+      url: "{{download_url}}"
+      dest: 'c:\setup\mssql\SQLServer2022-x64-ENU.iso'
+  register: iso_download
+  until: iso_download is success
+  retries: 3
+  delay: 30
+  when: sql_version == "MSSQL_2022" and not iso_file.stat.exists
 
 - name: Add service account to Log on as a service
   win_user_right:
@@ -100,7 +120,30 @@
   until: "mssqlinstall is not failed"
   retries: 3
   delay: 120
-  when: mssql_install_already_done.state is not defined or mssql_install_already_done.name is not defined
+  when: sql_version != "MSSQL_2022" and (mssql_install_already_done.state is not defined or mssql_install_already_done.name is not defined)
+
+- name: Install the database from the iso (MSSQL 2022, ~20 minutes)
+  win_shell: |
+    $mount = Mount-DiskImage -ImagePath "c:\setup\mssql\SQLServer2022-x64-ENU.iso" -PassThru
+    $drive = ($mount | Get-Volume).DriveLetter
+    $p = Start-Process -FilePath "${drive}:\setup.exe" -ArgumentList "/CONFIGURATIONFILE=c:\setup\mssql\sql_conf.ini /IACCEPTSQLSERVERLICENSETERMS /QUIET /HIDECONSOLE" -Wait -PassThru -NoNewWindow
+    Dismount-DiskImage -ImagePath "c:\setup\mssql\SQLServer2022-x64-ENU.iso" | Out-Null
+    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+      Get-Content "C:\Program Files\Microsoft SQL Serverp\Setup Bootstrap\Log\Summary.txt" -ErrorAction SilentlyContinue | Select-Object -First 40
+    }
+    exit $p.ExitCode
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_admin}}"
+    ansible_become_password: "{{domain_admin_password}}"
+    ansible_become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  register: mssqlinstall_iso
+  failed_when: mssqlinstall_iso.rc not in [0, 3010]
+  until: "mssqlinstall_iso is not failed"
+  retries: 2
+  delay: 120
+  when: sql_version == "MSSQL_2022" and (mssql_install_already_done.state is not defined or mssql_install_already_done.name is not defined)
 #  when: not mssql_install_already_done.stat.exists
 
 # sql server 2022
