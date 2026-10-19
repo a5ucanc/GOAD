@@ -1,0 +1,129 @@
+# Install the System Center DPM 2022 server, unattended
+# https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022#run-an-unattended-install
+# --------------------------------------------------------------
+
+- name: create directory to store the install files
+  ansible.windows.win_file:
+    path: "{{ dpm_setup_path }}"
+    state: directory
+
+# Already installed ? the MSDPM service is created by the DPM setup
+- name: check if the DPM server is already installed
+  ansible.windows.win_service_info:
+    name: MSDPM
+  register: msdpm_service
+
+- name: set fact dpm_installed
+  set_fact:
+    dpm_installed: "{{ msdpm_service.exists }}"
+
+# Download and extract the installation media
+# --------------------------------------------------------------
+- name: DPM installation media exists
+  win_stat:
+    path: "{{ dpm_setup_path }}\\{{ dpm_installer_file }}"
+  register: dpm_installer_file_stat
+  when: not dpm_installed
+
+- name: download the DPM 2022 evaluation media (~3GB)
+  ansible.windows.win_get_url:
+    url: "{{ dpm_installer_url }}"
+    dest: "{{ dpm_setup_path }}\\{{ dpm_installer_file }}"
+  register: dpm_download
+  until: dpm_download is success
+  retries: 3
+  delay: 30
+  when: not dpm_installed and not dpm_installer_file_stat.stat.exists
+
+- name: check extracted media (Setup.exe)
+  win_stat:
+    path: "{{ dpm_extract_path }}\\Setup.exe"
+  register: dpm_setup_file
+  when: not dpm_installed
+
+# The DPM download is an InnoSetup-style self-extractor. Extract it silently to dpm_extract_path.
+# Bounded with async so a prompt (should it ignore the silent switches) cannot hang the play forever.
+- name: extract the DPM installation media
+  win_shell: |
+    $p = Start-Process -FilePath "{{ dpm_setup_path }}\{{ dpm_installer_file }}" `
+      -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOCANCEL','/DIR="{{ dpm_extract_path }}"' `
+      -Wait -PassThru
+    exit $p.ExitCode
+  args:
+    chdir: "{{ dpm_setup_path }}"
+  async: 900
+  poll: 15
+  register: dpm_extract
+  failed_when: false
+  when: not dpm_installed and not dpm_setup_file.stat.exists
+
+- name: check extracted media again
+  win_stat:
+    path: "{{ dpm_extract_path }}\\Setup.exe"
+  register: dpm_setup_file
+  when: not dpm_installed
+
+- name: fail if the media was not extracted
+  fail:
+    msg: >-
+      Setup.exe was not found in {{ dpm_extract_path }}. The DPM self-extractor did not unpack silently.
+      Extract '{{ dpm_setup_path }}\{{ dpm_installer_file }}' manually into {{ dpm_extract_path }} on the DPM
+      host (so that {{ dpm_extract_path }}\Setup.exe exists), then rerun : provision dpm-install.yml
+  when: not dpm_installed and not dpm_setup_file.stat.exists
+
+# Unattended answer file
+# --------------------------------------------------------------
+- name: write the DPMSetup.ini answer file
+  ansible.windows.win_template:
+    src: DPMSetup.ini.j2
+    dest: "{{ dpm_setup_path }}\\DPMSetup.ini"
+  when: not dpm_installed
+
+# Setup fails its prerequisite check if a restart is pending
+- name: reboot before the DPM installation to clear any pending restart
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+  when: not dpm_installed
+
+# Install DPM (unattended). This takes a long time (~30-60 minutes).
+# https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022#run-an-unattended-install
+- name: install the DPM server (this takes a while ~ 30-60 minutes)
+  win_shell: ".\\Setup.exe /i /f \"{{ dpm_setup_path }}\\DPMSetup.ini\" /l \"{{ dpm_setup_path }}\\dpmlog.txt\""
+  args:
+    chdir: "{{ dpm_extract_path }}"
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{ domain_username }}"
+    ansible_become_password: "{{ domain_password }}"
+  async: 7200
+  poll: 60
+  register: dpm_setup
+  failed_when: false
+  when: not dpm_installed
+
+# The setup exit code is not reliable - verify on the MSDPM service like the official docs do on their services
+- name: check the DPM server installation
+  ansible.windows.win_service_info:
+    name: MSDPM
+  register: msdpm_check
+
+- name: get the last lines of the DPM setup log on failure
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $Ansible.Result = @(Get-Content -Path "{{ dpm_setup_path }}\dpmlog.txt" -ErrorAction SilentlyContinue | Select-Object -Last 40)
+  register: dpm_log_tail
+  when: not msdpm_check.exists
+
+- name: fail if the DPM installation failed
+  fail:
+    msg: >-
+      DPM setup failed, the MSDPM service was not created. Last lines of {{ dpm_setup_path }}\dpmlog.txt :
+      {{ dpm_log_tail.result | default([]) | join('\n') }}
+  when: not msdpm_check.exists
+
+- name: DPM server installation confirmed (MSDPM service present)
+  debug:
+    msg: "DPM 2022 server installed on {{ inventory_hostname }} (MSDPM service state: {{ msdpm_check.state | default('unknown') }})"

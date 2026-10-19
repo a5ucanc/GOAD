@@ -1,0 +1,71 @@
+# Install the DPM protection agent on a domain-joined production server (manual install + server name)
+# https://learn.microsoft.com/system-center/dpm/deploy-dpm-protection-agent?view=sc-dpm-2022#install-the-agent-manually
+# --------------------------------------------------------------
+
+- name: check if the DPM protection agent is already installed
+  ansible.windows.win_service_info:
+    name: DPMRA
+  register: dpmra_service
+
+- name: set fact agent_installed
+  set_fact:
+    agent_installed: "{{ dpmra_service.exists }}"
+
+- name: create directory to store the install files
+  ansible.windows.win_file:
+    path: C:\setup\dpm
+    state: directory
+  when: not agent_installed
+
+# The agent installer ships with the DPM server, under its ProtectionAgents folder. Copy it across
+# from the DPM server administrative share using domain-admin network credentials.
+- name: copy the DPM agent installer from the DPM server
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $roots = @(
+        "\\{{ dpm_server_name }}\c$\Program Files\Microsoft DPM\DPM\ProtectionAgents\RA",
+        "\\{{ dpm_server_name }}\c$\Program Files\Microsoft System Center\DPM\DPM\ProtectionAgents\RA"
+      )
+      $base = $roots | Where-Object { Test-Path $_ } | Select-Object -First 1
+      if (-not $base) { throw "ProtectionAgents\RA folder not found on \\{{ dpm_server_name }} - is the DPM server installed ?" }
+      $ver = Get-ChildItem $base -Directory | Sort-Object Name -Descending | Select-Object -First 1
+      $exe = Join-Path $ver.FullName "amd64\DPMAgentInstaller_x64.exe"
+      if (-not (Test-Path $exe)) { throw "DPMAgentInstaller_x64.exe not found under $($ver.FullName)" }
+      Copy-Item -Path $exe -Destination "C:\setup\dpm\DPMAgentInstaller_x64.exe" -Force
+      $Ansible.Changed = $true
+      $Ansible.Result = @{ source = $exe }
+  become: yes
+  become_method: runas
+  become_user: "{{ domain_username }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ domain_password }}"
+  register: agent_copy
+  when: not agent_installed
+
+# Passing the DPM server FQDN installs the agent *and* configures the trust/firewall with that server.
+- name: install the DPM protection agent (silent, trust the DPM server)
+  win_shell: ".\\DPMAgentInstaller_x64.exe /q {{ dpm_server_fqdn }} /IAcceptEULA"
+  args:
+    chdir: C:\setup\dpm
+  register: agent_install
+  failed_when: agent_install.rc is defined and agent_install.rc not in [0, 3010]
+  when: not agent_installed
+
+# A restart is required to load the volume filter DPM uses to track block-level changes
+- name: reboot after the agent installation
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+  when: not agent_installed
+
+- name: verify the DPM protection agent service
+  ansible.windows.win_service_info:
+    name: DPMRA
+  register: dpmra_check
+  failed_when: not dpmra_check.exists
+
+- name: DPM protection agent installation confirmed
+  debug:
+    msg: "DPM agent installed on {{ inventory_hostname }}, trusting DPM server {{ dpm_server_fqdn }} (DPMRA service present)"

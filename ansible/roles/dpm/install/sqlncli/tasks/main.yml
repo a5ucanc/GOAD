@@ -1,0 +1,43 @@
+# Install the SQL Server Native Client (SQLNCLI) - required by DPM 2022 RTM when the database runs on SQL 2022
+# --------------------------------------------------------------
+
+- name: create directory to store the install files
+  ansible.windows.win_file:
+    path: "{{ sqlncli_setup_path }}"
+    state: directory
+
+- name: check if the SQL Server Native Client is already installed
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\SQLNCLI11\CurrentVersion
+    name: Version
+  register: sqlncli_installed
+
+- name: check SQLNCLI installer exists
+  win_stat:
+    path: "{{ sqlncli_setup_path }}\\{{ sqlncli_file }}"
+  register: sqlncli_file_stat
+  when: not sqlncli_installed.exists
+
+- name: download the SQL Server Native Client
+  ansible.windows.win_get_url:
+    url: "{{ sqlncli_url }}"
+    dest: "{{ sqlncli_setup_path }}\\{{ sqlncli_file }}"
+  register: sqlncli_download
+  until: sqlncli_download is success
+  retries: 3
+  delay: 10
+  when: not sqlncli_installed.exists and not sqlncli_file_stat.stat.exists
+
+- name: install the SQL Server Native Client
+  ansible.windows.win_package:
+    path: "{{ sqlncli_setup_path }}\\{{ sqlncli_file }}"
+    arguments: "IACCEPTSQLNCLILICENSETERMS=YES /qn"
+    state: present
+  register: sqlncli_install
+  # 1638 = a newer version is already installed
+  failed_when: sqlncli_install.rc is defined and sqlncli_install.rc not in [0, 1638, 3010]
+  when: not sqlncli_installed.exists
+
+- name: reboot after SQLNCLI install if required
+  ansible.windows.win_reboot:
+  when: sqlncli_install.reboot_required is defined and sqlncli_install.reboot_required

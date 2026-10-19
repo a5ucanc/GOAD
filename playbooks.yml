@@ -45,6 +45,29 @@ SCCM:
   # replay client install fix some issue in enrollment for CLIENT
   - sccm-client.yml
 
+DPM:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  - ad-members.yml
+  - ad-data.yml
+  - ad-relations.yml
+  - ad-acl.yml
+  # installs SQL Server 2022 + Reporting Services + SSMS on the DPM host
+  - servers.yml
+  - security.yml
+  - vulnerabilities.yml
+  # install the DPM 2022 server (SQLNCLI + unattended DPM setup, ~1h)
+  - dpm-install.yml
+  # let the install settle, then reboot before configuring
+  - wait5m.yml
+  - reboot.yml
+  - wait5m.yml
+  # install the protection agent on the protected server (establishes the DPM trust)
+  - dpm-agent.yml
+  # attach the protected server + best-effort storage and protection group
+  - dpm-config.yml
+
 GOAD-Mini:
   - build.yml
   - ad-servers.yml

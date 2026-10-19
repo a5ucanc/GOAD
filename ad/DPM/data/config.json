@@ -1,0 +1,164 @@
+{
+"lab" : {
+    "hosts" : {
+        "dc01" : {
+            "hostname" : "DC",
+            "type" : "dc",
+            "local_admin_password": "DPMl@b_DC_2024!",
+            "domain" : "dpm.lab",
+            "path" : "DC=dpm,DC=lab",
+            "local_groups" : {
+                "Administrators" : [
+                    "DPMLAB\\Domain Admins"
+                ],
+                "Remote Desktop Users" : [
+                    "DPMLAB\\LocalAdmins"
+                ]
+            },
+            "scripts" : [],
+            "vulns" : ["disable_firewall"]
+        },
+        "srv01" : {
+            "hostname" : "DPM",
+            "type" : "server",
+            "local_admin_password": "DPMl@b_SRV_2024!",
+            "domain" : "dpm.lab",
+            "path" : "DC=dpm,DC=lab",
+            "local_groups" : {
+                "Administrators" : [
+                    "DPMLAB\\DPM-Admins"
+                ],
+                "Remote Desktop Users" : [
+                    "DPMLAB\\DPM-Admins",
+                    "DPMLAB\\RDPUsers"
+                ]
+            },
+            "scripts" : [],
+            "vulns" : ["disable_firewall"],
+            "mssql":{
+                "sa_password": "Dpm_sa_P@ssw0rd!",
+                "svcaccount" : "dpm-sql",
+                "sysadmins" : [
+                    "DPMLAB\\administrator",
+                    "DPMLAB\\dpm-sql",
+                    "DPMLAB\\DPM-Admins"
+                ]
+            }
+        },
+        "srv02" : {
+            "hostname" : "PROTECTED",
+            "type" : "server",
+            "local_admin_password": "DPMl@b_PRT_2024!",
+            "domain" : "dpm.lab",
+            "path" : "DC=dpm,DC=lab",
+            "local_groups" : {
+                "Administrators" : [
+                    "DPMLAB\\LocalAdmins"
+                ],
+                "Remote Desktop Users" : [
+                    "DPMLAB\\RDPUsers"
+                ]
+            },
+            "scripts" : [],
+            "vulns" : ["disable_firewall", "shares", "files"],
+            "vulns_vars" : {
+                "shares" : {
+                    "Finance" : {
+                        "path" : "C:\\Shares\\Finance",
+                        "description" : "Finance department files (protected by DPM backup)",
+                        "list" : "yes",
+                        "read" : "DPMLAB\\RDPUsers"
+                    }
+                },
+                "files" : {
+                    "backup_creds" : {
+                        "src" : "backup_credentials.txt",
+                        "dest" : "C:\\Shares\\Finance\\backup_credentials.txt"
+                    },
+                    "flag" : {
+                        "src" : "flag.txt",
+                        "dest" : "C:\\Shares\\Finance\\flag.txt"
+                    }
+                }
+            }
+        }
+    },
+    "domains" : {
+        "dpm.lab" : {
+            "dc": "dc01",
+            "domain_password" : "DPMl@b_DC_2024!",
+            "netbios_name": "DPMLAB",
+            "laps_path": "OU=Laps,DC=dpm,DC=lab",
+            "organisation_units" : {},
+            "groups" : {
+                "universal" : {},
+                "global" : {
+                    "LocalAdmins" : {
+                        "managed_by" : "bob",
+                        "path" : "CN=Users,DC=dpm,DC=lab"
+                    },
+                    "RDPUsers" : {
+                        "managed_by" : "bob",
+                        "path" : "CN=Users,DC=dpm,DC=lab"
+                    },
+                    "DPM-Admins" : {
+                        "managed_by" : "alice",
+                        "path" : "CN=Users,DC=dpm,DC=lab",
+                        "members" : ["DPMLAB\\carlos"]
+                    }
+                },
+                "domainlocal" : {}
+            },
+            "multi_domain_groups_member" : {},
+            "acls" : {},
+            "users" : {
+                "alice" : {
+                    "firstname"   : "alice",
+                    "surname"     : "-",
+                    "password"    : "whiteRabbit",
+                    "city"        : "-",
+                    "description" : "alice - domain admin",
+                    "groups"      : ["Domain Admins"],
+                    "path"        : "CN=Users,DC=dpm,DC=lab"
+                },
+                "bob" : {
+                    "firstname"   : "bob",
+                    "surname"     : "-",
+                    "password"    : "marley",
+                    "city"        : "-",
+                    "description" : "bob - helpdesk, manages groups",
+                    "groups"      : ["LocalAdmins"],
+                    "path"        : "CN=Users,DC=dpm,DC=lab"
+                },
+                "carlos" : {
+                    "firstname"   : "carlos",
+                    "surname"     : "-",
+                    "password"    : "Summer2024",
+                    "city"        : "-",
+                    "description" : "carlos - backup operator, local admin on the DPM server",
+                    "groups"      : ["DPM-Admins", "RDPUsers"],
+                    "path"        : "CN=Users,DC=dpm,DC=lab"
+                },
+                "dave" : {
+                    "firstname"   : "dave",
+                    "surname"     : "-",
+                    "password"    : "dragon",
+                    "city"        : "-",
+                    "description" : "dave - low priv user",
+                    "groups"      : ["RDPUsers"],
+                    "path"        : "CN=Users,DC=dpm,DC=lab"
+                },
+                "dpm-sql" : {
+                    "firstname"   : "dpm",
+                    "surname"     : "sql",
+                    "password"    : "Dpm_SQL_SvcAcc0unt!",
+                    "city"        : "-",
+                    "description" : "sql service account for the DPM database",
+                    "groups"      : [],
+                    "path"        : "CN=Users,DC=dpm,DC=lab",
+                    "spns"        : ["MSSQLSvc/DPM.dpm.lab:1433","MSSQLSvc/DPM.dpm.lab"]
+                }
+            }
+        }
+    }
+}}

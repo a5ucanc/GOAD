@@ -1,0 +1,14 @@
+# System Center Data Protection Manager 2022 - evaluation media (180 days, no product key required)
+# https://www.microsoft.com/en-us/evalcenter/download-system-center-2022
+# This fwlink resolves to the DPM 2022 self-extracting evaluation installer (SC_DPM_2022.exe style).
+# Microsoft eval links rot - if the download step fails, grab the current link from the eval center
+# page above (or drop the installer manually in {{ dpm_setup_path }}\{{ dpm_installer_file }}).
+dpm_installer_url: "https://go.microsoft.com/fwlink/p/?LinkID=2195847&clcid=0x409&culture=en-us&country=US"
+dpm_installer_file: "SC_DPM_2022.exe"
+
+dpm_setup_path: 'C:\setup\dpm'
+# The self-extractor unpacks the installation media (Setup.exe + DPM\ folder) here
+dpm_extract_path: 'C:\setup\dpm\media'
+
+# Company name written to the unattended answer file (cosmetic)
+dpm_company_name: 'GOAD'

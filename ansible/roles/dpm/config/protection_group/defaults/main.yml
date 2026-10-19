@@ -1,0 +1,12 @@
+# DPM protection group settings
+dpm_pg_name: "GOAD-Finance-Backup"
+# Data source on the protected server to back up. The Finance folder holds the lab's sensitive data.
+dpm_protected_datasource: "C:\\Shares\\Finance"
+# Fallback datasource if the folder is not offered as a standalone data source
+dpm_protected_datasource_fallback: "C:\\"
+dpm_retention_days: 5
+dpm_sync_frequency_minutes: 480
+
+# Best-effort Modern Backup Storage volume backed by a VHDX on the system disk (lab only).
+dpm_storage_vhdx_path: "C:\\DPMStorage\\dpm_pool.vhdx"
+dpm_storage_vhdx_size_gb: 40

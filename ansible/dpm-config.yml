@@ -1,0 +1,31 @@
+---
+# Configure DPM : attach the protected server, add backup storage and create a protection group that
+# backs up the protected server's data.
+# https://learn.microsoft.com/azure/backup/backup-dpm-automation (DPM PowerShell cmdlets)
+# https://learn.microsoft.com/system-center/dpm/add-storage?view=sc-dpm-2022 (Modern Backup Storage)
+#
+# NOTE : this playbook is best-effort. The lab's graded attack path (control the DPM machine account ->
+# command the agent running as SYSTEM on the protected server) is already established by dpm-agent.yml.
+# A fully working backup additionally needs a Modern Backup Storage volume in the DPM pool; adding an MBS
+# volume has no supported PowerShell cmdlet (it is a DPM console action), so if no storage is present the
+# protection-group step is skipped with a warning instead of failing the deploy.
+# --------------------------------------------------------------
+
+# Load datas
+- import_playbook: data.yml
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Configure DPM protection"
+  hosts: dpm
+  roles:
+    - { role: 'dpm/config/protection_group', tags: 'dpm_config'}
+  vars:
+    domain: "{{lab.hosts[dict_key].domain}}"
+    domain_username: "{{domain}}\\{{admin_user}}"
+    domain_password: "{{lab.domains[domain].domain_password}}"
+    dpm_server_name: "{{ lab.hosts[dict_key].hostname }}"
+    protected_host: "{{ groups['dpm_agent'][0] }}"
+    protected_server_name: "{{ lab.hosts[protected_host].hostname }}"
+    protected_server_fqdn: "{{ protected_server_name }}.{{ lab.hosts[protected_host].domain }}"

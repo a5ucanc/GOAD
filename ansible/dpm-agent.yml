@@ -1,0 +1,28 @@
+---
+# Install the DPM protection agent on the protected server.
+# https://learn.microsoft.com/system-center/dpm/deploy-dpm-protection-agent?view=sc-dpm-2022
+#
+# Installing the agent with the DPM server name as argument auto-configures the trust (DPMRA service,
+# security accounts, DCOM and firewall exceptions) that lets the DPM server drive the agent. That trust
+# is the built-in lateral-movement path of the lab: whoever controls the DPM machine account can command
+# the agent, which runs as SYSTEM on the protected server.
+# --------------------------------------------------------------
+
+# Load datas
+- import_playbook: data.yml
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Install the DPM protection agent"
+  hosts: dpm_agent
+  roles:
+    - { role: 'dpm/agent', tags: 'dpm_agent'}
+  vars:
+    domain: "{{lab.hosts[dict_key].domain}}"
+    domain_username: "{{domain}}\\{{admin_user}}"
+    domain_password: "{{lab.domains[domain].domain_password}}"
+    dpm_server_host: "{{ groups['dpm'][0] }}"
+    dpm_server_name: "{{ lab.hosts[dpm_server_host].hostname }}"
+    dpm_server_domain: "{{ lab.hosts[dpm_server_host].domain }}"
+    dpm_server_fqdn: "{{ dpm_server_name }}.{{ dpm_server_domain }}"

@@ -1,0 +1,9 @@
+# SQL Server 2012 Native Client (SQLNCLI) x64
+# DPM 2022 RTM setup requires SQLNCLI, but SQL Server 2022 does NOT ship it, so it must be installed
+# separately on the SQL Server machine (here: the DPM host, local SQL).
+# https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022#set-up-a-sql-server-database
+# Download: "Microsoft SQL Server 2012 SP4 Feature Pack" (id=50402), ENU/x64/sqlncli.msi
+# This Microsoft download link rots periodically - update it here if the download step fails.
+sqlncli_url: "https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x64/sqlncli.msi"
+sqlncli_file: "sqlncli.msi"
+sqlncli_setup_path: 'C:\setup\dpm'

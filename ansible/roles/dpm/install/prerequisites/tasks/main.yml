@@ -1,0 +1,29 @@
+# DPM 2022 server prerequisites
+# DPM setup auto-installs most components (Visual C++ redistributables, Windows Installer, etc).
+# The .NET Framework 3.5 feature is installed up-front because it is sometimes required by the
+# SQL tooling and the DPM setup does not always pull it in on Windows Server Core-less images.
+# https://learn.microsoft.com/system-center/dpm/prepare-environment-for-dpm?view=sc-dpm-2022#dpm-server
+# --------------------------------------------------------------
+
+- name: create directory to store the install files
+  ansible.windows.win_file:
+    path: C:\setup\dpm
+    state: directory
+
+- name: install the .NET Framework 3.5 feature (best effort, DPM/SQL tooling)
+  ansible.windows.win_feature:
+    name: NET-Framework-Core
+    state: present
+  register: net35_feature
+  ignore_errors: true
+
+- name: install Single Instance Store (SIS-Limited) component used by DPM
+  ansible.windows.win_feature:
+    name: FS-SyncShareService
+    state: present
+  ignore_errors: true
+
+- name: reboot if a feature installation requires it
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+  when: net35_feature is changed and net35_feature is succeeded

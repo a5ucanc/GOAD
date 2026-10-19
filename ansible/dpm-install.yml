@@ -1,0 +1,50 @@
+---
+# Install the System Center Data Protection Manager (DPM) 2022 server (unattended)
+# https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022
+#
+# SQL Server 2022 (engine + Reporting Services + SSMS) is installed on the DPM host by servers.yml
+# *before* this playbook runs (the DPM host is in the [mssql], [mssql_reporting] and [mssql_ssms] groups).
+# This playbook adds the DPM specific prerequisites (SQL Server Native Client) and the DPM server itself.
+# --------------------------------------------------------------
+
+# Load datas
+- import_playbook: data.yml
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+# The account running the DPM setup (admin_user) must be sysadmin on the SQL instance that hosts the DPM database.
+# The mssql role already adds the configured sysadmins, this is a safety net in case admin_user differs.
+- name: "Grant the DPM setup account sysadmin on the local SQL instance"
+  hosts: dpm
+  tasks:
+    - name: Add the setup account as MSSQL sysadmin
+      win_shell: |
+        SqlCmd -S 127.0.0.1,1433 -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '{{domain_username}}') CREATE LOGIN [{{domain_username}}] FROM WINDOWS"
+        SqlCmd -S 127.0.0.1,1433 -Q "IF IS_SRVROLEMEMBER('sysadmin', '{{domain_username}}') = 0 EXEC sp_addsrvrolemember '{{domain_username}}', 'sysadmin'"
+      become: yes
+      become_method: runas
+      become_user: "{{SQLSVCACCOUNT}}"
+      vars:
+        ansible_become_pass: "{{SQLSVCPASSWORD}}"
+  vars:
+    domain: "{{lab.hosts[dict_key].domain}}"
+    domain_username: "{{domain}}\\{{admin_user}}"
+    SQLSVCACCOUNT_NAME: "{{lab.hosts[dict_key].mssql.svcaccount | default('NT AUTHORITY\\NETWORK SERVICE')}}"
+    SQLSVCACCOUNT_NAMEDOMAIN: "{{domain}}\\{{SQLSVCACCOUNT_NAME}}"
+    SQLSVCACCOUNT: "{{SQLSVCACCOUNT_NAME if SQLSVCACCOUNT_NAME == 'NT AUTHORITY\\NETWORK SERVICE' else SQLSVCACCOUNT_NAMEDOMAIN }}"
+    SQLSVCPASSWORD: "{{lab.domains[domain].users[SQLSVCACCOUNT_NAME].password | default('')}}"
+
+- name: "Install the DPM server"
+  hosts: dpm
+  roles:
+    - { role: 'dpm/install/prerequisites', tags: 'dpm_prerequisites'}
+    - { role: 'dpm/install/sqlncli', tags: 'dpm_sqlncli'}
+    - { role: 'dpm/install/dpm', tags: 'dpm_server'}
+  vars:
+    domain: "{{lab.hosts[dict_key].domain}}"
+    domain_username: "{{domain}}\\{{admin_user}}"
+    domain_password: "{{lab.domains[domain].domain_password}}"
+    dpm_sql_instance: "{{sql_instance_name | default('MSSQLSERVER')}}"
+    # NetBIOS name of the (local) SQL machine, written to DPMSetup.ini
+    dpm_sql_machine: "{{lab.hosts[dict_key].hostname}}"

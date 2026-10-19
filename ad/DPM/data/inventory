@@ -1,0 +1,140 @@
+[all:vars]
+; DPM lab variables
+sql_instance_name=MSSQLSERVER
+sql_version=MSSQL_2022
+
+; administrator user
+admin_user=administrator
+
+; domain_name : folder inside ad/
+domain_name=DPM
+
+force_dns_server=no
+dns_server=x.x.x.x
+two_adapters=yes
+
+;dns server forwarder
+dns_server_forwarder=1.1.1.1
+
+; winrm connection (windows)
+ansible_user=vagrant
+ansible_password=vagrant
+ansible_connection=winrm
+ansible_winrm_server_cert_validation=ignore
+ansible_winrm_operation_timeout_sec=400
+ansible_winrm_read_timeout_sec=500
+# ansible_winrm_transport=basic
+# ansible_port=5985
+
+; proxy settings (the lab need internet for some install, if you are behind a proxy you should set the proxy here)
+enable_http_proxy=no
+ad_http_proxy=http://x.x.x.x:xxxx
+ad_https_proxy=http://x.x.x.x:xxxx
+
+; LAB SCENARIO CONFIGURATION -----------------------------
+
+; computers inside domain (mandatory)
+; usage : build.yml, ad-relations.yml, ad-servers.yml, vulnerabilities.yml
+[domain]
+dc01
+srv01
+srv02
+
+; domain controler (mandatory)
+; usage : ad-acl.yml, ad-data.yml, ad-relations.yml, laps.yml
+[dc]
+dc01
+
+; domain server to enroll (mandatory if you want servers)
+; usage : ad-data.yml, ad-servers.yml, laps.yml
+[server]
+srv01
+srv02
+
+; workstation to enroll (mandatory if you want workstation)
+; usage : ad-servers.yml, laps.yml
+[workstation]
+
+; parent domain controler (mandatory)
+; usage : ad-servers.yml
+[parent_dc]
+dc01
+
+; child domain controler (need a fqdn child_name.parent_name)
+; usage : ad-servers.yml
+[child_dc]
+
+; external trust, need domain trust entry in config (bidirectionnal)
+; usage : ad-trusts.yml
+[trust]
+
+; install adcs
+; usage : adcs.yml
+[adcs]
+
+; install custom template (dc)
+; usage : adcs.yml
+[adcs_customtemplates]
+
+; install iis with default website asp upload on 80
+; usage : servers.yml
+[iis]
+
+; install mssql (the DPM database lives on the DPM server)
+; usage : servers.yml
+[mssql]
+srv01
+; install mssql gui
+; usage : servers.yml
+[mssql_ssms]
+srv01
+; install mssql reporting services (required by DPM)
+[mssql_reporting]
+srv01
+
+; install webdav
+[webdav]
+
+; install the System Center DPM server
+; usage : dpm-install.yml, dpm-config.yml
+[dpm]
+srv01
+
+; install the DPM protection agent (the protected server)
+; usage : dpm-agent.yml, dpm-config.yml
+[dpm_agent]
+srv02
+
+; install elk
+; usage : elk.yml
+[elk_server]
+
+; add log agent for elk
+; usage : elk.yml
+[elk_log]
+
+[laps_dc]
+[laps_server]
+[laps_workstation]
+
+; allow computer update
+; usage : update.yml
+[update]
+
+; disable update (DPM + SQL installs are long, keep Windows Update out of the way)
+; usage : update.yml
+[no_update]
+dc01
+srv01
+srv02
+
+; allow defender
+; usage : security.yml
+[defender_on]
+
+; disable defender (avoid interference with the SQL / DPM installers)
+; usage : security.yml
+[defender_off]
+dc01
+srv01
+srv02

@@ -1,0 +1,126 @@
+# Attach the protected server, provision Modern Backup Storage (best-effort) and create a protection group.
+# All steps are best-effort : the lab's attack path does not depend on a completed backup.
+# --------------------------------------------------------------
+
+# Attach the already-installed agent to DPM so the DPM server manages the protected server
+# https://learn.microsoft.com/system-center/dpm/deploy-dpm-protection-agent?view=sc-dpm-2022#attach-the-agent
+- name: attach the protected server to DPM
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $roots = @(
+        "C:\Program Files\Microsoft System Center\DPM\DPM\bin",
+        "C:\Program Files\Microsoft DPM\DPM\bin"
+      )
+      $bin = $roots | Where-Object { Test-Path (Join-Path $_ "Attach-ProductionServer.ps1") } | Select-Object -First 1
+      if (-not $bin) { throw "Attach-ProductionServer.ps1 not found - DPM server not installed ?" }
+      & (Join-Path $bin "Attach-ProductionServer.ps1") `
+        -DPMServername "{{ dpm_server_name }}" `
+        -PSName "{{ protected_server_fqdn }}" `
+        -Username "{{ admin_user }}" `
+        -Password "{{ domain_password }}" `
+        -Domain "{{ lab.domains[domain].netbios_name }}"
+      $Ansible.Changed = $true
+  become: yes
+  become_method: runas
+  become_user: "{{ domain_username }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ domain_password }}"
+  register: dpm_attach
+  ignore_errors: true
+
+- name: warn if the attach step failed
+  debug:
+    msg: "WARNING: attaching {{ protected_server_fqdn }} to DPM failed ({{ dpm_attach.error | default('') }}). Attach it from the DPM console (Management > Production Servers > Add)."
+  when: dpm_attach is failed
+
+# Best-effort Modern Backup Storage : a VHDX-backed ReFS volume for the DPM pool (lab only).
+- name: create a Modern Backup Storage volume (best-effort)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $vhdx = "{{ dpm_storage_vhdx_path }}"
+      New-Item -ItemType Directory -Force -Path (Split-Path $vhdx) | Out-Null
+      if (-not (Test-Path $vhdx)) {
+        $disk = New-VHD -Path $vhdx -SizeBytes {{ dpm_storage_vhdx_size_gb }}GB -Dynamic |
+          Mount-VHD -Passthru | Initialize-Disk -PartitionStyle GPT -Passthru
+        $part = $disk | New-Partition -UseMaximumSize
+        $part | Format-Volume -FileSystem ReFS -NewFileSystemLabel "DPMStorage" -Confirm:$false | Out-Null
+        $Ansible.Changed = $true
+      } else {
+        Get-VHD $vhdx | Where-Object { -not $_.Attached } | Mount-VHD -ErrorAction SilentlyContinue
+      }
+      $Ansible.Result = @{ vhdx = $vhdx }
+  become: yes
+  become_method: runas
+  become_user: "{{ domain_username }}"
+  vars:
+    ansible_become_password: "{{ domain_password }}"
+  register: dpm_storage
+  ignore_errors: true
+
+- name: warn if the storage volume could not be created
+  debug:
+    msg: "WARNING: could not create a backup-storage volume ({{ dpm_storage.error | default('') }}). Add a volume to the DPM pool from the console before creating a protection group."
+  when: dpm_storage is failed
+
+# Create the protection group only if DPM already has usable storage (added here or in the console).
+- name: create the protection group and start the initial backup (best-effort)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      Import-Module DataProtectionManager -ErrorAction Stop
+      $dpm = "{{ dpm_server_name }}"
+
+      # Make DPM pick up any newly presented volume, then verify storage exists
+      try { Start-DPMDiskRescan -DPMServerName $dpm -ErrorAction SilentlyContinue } catch {}
+      $storage = @(Get-DPMDiskStorage -DPMServerName $dpm -Volumes -ErrorAction SilentlyContinue)
+      if ($storage.Count -eq 0) {
+        $Ansible.Result = @{ status = "skipped"; reason = "no DPM storage volume present" }
+        return
+      }
+
+      # Skip if the protection group already exists
+      if (Get-DPMProtectionGroup -DPMServerName $dpm | Where-Object { $_.FriendlyName -eq "{{ dpm_pg_name }}" }) {
+        $Ansible.Result = @{ status = "exists" }
+        return
+      }
+
+      $server = Get-DPMProductionServer -DPMServerName $dpm | Where-Object { $_.ServerName -like "{{ protected_server_name }}*" } | Select-Object -First 1
+      if (-not $server) { throw "protected server {{ protected_server_name }} not managed by DPM (attach it first)" }
+
+      $ds = Get-DPMDatasource -ProductionServer $server -Inquire |
+        Where-Object { $_.Name -eq "{{ dpm_protected_datasource }}" } | Select-Object -First 1
+      if (-not $ds) {
+        $ds = Get-DPMDatasource -ProductionServer $server -Inquire |
+          Where-Object { $_.Name -eq "{{ dpm_protected_datasource_fallback }}" } | Select-Object -First 1
+      }
+      if (-not $ds) { throw "no datasource matching {{ dpm_protected_datasource }} on {{ protected_server_name }}" }
+
+      $pg  = New-DPMProtectionGroup -DPMServerName $dpm -Name "{{ dpm_pg_name }}"
+      $mpg = Get-DPMModifiableProtectionGroup $pg
+      Add-DPMChildDatasource -ProtectionGroup $mpg -ChildDatasource $ds
+      Set-DPMProtectionType -ProtectionGroup $mpg -ShortTerm Disk
+      Set-DPMPolicyObjective -ProtectionGroup $mpg -RetentionRangeInDays {{ dpm_retention_days }} -SynchronizationFrequencyMinutes {{ dpm_sync_frequency_minutes }}
+      Set-DPMReplicaCreationMethod -ProtectionGroup $mpg -NOW
+      Set-DPMProtectionGroup -ProtectionGroup $mpg
+      $Ansible.Changed = $true
+      $Ansible.Result = @{ status = "created"; protectiongroup = "{{ dpm_pg_name }}"; datasource = $ds.Name }
+  become: yes
+  become_method: runas
+  become_user: "{{ domain_username }}"
+  vars:
+    ansible_become_password: "{{ domain_password }}"
+  register: dpm_pg
+  ignore_errors: true
+
+- name: report the protection-group result
+  debug:
+    msg: >-
+      DPM protection group : {{ (dpm_pg.result | default({})).status | default('failed') }}
+      {{ '(' ~ (dpm_pg.error | default('')) ~ ')' if dpm_pg is failed else '' }}.
+      The lab attack path (agent trust) is independent of this step.
