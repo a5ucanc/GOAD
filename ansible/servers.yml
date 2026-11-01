@@ -23,6 +23,11 @@
     SQLSVCACCOUNT: "{{SQLSVCACCOUNT_NAME if SQLSVCACCOUNT_NAME == 'NT AUTHORITY\\NETWORK SERVICE' else SQLSVCACCOUNT_NAMEDOMAIN }}"
     SQLSVCPASSWORD: "{{lab.domains[domain].users[SQLSVCACCOUNT_NAME].password| default('')}}"
     SQLYSADMIN: "{{SQLSVCACCOUNT}}"
+    # opt-in (mssql.agent_use_svcaccount) : run SQL Server Agent under the SQL service account too, in NetBIOS form
+    # (DPM uses the agent account as SQL job owner, and sp_verify_job rejects the dpm.lab\user form)
+    AGTSVCACCOUNT_NETBIOS: "{{lab.domains[domain].netbios_name | default(domain)}}\\{{SQLSVCACCOUNT_NAME}}"
+    AGTSVCACCOUNT: "{{ AGTSVCACCOUNT_NETBIOS if lab.hosts[dict_key].mssql.agent_use_svcaccount | default(false) else '' }}"
+    AGTSVCPASSWORD: "{{ SQLSVCPASSWORD }}"
     domain_admin: "{{domain}}\\{{admin_user}}"
     domain_admin_password: "{{lab.domains[domain].domain_password}}"
     sql_sysadmins: "{{lab.hosts[dict_key].mssql.sysadmins | default([]) }}"

@@ -1,88 +1,97 @@
-# Attach the protected server, provision Modern Backup Storage (best-effort) and create a protection group.
-# All steps are best-effort : the lab's attack path does not depend on a completed backup.
+# Attach the protected server, add Modern Backup Storage and create a protection group.
+# https://learn.microsoft.com/system-center/dpm/deploy-dpm-protection-agent?view=sc-dpm-2022#attach-the-agent
+# https://learn.microsoft.com/system-center/dpm/add-storage?view=sc-dpm-2022
+# https://learn.microsoft.com/azure/backup/backup-dpm-automation (DPM PowerShell protection group creation)
 # --------------------------------------------------------------
 
 # Attach the already-installed agent to DPM so the DPM server manages the protected server
-# https://learn.microsoft.com/system-center/dpm/deploy-dpm-protection-agent?view=sc-dpm-2022#attach-the-agent
 - name: attach the protected server to DPM
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "Stop"
       $Ansible.Changed = $false
-      $roots = @(
-        "C:\Program Files\Microsoft System Center\DPM\DPM\bin",
-        "C:\Program Files\Microsoft DPM\DPM\bin"
-      )
-      $bin = $roots | Where-Object { Test-Path (Join-Path $_ "Attach-ProductionServer.ps1") } | Select-Object -First 1
-      if (-not $bin) { throw "Attach-ProductionServer.ps1 not found - DPM server not installed ?" }
-      & (Join-Path $bin "Attach-ProductionServer.ps1") `
+      Import-Module DataProtectionManager
+      if (Get-DPMProductionServer -DPMServerName "{{ dpm_server_name }}" | Where-Object { $_.ServerName -like "{{ protected_server_name }}*" -and $_.ServerProtectionState -ne "NotProtected" -and $_.ServerProtectionState -ne "Deleted" }) {
+        $Ansible.Result = @{ status = "already attached" }
+        return
+      }
+      # DPM install dir name varies by version; find Attach-ProductionServer.ps1 under Program Files.
+      $script = Get-ChildItem -Path "C:\Program Files" -Recurse -Filter Attach-ProductionServer.ps1 -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+      if (-not $script) { throw "Attach-ProductionServer.ps1 not found - DPM server not installed ?" }
+      & $script.FullName `
         -DPMServername "{{ dpm_server_name }}" `
         -PSName "{{ protected_server_fqdn }}" `
         -Username "{{ admin_user }}" `
         -Password "{{ domain_password }}" `
         -Domain "{{ lab.domains[domain].netbios_name }}"
       $Ansible.Changed = $true
+      $Ansible.Result = @{ status = "attached" }
   become: yes
   become_method: runas
   become_user: "{{ domain_username }}"
-  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
   vars:
     ansible_become_password: "{{ domain_password }}"
   register: dpm_attach
-  ignore_errors: true
 
-- name: warn if the attach step failed
-  debug:
-    msg: "WARNING: attaching {{ protected_server_fqdn }} to DPM failed ({{ dpm_attach.error | default('') }}). Attach it from the DPM console (Management > Production Servers > Add)."
-  when: dpm_attach is failed
-
-# Best-effort Modern Backup Storage : a VHDX-backed ReFS volume for the DPM pool (lab only).
-- name: create a Modern Backup Storage volume (best-effort)
+# Modern Backup Storage : DPM 2022 stores backups on volumes of a basic disk, not a system volume. On a virtual
+# DPM server the doc expects a virtual disk presented by the hypervisor (a locally created VHDX is not supported) :
+# the vagrant provider adds a data disk to the DPM VM (:disks in the Vagrantfile). Initialize it (GPT) with one
+# volume; DPM formats it to ReFS when it is added to the storage pool.
+- name: prepare the backup storage disk
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "Stop"
       $Ansible.Changed = $false
-      $vhdx = "{{ dpm_storage_vhdx_path }}"
-      New-Item -ItemType Directory -Force -Path (Split-Path $vhdx) | Out-Null
-      if (-not (Test-Path $vhdx)) {
-        $disk = New-VHD -Path $vhdx -SizeBytes {{ dpm_storage_vhdx_size_gb }}GB -Dynamic |
-          Mount-VHD -Passthru | Initialize-Disk -PartitionStyle GPT -Passthru
-        $part = $disk | New-Partition -UseMaximumSize
-        $part | Format-Volume -FileSystem ReFS -NewFileSystemLabel "DPMStorage" -Confirm:$false | Out-Null
+      $letter = "{{ dpm_storage_drive_letter }}"
+      if (-not (Get-Volume -DriveLetter $letter -ErrorAction SilentlyContinue)) {
+        $disk = Get-Disk | Where-Object { -not $_.IsSystem -and -not $_.IsBoot -and $_.PartitionStyle -eq 'RAW' -and $_.Size -ge {{ dpm_storage_min_size_gb }}GB } | Select-Object -First 1
+        if (-not $disk) { throw "no empty data disk of at least {{ dpm_storage_min_size_gb }}GB for the DPM storage (add one to the DPM VM)" }
+        if ($disk.IsOffline) { Set-Disk -Number $disk.Number -IsOffline $false }
+        if ($disk.IsReadOnly) { Set-Disk -Number $disk.Number -IsReadOnly $false }
+        Initialize-Disk -Number $disk.Number -PartitionStyle GPT
+        New-Partition -DiskNumber $disk.Number -UseMaximumSize -DriveLetter $letter |
+          Format-Volume -FileSystem NTFS -NewFileSystemLabel "DPMStorage" -Confirm:$false | Out-Null
         $Ansible.Changed = $true
-      } else {
-        Get-VHD $vhdx | Where-Object { -not $_.Attached } | Mount-VHD -ErrorAction SilentlyContinue
       }
-      $Ansible.Result = @{ vhdx = $vhdx }
+      $Ansible.Result = @{ volume = "${letter}:" }
+  register: dpm_storage
+
+# Official : Add-DPMDiskStorage -Volume <volume from Get-DPMDiskStorage -Volumes -All>
+- name: add the backup storage volume to the DPM storage pool
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      Import-Module DataProtectionManager
+      $dpm = "{{ dpm_server_name }}"
+      Start-DPMDiskRescan -DPMServerName $dpm | Out-Null
+      $pool = @(Get-DPMDiskStorage -DPMServerName $dpm -Volumes)
+      if ($pool | Where-Object { ($_ | Out-String) -match "{{ dpm_storage_friendly_name }}" }) {
+        $Ansible.Result = @{ status = "already in the pool" }
+        return
+      }
+      $vol = Get-DPMDiskStorage -DPMServerName $dpm -Volumes -All |
+             Where-Object { ($_ | Out-String) -match "{{ dpm_storage_drive_letter }}:" -or ($_ | Out-String) -match "DPMStorage" } |
+             Select-Object -First 1
+      if (-not $vol) { throw "volume {{ dpm_storage_drive_letter }}: not offered by Get-DPMDiskStorage -Volumes -All" }
+      Add-DPMDiskStorage -Volume $vol -FriendlyName "{{ dpm_storage_friendly_name }}" -Confirm:$false | Out-Null
+      $Ansible.Changed = $true
+      $Ansible.Result = @{ status = "added"; volume = ($vol | Out-String).Trim() }
   become: yes
   become_method: runas
   become_user: "{{ domain_username }}"
   vars:
     ansible_become_password: "{{ domain_password }}"
-  register: dpm_storage
-  ignore_errors: true
+  register: dpm_pool
 
-- name: warn if the storage volume could not be created
-  debug:
-    msg: "WARNING: could not create a backup-storage volume ({{ dpm_storage.error | default('') }}). Add a volume to the DPM pool from the console before creating a protection group."
-  when: dpm_storage is failed
-
-# Create the protection group only if DPM already has usable storage (added here or in the console).
-- name: create the protection group and start the initial backup (best-effort)
+- name: create the protection group and start the initial backup
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "Stop"
       $Ansible.Changed = $false
-      Import-Module DataProtectionManager -ErrorAction Stop
+      Import-Module DataProtectionManager
       $dpm = "{{ dpm_server_name }}"
-
-      # Make DPM pick up any newly presented volume, then verify storage exists
-      try { Start-DPMDiskRescan -DPMServerName $dpm -ErrorAction SilentlyContinue } catch {}
-      $storage = @(Get-DPMDiskStorage -DPMServerName $dpm -Volumes -ErrorAction SilentlyContinue)
-      if ($storage.Count -eq 0) {
-        $Ansible.Result = @{ status = "skipped"; reason = "no DPM storage volume present" }
-        return
-      }
 
       # Skip if the protection group already exists
       if (Get-DPMProtectionGroup -DPMServerName $dpm | Where-Object { $_.FriendlyName -eq "{{ dpm_pg_name }}" }) {
@@ -92,20 +101,31 @@
 
       $server = Get-DPMProductionServer -DPMServerName $dpm | Where-Object { $_.ServerName -like "{{ protected_server_name }}*" } | Select-Object -First 1
       if (-not $server) { throw "protected server {{ protected_server_name }} not managed by DPM (attach it first)" }
+      # refresh the agent information DPM caches (console : Agents > Refresh), a stale one gives error ID 31309
+      Update-DPMProductionServer -ProductionServer $server | Out-Null
+      $server = Get-DPMProductionServer -DPMServerName $dpm | Where-Object { $_.ServerName -like "{{ protected_server_name }}*" } | Select-Object -First 1
 
-      $ds = Get-DPMDatasource -ProductionServer $server -Inquire |
-        Where-Object { $_.Name -eq "{{ dpm_protected_datasource }}" } | Select-Object -First 1
-      if (-not $ds) {
-        $ds = Get-DPMDatasource -ProductionServer $server -Inquire |
-          Where-Object { $_.Name -eq "{{ dpm_protected_datasource_fallback }}" } | Select-Object -First 1
+      $all = @(Get-DPMDatasource -ProductionServer $server -Inquire)
+      $ds = $null
+      foreach ($name in @({% for d in dpm_protected_datasources %}"{{ d }}"{{ ', ' if not loop.last else '' }}{% endfor %})) {
+        $ds = $all | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+        if ($ds) { break }
       }
-      if (-not $ds) { throw "no datasource matching {{ dpm_protected_datasource }} on {{ protected_server_name }}" }
+      if (-not $ds) { throw "no datasource matching {{ dpm_protected_datasources | join(', ') }} on {{ protected_server_name }} (offered : $(($all | ForEach-Object { $_.Name }) -join ', '))" }
 
       $pg  = New-DPMProtectionGroup -DPMServerName $dpm -Name "{{ dpm_pg_name }}"
       $mpg = Get-DPMModifiableProtectionGroup $pg
       Add-DPMChildDatasource -ProtectionGroup $mpg -ChildDatasource $ds
       Set-DPMProtectionType -ProtectionGroup $mpg -ShortTerm Disk
       Set-DPMPolicyObjective -ProtectionGroup $mpg -RetentionRangeInDays {{ dpm_retention_days }} -SynchronizationFrequencyMinutes {{ dpm_sync_frequency_minutes }}
+      # disk allocation is mandatory before committing a disk-based protection group
+      # (doc : Get-DatasourceDiskAllocation computes the data source size, then Set-DatasourceDiskAllocation; DPM 2022
+      # only keeps these names as aliases). A share/folder from -Inquire is a protectable object, the allocation
+      # needs the protection group datasource (the volume holding it).
+      foreach ($member in @(Get-DPMDatasource -ProtectionGroup $mpg)) {
+        Get-DatasourceDiskAllocation -Datasource $member | Out-Null
+        Set-DatasourceDiskAllocation -Datasource $member -ProtectionGroup $mpg
+      }
       Set-DPMReplicaCreationMethod -ProtectionGroup $mpg -NOW
       Set-DPMProtectionGroup -ProtectionGroup $mpg
       $Ansible.Changed = $true
@@ -116,11 +136,7 @@
   vars:
     ansible_become_password: "{{ domain_password }}"
   register: dpm_pg
-  ignore_errors: true
 
 - name: report the protection-group result
   debug:
-    msg: >-
-      DPM protection group : {{ (dpm_pg.result | default({})).status | default('failed') }}
-      {{ '(' ~ (dpm_pg.error | default('')) ~ ')' if dpm_pg is failed else '' }}.
-      The lab attack path (agent trust) is independent of this step.
+    msg: "DPM protection group : {{ dpm_pg.result }}"

@@ -3,12 +3,7 @@
 # backs up the protected server's data.
 # https://learn.microsoft.com/azure/backup/backup-dpm-automation (DPM PowerShell cmdlets)
 # https://learn.microsoft.com/system-center/dpm/add-storage?view=sc-dpm-2022 (Modern Backup Storage)
-#
-# NOTE : this playbook is best-effort. The lab's graded attack path (control the DPM machine account ->
-# command the agent running as SYSTEM on the protected server) is already established by dpm-agent.yml.
-# A fully working backup additionally needs a Modern Backup Storage volume in the DPM pool; adding an MBS
-# volume has no supported PowerShell cmdlet (it is a DPM console action), so if no storage is present the
-# protection-group step is skipped with a warning instead of failing the deploy.
+# https://learn.microsoft.com/powershell/module/dataprotectionmanager/add-dpmdiskstorage (MBS volume)
 # --------------------------------------------------------------
 
 # Load datas

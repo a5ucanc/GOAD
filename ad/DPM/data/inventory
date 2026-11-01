@@ -1,6 +1,8 @@
 [all:vars]
 ; DPM lab variables
-sql_instance_name=MSSQLSERVER
+; DPM 2022 builds MSSQL$<instance> / <host>\<instance> and cannot use the SQL default instance
+; (MSSQLSERVER), so the DPM database runs on a NAMED instance.
+sql_instance_name=MSDPMINSTANCE
 sql_version=MSSQL_2022
 
 ; administrator user

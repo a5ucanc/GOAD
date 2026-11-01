@@ -10,8 +10,13 @@
     post_reboot_delay: 30
   when: win_defender_install.reboot_required
 
+# 0x800106ba : the Defender service is still starting (ex: right after a reboot), wait for it
 - name: Disable windows defender sending sample
   win_shell: Set-MpPreference -MAPSReporting 0
+  register: defender_maps
+  until: defender_maps is success
+  retries: 6
+  delay: 20
 
 - name: Disable windows defender sending sample #2 : never send
   win_shell: Set-MpPreference -SubmitSamplesConsent 2

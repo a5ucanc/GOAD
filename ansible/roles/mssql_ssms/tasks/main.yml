@@ -18,9 +18,18 @@
     - "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 20\\Common7\\IDE\\Ssms.exe"
     - "C:\\Program Files (x86)\\Microsoft SQL Server Management Studio 18\\Common7\\IDE\\Ssms.exe"
 
+# a failed SSMS 21/22 install (Visual Studio Installer) leaves Ssms.exe in place : check the instance is complete
+- name: check the SQL Server Management Studio installation is complete
+  win_shell: |
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) { exit 0 }
+    & $vswhere -all -prerelease -products * -format json | ConvertFrom-Json | Where-Object { $_.displayName -like '*Management Studio*' } | ForEach-Object { "isComplete=$($_.isComplete)" }
+  register: ssms_complete
+  changed_when: false
+
 - name: set fact ssms_installed
   set_fact:
-    ssms_installed: "{{ ssms_installation.results | map(attribute='stat.exists') | select | list | length > 0 }}"
+    ssms_installed: "{{ (ssms_installation.results | map(attribute='stat.exists') | select | list | length > 0) and ('isComplete=False' not in ssms_complete.stdout) }}"
 
 # .NET Framework 4.8 prerequisite (Release >= 528040), the SSMS installer fails with
 # "Package 'Microsoft.Net.4.8.FullRedist' failed to install ... Return code: 16389" if it cannot install it itself
@@ -93,14 +102,65 @@
   when: not ssms_installed and net48_installed and not ssms_installer_file.stat.exists
 
 # The bootstrapper downloads the product (~1GB) then installs it, --wait returns only when the install is finished
-# launched with Start-Process -Wait : win_command with --wait was reported to return before the end of the install (issue #468)
-- name: Install SSMS (take a while, the bootstrapper download the product)
+# win_command with --wait was reported to return before the end of the install (issue #468), so the bootstrapper is
+# started then awaited with WaitForExit() : Start-Process -Wait also waits for the background ngen.exe the installer
+# leaves running and can hang for hours.
+# It must run outside the WinRM shell : in it (and with become runas, still in the WinRM job) ngen fails with
+# "Out Of Memory" (shell memory quota) and the product finalizer gets "Access to the registry key
+# ...\Update\TargetingInfo\PersistentDynamicInstalled is denied" (rc 1603). Not as SYSTEM : the finalizer then dies
+# with a StackOverflowException. So it runs in a scheduled task as the (admin) ansible user, elevated.
+- name: write the SSMS install script
+  win_copy:
+    dest: c:\setup\mssql\install_ssms.ps1
+    content: |
+      $rcFile = 'c:\setup\mssql\install_ssms.rc'
+      $arguments = '--quiet --norestart --wait'
+      # an incomplete instance (failed previous install) is refused with "already installed" (rc 1) : repair it
+      $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+      if (Test-Path $vswhere) {
+        $instance = & $vswhere -all -prerelease -products * -format json | ConvertFrom-Json | Where-Object { $_.displayName -like '*Management Studio*' } | Select-Object -First 1
+        if ($instance) {
+          $arguments = "repair --installPath `"$($instance.installationPath)`" $arguments"
+        }
+      }
+      $p = Start-Process -FilePath 'c:\setup\mssql\vs_SSMS.exe' -ArgumentList $arguments -PassThru
+      $p.WaitForExit()
+      Set-Content -Path $rcFile -Value $p.ExitCode
+  when: not ssms_installed and net48_installed
+
+- name: start the SSMS install in a scheduled task
   win_shell: |
-    $p = Start-Process -FilePath "c:\setup\mssql\vs_SSMS.exe" -ArgumentList "--quiet --norestart --wait" -Wait -PassThru
-    if ($p.ExitCode -ne 0) {
+    Remove-Item 'c:\setup\mssql\install_ssms.rc' -ErrorAction SilentlyContinue
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File c:\setup\mssql\install_ssms.ps1'
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3)
+    Register-ScheduledTask -TaskName 'goad_install_ssms' -Action $action -Settings $settings -User '{{ ansible_user }}' -Password '{{ ansible_password }}' -RunLevel Highest -Force | Out-Null
+    Start-ScheduledTask -TaskName 'goad_install_ssms'
+  no_log: true
+  when: not ssms_installed and net48_installed
+
+- name: wait for the end of the SSMS install (take a while, the bootstrapper download the product)
+  win_stat:
+    path: c:\setup\mssql\install_ssms.rc
+  register: ssms_rc_file
+  until: ssms_rc_file.stat.exists
+  retries: 240
+  delay: 30
+  ignore_errors: true
+  when: not ssms_installed and net48_installed
+
+- name: get the SSMS install result
+  win_shell: |
+    $content = Get-Content 'c:\setup\mssql\install_ssms.rc' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $content) {
+      Write-Output 'the SSMS install did not finish in time'
+      exit 1
+    }
+    $rc = [int]$content
+    Unregister-ScheduledTask -TaskName 'goad_install_ssms' -Confirm:$false -ErrorAction SilentlyContinue
+    if ($rc -ne 0) {
       Get-ChildItem "$env:TEMP\dd_setup_*_errors.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content | Select-Object -First 30
     }
-    exit $p.ExitCode
+    exit $rc
   register: install_ssms
   # 0 = ok, 3010 = ok reboot required, 862968 = installed but a reboot is required to finish, 1641 = reboot initiated
   failed_when: install_ssms.rc not in [0, 3010, 862968, 1641]

@@ -12,3 +12,7 @@ dpm_extract_path: 'C:\setup\dpm\media'
 
 # Company name written to the unattended answer file (cosmetic)
 dpm_company_name: 'GOAD'
+
+# Password for the local DPM account (DPM$) created by setup. Mandatory for the unattended install.
+# Must satisfy Windows password complexity.
+dpm_sql_account_password: 'Dpm_SqlAcct_P@ss1'

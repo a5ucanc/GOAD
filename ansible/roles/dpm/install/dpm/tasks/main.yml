@@ -7,17 +7,19 @@
     path: "{{ dpm_setup_path }}"
     state: directory
 
-# Already installed ? the MSDPM service is created by the DPM setup
+# Already installed ? setup writes SetupSucceeded=1 at the very end. The MSDPM service alone is not enough :
+# a failed setup leaves it (and SetupSucceeded=0) behind.
 - name: check if the DPM server is already installed
-  ansible.windows.win_service_info:
-    name: MSDPM
-  register: msdpm_service
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\Microsoft Data Protection Manager\Setup
+    name: SetupSucceeded
+  register: dpm_setup_reg
 
 - name: set fact dpm_installed
   set_fact:
-    dpm_installed: "{{ msdpm_service.exists }}"
+    dpm_installed: "{{ dpm_setup_reg.exists and (dpm_setup_reg.value | int) == 1 }}"
 
-# Download and extract the installation media
+# Download the installation media
 # --------------------------------------------------------------
 - name: DPM installation media exists
   win_stat:
@@ -35,41 +37,99 @@
   delay: 30
   when: not dpm_installed and not dpm_installer_file_stat.stat.exists
 
-- name: check extracted media (Setup.exe)
-  win_stat:
-    path: "{{ dpm_extract_path }}\\Setup.exe"
-  register: dpm_setup_file
+# Extract the installation media
+# The current evaluation download (fwlink LinkID=2195847) is actually a ZIP archive named .exe (PK header),
+# which unzips to CDLayout\Setup.exe. Older/other builds are a self-extractor (/extract:, InnoSetup, 7-Zip
+# SFX), so both are handled and Setup.exe is then located recursively (it is nested in a sub-folder).
+# --------------------------------------------------------------
+- name: look for an already extracted Setup.exe
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $f = Get-ChildItem -Path "{{ dpm_extract_path }}" -Recurse -Filter Setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+      $dir = ""
+      if ($f) { $dir = $f.Directory.FullName }
+      $Ansible.Result = @{ found = [bool]$f; dir = $dir }
+  register: setup_probe
   when: not dpm_installed
 
-# The DPM download is an InnoSetup-style self-extractor. Extract it silently to dpm_extract_path.
-# Bounded with async so a prompt (should it ignore the silent switches) cannot hang the play forever.
-- name: extract the DPM installation media
+- name: reset the extraction directory
+  ansible.windows.win_file:
+    path: "{{ dpm_extract_path }}"
+    state: "{{ item }}"
+  loop:
+    - absent
+    - directory
+  when: not dpm_installed and not setup_probe.result.found
+
+- name: extract the DPM installation media (self-extractor, ~3GB)
   win_shell: |
-    $p = Start-Process -FilePath "{{ dpm_setup_path }}\{{ dpm_installer_file }}" `
-      -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOCANCEL','/DIR="{{ dpm_extract_path }}"' `
-      -Wait -PassThru
-    exit $p.ExitCode
+    $exe = "{{ dpm_setup_path }}\{{ dpm_installer_file }}"
+    $dst = "{{ dpm_extract_path }}"
+    function Found { Get-ChildItem $dst -Recurse -Filter Setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
+    # Detect a ZIP archive (PK header) : the current eval media is a .zip named .exe.
+    $fsx = [System.IO.File]::OpenRead($exe); $sig = New-Object byte[] 2; [void]$fsx.Read($sig,0,2); $fsx.Close()
+    $isZip = ([char]$sig[0] + [char]$sig[1]) -eq 'PK'
+    if ($isZip) {
+      Add-Type -AssemblyName System.IO.Compression.FileSystem
+      [System.IO.Compression.ZipFile]::ExtractToDirectory($exe, $dst)
+    } else {
+      # Self-extractor : try a few switch styles. A wrong switch may pop a GUI and block, so each attempt is
+      # bounded to 5 minutes then the process and any lingering extractor/setup GUI is killed before the next.
+      function TryExtract($argl) {
+        try {
+          $p = Start-Process -FilePath $exe -ArgumentList $argl -PassThru
+          if (-not $p.WaitForExit(300000)) { try { $p | Stop-Process -Force -ErrorAction SilentlyContinue } catch {} }
+        } catch {}
+        Get-Process -Name 'SC_DPM_2022','wextract','Setup','SetupWpf','setupwpf' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+      }
+      TryExtract @("/extract:$dst")
+      if (-not (Found)) { TryExtract @('/VERYSILENT','/SP-','/SUPPRESSMSGBOXES','/NOCANCEL',"/DIR=$dst") }
+      if (-not (Found)) { TryExtract @('-y',"-o$dst") }
+    }
+    $f = Found
+    if ($f) { Write-Output "SETUP_DIR=$($f.Directory.FullName)"; exit 0 }
+    exit 1
   args:
     chdir: "{{ dpm_setup_path }}"
-  async: 900
+  async: 1800
   poll: 15
   register: dpm_extract
   failed_when: false
-  when: not dpm_installed and not dpm_setup_file.stat.exists
+  when: not dpm_installed and not setup_probe.result.found
 
-- name: check extracted media again
-  win_stat:
-    path: "{{ dpm_extract_path }}\\Setup.exe"
-  register: dpm_setup_file
+- name: locate the extracted Setup.exe
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $f = Get-ChildItem -Path "{{ dpm_extract_path }}" -Recurse -Filter Setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+      $dir = ""
+      if ($f) { $dir = $f.Directory.FullName }
+      $Ansible.Result = @{ found = [bool]$f; dir = $dir }
+  register: dpm_setup_dir
   when: not dpm_installed
+
+- name: list the extraction directory if Setup.exe was not found
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $Ansible.Result = @(Get-ChildItem -Path "{{ dpm_extract_path }}" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 60 -ExpandProperty FullName)
+  register: dpm_extract_listing
+  when: not dpm_installed and not dpm_setup_dir.result.found
 
 - name: fail if the media was not extracted
   fail:
     msg: >-
-      Setup.exe was not found in {{ dpm_extract_path }}. The DPM self-extractor did not unpack silently.
-      Extract '{{ dpm_setup_path }}\{{ dpm_installer_file }}' manually into {{ dpm_extract_path }} on the DPM
-      host (so that {{ dpm_extract_path }}\Setup.exe exists), then rerun : provision dpm-install.yml
-  when: not dpm_installed and not dpm_setup_file.stat.exists
+      Setup.exe was not found under {{ dpm_extract_path }}. The DPM self-extractor did not unpack with any
+      known switch. Extract '{{ dpm_setup_path }}\{{ dpm_installer_file }}' manually so that a Setup.exe
+      appears under {{ dpm_extract_path }}, then rerun : provision dpm-install.yml.
+      Current contents : {{ dpm_extract_listing.result | default([]) | join(', ') }}
+  when: not dpm_installed and not dpm_setup_dir.result.found
+
+- name: set the DPM media directory
+  set_fact:
+    dpm_media_dir: "{{ dpm_setup_dir.result.dir }}"
+  when: not dpm_installed
 
 # Unattended answer file
 # --------------------------------------------------------------
@@ -79,6 +139,46 @@
     dest: "{{ dpm_setup_path }}\\DPMSetup.ini"
   when: not dpm_installed
 
+# A failed setup leaves a partial install (msi product, services, DPMDB_<host> database, registry) that makes the
+# next setup run fail : uninstall it with setup /x (the unattended uninstall switch, a plain msiexec /x fails 1603),
+# then remove the database and registry that the uninstall keeps.
+- name: check for a DPM product left by a failed setup
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Data Protection Manager 2012
+  register: dpm_uninstall_entry
+  when: not dpm_installed and dpm_setup_reg.exists
+
+- name: uninstall the leftovers of a failed DPM setup
+  win_command: >-
+    cmd.exe /c start "" /wait "{{ dpm_media_dir }}\Setup.exe" /x /f "{{ dpm_setup_path }}\DPMSetup.ini" /l "{{ dpm_setup_path }}\dpmuninstall.txt"
+  args:
+    chdir: "{{ dpm_media_dir }}"
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{ domain_username }}"
+    ansible_become_password: "{{ domain_password }}"
+  when: not dpm_installed and dpm_setup_reg.exists and dpm_uninstall_entry.exists
+
+- name: remove the DPM database and registry left by a failed setup
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $db = "DPMDB_{{ dpm_sql_machine }}"
+      $q = "IF DB_ID('$db') IS NOT NULL BEGIN ALTER DATABASE [$db] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$db]; END"
+      & sqlcmd -S "{{ dpm_sql_machine }}\{{ dpm_sql_instance }}" -E -b -Q $q
+      if ($LASTEXITCODE -ne 0) { throw "dropping $db failed" }
+      foreach ($k in "HKLM:\SOFTWARE\Microsoft\Microsoft Data Protection Manager", "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Data Protection Manager 2012") {
+        if (Test-Path $k) { Remove-Item $k -Recurse -Force; $Ansible.Changed = $true }
+      }
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{ domain_username }}"
+    ansible_become_password: "{{ domain_password }}"
+  when: not dpm_installed and dpm_setup_reg.exists
+
 # Setup fails its prerequisite check if a restart is pending
 - name: reboot before the DPM installation to clear any pending restart
   ansible.windows.win_reboot:
@@ -86,12 +186,32 @@
     post_reboot_delay: 60
   when: not dpm_installed
 
+# After the reboot the SQL instance and the SQL Browser take time to come up; DPM's prerequisite check
+# (RemoteDbTCP) fails with error 1225 if it runs before SQL is accepting connections. Make sure the
+# Browser is running and the instance is listening on 1433 before launching setup.
+- name: ensure the SQL Server Browser is running (named-instance resolution for DPM)
+  ansible.windows.win_service:
+    name: SQLBrowser
+    start_mode: auto
+    state: started
+  when: not dpm_installed
+
+- name: wait for the SQL instance to accept connections on 1433 after the reboot
+  ansible.windows.win_wait_for:
+    port: 1433
+    delay: 15
+    timeout: 300
+  when: not dpm_installed
+
 # Install DPM (unattended). This takes a long time (~30-60 minutes).
 # https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022#run-an-unattended-install
+# Official command, from an elevated prompt : start /wait [media location]\setup.exe /i /f <path>\DPMSetup.ini /l <path>\dpmlog.txt
+# Setup.exe is a GUI program : without "start /wait" the call returns at once while setup runs in the background.
 - name: install the DPM server (this takes a while ~ 30-60 minutes)
-  win_shell: ".\\Setup.exe /i /f \"{{ dpm_setup_path }}\\DPMSetup.ini\" /l \"{{ dpm_setup_path }}\\dpmlog.txt\""
+  win_command: >-
+    cmd.exe /c start "" /wait "{{ dpm_media_dir }}\Setup.exe" /i /f "{{ dpm_setup_path }}\DPMSetup.ini" /l "{{ dpm_setup_path }}\dpmlog.txt"
   args:
-    chdir: "{{ dpm_extract_path }}"
+    chdir: "{{ dpm_media_dir }}"
   vars:
     ansible_become: yes
     ansible_become_method: runas
@@ -103,27 +223,38 @@
   failed_when: false
   when: not dpm_installed
 
-# The setup exit code is not reliable - verify on the MSDPM service like the official docs do on their services
-- name: check the DPM server installation
+# The setup exit code is not reliable - verify the SetupSucceeded flag setup writes at the end, and the MSDPM service
+- name: check the DPM server installation (SetupSucceeded)
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\Microsoft Data Protection Manager\Setup
+    name: SetupSucceeded
+  register: dpm_setup_check
+
+- name: check the DPM server installation (MSDPM service)
   ansible.windows.win_service_info:
     name: MSDPM
   register: msdpm_check
 
-- name: get the last lines of the DPM setup log on failure
+- name: set fact dpm_setup_ok
+  set_fact:
+    dpm_setup_ok: "{{ dpm_setup_check.exists and (dpm_setup_check.value | int) == 1 and msdpm_check.exists }}"
+
+- name: get the setup errors from the DPM setup log on failure
   ansible.windows.win_powershell:
     script: |
       $Ansible.Changed = $false
-      $Ansible.Result = @(Get-Content -Path "{{ dpm_setup_path }}\dpmlog.txt" -ErrorAction SilentlyContinue | Select-Object -Last 40)
+      $Ansible.Result = @(Get-Content -Path "{{ dpm_setup_path }}\dpmlog.txt" -ErrorAction SilentlyContinue |
+        Select-String -Pattern "Mojito error|\* Exception :|Severity: Error" | Select-Object -Last 15 | ForEach-Object { $_.Line })
   register: dpm_log_tail
-  when: not msdpm_check.exists
+  when: not dpm_setup_ok
 
 - name: fail if the DPM installation failed
   fail:
     msg: >-
-      DPM setup failed, the MSDPM service was not created. Last lines of {{ dpm_setup_path }}\dpmlog.txt :
+      DPM setup failed (SetupSucceeded is not 1). Errors from {{ dpm_setup_path }}\dpmlog.txt :
       {{ dpm_log_tail.result | default([]) | join('\n') }}
-  when: not msdpm_check.exists
+  when: not dpm_setup_ok
 
-- name: DPM server installation confirmed (MSDPM service present)
+- name: DPM server installation confirmed
   debug:
-    msg: "DPM 2022 server installed on {{ inventory_hostname }} (MSDPM service state: {{ msdpm_check.state | default('unknown') }})"
+    msg: "DPM 2022 server installed on {{ inventory_hostname }} (SetupSucceeded=1, MSDPM service state: {{ (msdpm_check.services | first).state | default('unknown') }})"

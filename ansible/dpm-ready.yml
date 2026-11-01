@@ -1,0 +1,39 @@
+# Wait until the DPM server services are ready (after a reboot) instead of a fixed pause.
+# The DPM database runs on the local SQL instance, the reports on SSRS, and the DPM PowerShell cmdlets used by
+# dpm-config.yml talk to MSDPM (manual start, started on demand) and the DPM Access Manager service.
+# --------------------------------------------------------------
+
+- name: "Wait for the DPM server services"
+  hosts: dpm
+  gather_facts: no
+  tasks:
+    - name: wait for WinRM after the reboot
+      ansible.builtin.wait_for_connection:
+        timeout: 900
+
+    - name: wait for the SQL Server and DPM services to be running
+      ansible.windows.win_service_info:
+        name: "{{ item }}"
+      register: dpm_service
+      until: dpm_service.exists and dpm_service.services[0].state == 'started'
+      retries: 30
+      delay: 10
+      loop:
+        - "MSSQL${{ sql_instance_name }}"
+        - "SQLAgent${{ sql_instance_name }}"
+        - SQLServerReportingServices
+        - DPMAMService
+
+    - name: wait for the SQL instance to accept connections on 1433
+      ansible.windows.win_wait_for:
+        port: 1433
+        timeout: 300
+
+    - name: start the DPM service (manual start service)
+      ansible.windows.win_service:
+        name: MSDPM
+        state: started
+      register: msdpm_start
+      until: msdpm_start is success
+      retries: 10
+      delay: 15

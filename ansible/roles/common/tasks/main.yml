@@ -21,10 +21,23 @@
   when: http_proxy == "yes"
 
 - name: Upgrade module PowerShellGet to fix accept license issue on last windows ansible version
+  # the gallery download (redirected to cdn.powershellgallery.com) fails on transient dns errors of the nat :
+  # fail on error and retry instead of continuing with PowerShellGet 1.0.0.1 (no -AcceptLicense for win_psmodule)
   win_shell: |
+    $ErrorActionPreference = 'Stop'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Install-PackageProvider -Name NuGet -Force
+    if (Get-Module -ListAvailable PowerShellGet | Where-Object { $_.Version -ge [version]'2.0' }) {
+      Write-Output 'PowerShellGet already upgraded'
+      exit 0
+    }
+    Clear-DnsClientCache
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
     Install-Module PowerShellGet -Force
+  register: psget_upgrade
+  changed_when: "'already upgraded' not in psget_upgrade.stdout"
+  retries: 5
+  delay: 30
+  until: psget_upgrade is succeeded
 
 - name: Windows | Check for ComputerManagementDsc Powershell module
   win_psmodule:

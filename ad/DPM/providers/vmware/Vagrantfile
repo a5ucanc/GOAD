@@ -1,5 +1,5 @@
 boxes = [
   { :name => "DPM-DC",        :ip => "{{ip_range}}.10", :box => "mayfly/windows_server2019", :cpus => 2, :mem => 4000, :os => "windows"},
-  { :name => "DPM-SERVER",    :ip => "{{ip_range}}.11", :box => "mayfly/windows_server2019", :cpus => 4, :mem => 8000, :os => "windows"},
+  { :name => "DPM-SERVER",    :ip => "{{ip_range}}.11", :box => "mayfly/windows_server2019", :cpus => 4, :mem => 8000, :os => "windows", :disks => [ {:name => "dpm_storage", :size => "60GB"} ]},
   { :name => "DPM-PROTECTED", :ip => "{{ip_range}}.12", :box => "mayfly/windows_server2019", :cpus => 2, :mem => 4000, :os => "windows"},
 ]

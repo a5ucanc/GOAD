@@ -26,7 +26,8 @@
             "path" : "DC=dpm,DC=lab",
             "local_groups" : {
                 "Administrators" : [
-                    "DPMLAB\\DPM-Admins"
+                    "DPMLAB\\DPM-Admins",
+                    "DPMLAB\\dpm-sql"
                 ],
                 "Remote Desktop Users" : [
                     "DPMLAB\\DPM-Admins",
@@ -38,10 +39,12 @@
             "mssql":{
                 "sa_password": "Dpm_sa_P@ssw0rd!",
                 "svcaccount" : "dpm-sql",
+                "agent_use_svcaccount" : true,
                 "sysadmins" : [
                     "DPMLAB\\administrator",
                     "DPMLAB\\dpm-sql",
-                    "DPMLAB\\DPM-Admins"
+                    "DPMLAB\\DPM-Admins",
+                    "DPMLAB\\Domain Admins"
                 ]
             }
         },
@@ -67,7 +70,10 @@
                         "path" : "C:\\Shares\\Finance",
                         "description" : "Finance department files (protected by DPM backup)",
                         "list" : "yes",
-                        "read" : "DPMLAB\\RDPUsers"
+                        "full" : "DPMLAB\\Domain Admins",
+                        "change" : "DPMLAB\\DPM-Admins",
+                        "read" : "DPMLAB\\RDPUsers",
+                        "deny" : "Guests"
                     }
                 },
                 "files" : {

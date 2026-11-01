@@ -1,5 +1,19 @@
 [OPTIONS]
 UserName = {{ admin_user }}
 CompanyName = {{ dpm_company_name }}
+{# ProductKey is left out on purpose : without a key the evaluation media installs the 180 days evaluation #}
+SqlAccountPassword = {{ dpm_sql_account_password }}
+IntegratedInstallSource = {{ dpm_media_dir }}
+{# Use NetBIOS names for the domain and the SQL machine, not FQDNs (official doc). #}
+{# DPM 2022 builds <host>\<instance> and MSSQL$<instance> : dpm_sql_instance must be a NAMED instance. #}
 SQLMachineName = {{ dpm_sql_machine }}
 SQLInstanceName = {{ dpm_sql_instance }}
+SQLMachineUserName = {{ admin_user }}
+SQLMachinePassword = {{ domain_password }}
+SQLMachineDomainName = {{ dpm_netbios_domain }}
+{# SQL 2017+ ships Reporting Services as a separate product whose instance is always named SSRS #}
+ReportingMachineName = {{ dpm_sql_machine }}
+ReportingInstanceName = SSRS
+ReportingMachineUserName = {{ admin_user }}
+ReportingMachinePassword = {{ domain_password }}
+ReportingMachineDomainName = {{ dpm_netbios_domain }}

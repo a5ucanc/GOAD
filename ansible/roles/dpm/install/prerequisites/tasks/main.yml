@@ -1,8 +1,9 @@
 # DPM 2022 server prerequisites
+# https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022#setup-prerequisites
+# https://learn.microsoft.com/system-center/dpm/install-dpm?view=sc-dpm-2022#run-an-unattended-install
 # DPM setup auto-installs most components (Visual C++ redistributables, Windows Installer, etc).
-# The .NET Framework 3.5 feature is installed up-front because it is sometimes required by the
-# SQL tooling and the DPM setup does not always pull it in on Windows Server Core-less images.
-# https://learn.microsoft.com/system-center/dpm/prepare-environment-for-dpm?view=sc-dpm-2022#dpm-server
+# SQL Server 2022 (engine + SSRS + SSMS) is installed by servers.yml; this role completes what the
+# official doc asks for on top of it : firewall rules, the Hyper-V PowerShell module and a configured SSRS.
 # --------------------------------------------------------------
 
 - name: create directory to store the install files
@@ -10,20 +11,182 @@
     path: C:\setup\dpm
     state: directory
 
-- name: install the .NET Framework 3.5 feature (best effort, DPM/SQL tooling)
-  ansible.windows.win_feature:
-    name: NET-Framework-Core
-    state: present
-  register: net35_feature
-  ignore_errors: true
+# DPM connects to its database by instance name (SQLMachineName\SQLInstanceName), which needs the
+# SQL Server Browser to resolve the instance. The mssql role leaves it Disabled, so enable and start it,
+# otherwise the DPM prerequisite check fails with "DPM requires TCP/IP protocol ... RemoteDbTCP".
+- name: enable and start the SQL Server Browser
+  ansible.windows.win_service:
+    name: SQLBrowser
+    start_mode: auto
+    state: started
 
-- name: install Single Instance Store (SIS-Limited) component used by DPM
-  ansible.windows.win_feature:
-    name: FS-SyncShareService
+# Official doc : a single dedicated domain account runs the SQL services, SQL Server Agent included. DPM setup
+# records the agent account as owner of the SQL Agent jobs it creates (SchedulerJobOwnerName) : it must be the
+# NetBIOS form, msdb sp_verify_job rejects "dpm.lab\user" with error 14234 and setup fails with DatabaseCreateFailed.
+# (string compare on purpose : win_service compares accounts by SID and sees both forms as equal)
+- name: run SQL Server Agent under the SQL service account (NetBIOS form)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $name = 'SQLAgent${{ dpm_sql_instance }}'
+      $svc = Get-CimInstance Win32_Service -Filter "Name='$name'"
+      if ($svc.StartName -ne '{{ dpm_sql_svcaccount }}') {
+        $r = Invoke-CimMethod -InputObject $svc -MethodName Change -Arguments @{ StartName = '{{ dpm_sql_svcaccount }}'; StartPassword = '{{ dpm_sql_svcpassword }}' }
+        if ($r.ReturnValue -ne 0) { throw "changing the $name account failed : $($r.ReturnValue)" }
+        Restart-Service -Name $name -Force
+        $Ansible.Changed = $true
+      }
+      Set-Service -Name $name -StartupType Automatic
+      Start-Service -Name $name
+      $Ansible.Result = (Get-CimInstance Win32_Service -Filter "Name='$name'").StartName
+
+# Official doc, unattended install step 2 : "Use the following code to ensure that the firewall is opened."
+# (the doc sample path is SQL 2012's MSSQL11.MSSQLSERVER, here SQL 2022 = MSSQL16.<instance>)
+- name: open the firewall for the DPM SQL instance (DPM_SqlServr.exe)
+  community.windows.win_firewall_rule:
+    name: DPM_SqlServr.exe
+    program: '%ProgramFiles%\Microsoft SQL Server\MSSQL16.{{ dpm_sql_instance }}\MSSQL\Binn\sqlservr.exe'
+    direction: in
+    action: allow
+    profiles: domain
     state: present
-  ignore_errors: true
+    enabled: yes
+
+- name: open the firewall for the SQL Server Browser (DPM_UDP_Port_1434)
+  community.windows.win_firewall_rule:
+    name: DPM_UDP_Port_1434
+    localport: 1434
+    protocol: udp
+    direction: in
+    action: allow
+    profiles: domain
+    state: present
+    enabled: yes
+
+# DPM setup prerequisite check "HyperVPowerShell" requires the Hyper-V role AND its PowerShell module. When missing,
+# setup installs them then aborts with "RebootRequired". Install them up-front with the command setup gives :
+#   start /wait dism.exe /Online /Enable-feature /All /FeatureName:Microsoft-Hyper-V
+#     /FeatureName:Microsoft-Hyper-V-Management-PowerShell /quiet /norestart
+# (dism, not Install-WindowsFeature : the role is only checked by setup, the VM does not need nested virtualization)
+- name: install the Hyper-V role and PowerShell module (DPM prerequisite)
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $missing = @("Microsoft-Hyper-V", "Microsoft-Hyper-V-Management-PowerShell") |
+                 Where-Object { (Get-WindowsOptionalFeature -Online -FeatureName $_).State -ne "Enabled" }
+      $rc = 0
+      if ($missing) {
+        $p = Start-Process -FilePath dism.exe -ArgumentList "/Online /Enable-feature /All /FeatureName:Microsoft-Hyper-V /FeatureName:Microsoft-Hyper-V-Management-PowerShell /quiet /norestart" -Wait -PassThru
+        $rc = $p.ExitCode
+        if ($rc -ne 0 -and $rc -ne 3010) { throw "dism failed with exit code $rc" }
+        $Ansible.Changed = $true
+      }
+      $Ansible.Result = @{ reboot_required = ($rc -eq 3010); missing = @($missing) }
+  register: hyperv_feature
 
 - name: reboot if a feature installation requires it
   ansible.windows.win_reboot:
     reboot_timeout: 900
-  when: net35_feature is changed and net35_feature is succeeded
+  when: hyperv_feature.result.reboot_required
+
+# SQL Server Reporting Services must be installed AND configured before DPM setup (SQL 2017+ ships SSRS as a
+# separate product). The doc asks for the same dedicated domain account to run SSRS as the SQL services.
+# Configuration through the SSRS WMI provider : service identity, report server database, URLs, initialize.
+# https://learn.microsoft.com/sql/reporting-services/install-windows/install-reporting-services
+# --------------------------------------------------------------
+- name: wait for the SQL Server Reporting Services service (the SSRS installer runs detached)
+  ansible.windows.win_service_info:
+    name: SQLServerReportingServices
+  register: ssrs_service
+  until: ssrs_service.exists
+  retries: 40
+  delay: 30
+
+- name: configure SQL Server Reporting Services
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $lcid = 1033
+      $root = "root\Microsoft\SqlServer\ReportServer\RS_SSRS"
+      $ver = Get-CimInstance -Namespace $root -ClassName __Namespace | Sort-Object Name -Descending | Select-Object -First 1
+      $ns = "$root\$($ver.Name)\Admin"
+      function Rs { Get-CimInstance -Namespace $ns -ClassName MSReportServer_ConfigurationSetting }
+      function Call($method, $params) {
+        $r = Invoke-CimMethod -InputObject (Rs) -MethodName $method -Arguments $params
+        if ($r.HRESULT -ne 0) { throw "SSRS $method failed : HRESULT $($r.HRESULT) $($r.Error -join ' ')" }
+        return $r
+      }
+      function Sql($script) {
+        $f = Join-Path $env:TEMP "ssrs_$([guid]::NewGuid()).sql"
+        Set-Content -Path $f -Value $script -Encoding Unicode
+        $out = & sqlcmd -S "{{ dpm_sql_machine }}\{{ dpm_sql_instance }}" -E -b -i $f 2>&1
+        $rc = $LASTEXITCODE
+        Remove-Item $f -Force
+        if ($rc -ne 0) { throw "sqlcmd failed ($rc) : $out" }
+      }
+
+      # after a reboot SQL and SSRS take a while to come up : wait for the SQL instance, and for an already
+      # configured SSRS to report itself initialized, before deciding anything
+      for ($i = 0; $i -lt 30 -and -not (Test-NetConnection -ComputerName localhost -Port 1433 -InformationLevel Quiet -WarningAction SilentlyContinue); $i++) { Start-Sleep -Seconds 10 }
+      Start-Service -Name SQLServerReportingServices
+      if ((Rs).DatabaseName) {
+        for ($i = 0; $i -lt 18 -and -not (Rs).IsInitialized; $i++) { Start-Sleep -Seconds 10 }
+      }
+      $rs = Rs
+      if ($rs.IsInitialized -and $rs.DatabaseName) {
+        $Ansible.Result = @{ initialized = $true; database = $rs.DatabaseName; account = $rs.WindowsServiceIdentityActual }
+        return
+      }
+
+      # 1. service account (before the URLs : changing the identity resets the URL reservations)
+      if ($rs.WindowsServiceIdentityActual -ne "{{ dpm_sql_svcaccount }}") {
+        Call SetWindowsServiceIdentity @{ UseBuiltInAccount = $false; Account = "{{ dpm_sql_svcaccount }}"; Password = "{{ dpm_sql_svcpassword }}" } | Out-Null
+      }
+
+      # 2. report server database on the DPM SQL instance, accessed with the service account
+      $db = "ReportServer"
+      $exists = & sqlcmd -S "{{ dpm_sql_machine }}\{{ dpm_sql_instance }}" -E -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name = '$db'"
+      if ("$exists".Trim() -ne "1") {
+        Sql (Call GenerateDatabaseCreationScript @{ DatabaseName = $db; Lcid = $lcid; IsSharePointMode = $false }).Script
+      }
+      Sql (Call GenerateDatabaseRightsScript @{ UserName = "{{ dpm_sql_svcaccount }}"; DatabaseName = $db; IsRemote = $false; IsWindowsUser = $true }).Script
+      Call SetDatabaseConnection @{ Server = "{{ dpm_sql_machine }}\{{ dpm_sql_instance }}"; DatabaseName = $db; CredentialsType = 2; UserName = ""; Password = "" } | Out-Null
+
+      # 3. web service and web portal URLs (default virtual directories, port 80)
+      $reserved = Invoke-CimMethod -InputObject (Rs) -MethodName ListReservedUrls
+      foreach ($app in @(@{ Name = "ReportServerWebService"; VDir = "ReportServer" }, @{ Name = "ReportServerWebApp"; VDir = "Reports" })) {
+        $cur = Rs
+        $vdir = if ($app.Name -eq "ReportServerWebService") { $cur.VirtualDirectoryReportServer } else { $cur.VirtualDirectoryReportManager }
+        if (-not $vdir) { Call SetVirtualDirectory @{ Application = $app.Name; VirtualDirectory = $app.VDir; Lcid = $lcid } | Out-Null }
+        $has = $false
+        for ($i = 0; $i -lt @($reserved.Application).Count; $i++) {
+          if (@($reserved.Application)[$i] -eq $app.Name -and @($reserved.UrlString)[$i] -eq "http://+:80") { $has = $true }
+        }
+        if (-not $has) { Call ReserveURL @{ Application = $app.Name; UrlString = "http://+:80"; Lcid = $lcid } | Out-Null }
+      }
+
+      # 4. restart : the running service still holds the previous configuration (FailedToDecryptConfigInformation: Dsn)
+      # and initializes itself once restarted with the new identity / database. InitializeReportServer is only a fallback.
+      Restart-Service -Name SQLServerReportingServices -Force
+      for ($i = 0; $i -lt 18 -and -not (Rs).IsInitialized; $i++) { Start-Sleep -Seconds 10 }
+      if (-not (Rs).IsInitialized) {
+        Call InitializeReportServer @{ InstallationID = (Rs).InstallationID } | Out-Null
+        Restart-Service -Name SQLServerReportingServices -Force
+        Start-Sleep -Seconds 30
+      }
+      $rs = Rs
+      if (-not $rs.IsInitialized) { throw "SSRS is still not initialized after configuration" }
+      $Ansible.Changed = $true
+      $Ansible.Result = @{ initialized = $true; database = $rs.DatabaseName; account = $rs.WindowsServiceIdentityActual }
+  become: yes
+  become_method: runas
+  become_user: "{{ domain_username }}"
+  vars:
+    ansible_become_password: "{{ domain_password }}"
+  register: ssrs_config
+
+- name: SSRS configuration
+  debug:
+    msg: "{{ ssrs_config.result }}"

@@ -59,10 +59,9 @@ DPM:
   - vulnerabilities.yml
   # install the DPM 2022 server (SQLNCLI + unattended DPM setup, ~1h)
   - dpm-install.yml
-  # let the install settle, then reboot before configuring
-  - wait5m.yml
+  # reboot before configuring, then wait until SQL / SSRS / DPM services are ready (no fixed pause)
   - reboot.yml
-  - wait5m.yml
+  - dpm-ready.yml
   # install the protection agent on the protected server (establishes the DPM trust)
   - dpm-agent.yml
   # attach the protected server + best-effort storage and protection group

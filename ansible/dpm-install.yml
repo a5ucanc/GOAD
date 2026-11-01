@@ -46,5 +46,9 @@
     domain_username: "{{domain}}\\{{admin_user}}"
     domain_password: "{{lab.domains[domain].domain_password}}"
     dpm_sql_instance: "{{sql_instance_name | default('MSSQLSERVER')}}"
-    # NetBIOS name of the (local) SQL machine, written to DPMSetup.ini
+    # NetBIOS names of the (local) SQL machine and of the domain, written to DPMSetup.ini
     dpm_sql_machine: "{{lab.hosts[dict_key].hostname}}"
+    dpm_netbios_domain: "{{lab.domains[domain].netbios_name}}"
+    # SQL / SSRS service account (single dedicated domain account, official doc)
+    dpm_sql_svcaccount: "{{ dpm_netbios_domain }}\\{{ lab.hosts[dict_key].mssql.svcaccount }}"
+    dpm_sql_svcpassword: "{{ lab.domains[domain].users[lab.hosts[dict_key].mssql.svcaccount].password }}"

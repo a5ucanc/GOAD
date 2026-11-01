@@ -1,12 +1,16 @@
 # DPM protection group settings
 dpm_pg_name: "GOAD-Finance-Backup"
-# Data source on the protected server to back up. The Finance folder holds the lab's sensitive data.
-dpm_protected_datasource: "C:\\Shares\\Finance"
-# Fallback datasource if the folder is not offered as a standalone data source
-dpm_protected_datasource_fallback: "C:\\"
+# Data sources on the protected server to back up, first match wins (Get-DPMDatasource -Inquire names).
+# The Finance share holds the lab's sensitive data; the C:\ volume is the fallback.
+dpm_protected_datasources:
+  - "Finance"
+  - "C:\\Shares\\Finance"
+  - "C:\\"
 dpm_retention_days: 5
-dpm_sync_frequency_minutes: 480
+# one of 15, 30, 60, 120, 240, 360, 720, 1440 (Set-DPMPolicyObjective validation)
+dpm_sync_frequency_minutes: 360
 
-# Best-effort Modern Backup Storage volume backed by a VHDX on the system disk (lab only).
-dpm_storage_vhdx_path: "C:\\DPMStorage\\dpm_pool.vhdx"
-dpm_storage_vhdx_size_gb: 40
+# Modern Backup Storage volume, on the data disk the vagrant provider adds to the DPM VM
+dpm_storage_min_size_gb: 20
+dpm_storage_drive_letter: "S"
+dpm_storage_friendly_name: "GOAD-MBS"

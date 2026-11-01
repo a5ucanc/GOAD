@@ -164,9 +164,29 @@
   register: win_reg
   when: sql_version == "MSSQL_2019"
 
+# A named instance defaults to a dynamic TCP port; clear it so the instance listens on the static 1433
+# set above (a default instance already has it empty, so this is a no-op there).
+- name: Clear dynamic TCP port (2022)
+  win_regedit:
+    path: 'HKLM:\Software\Microsoft\Microsoft SQL Server\MSSQL16.{{ sql_instance_name }}\MSSQLServer\SuperSocketNetLib\Tcp\IPAll'
+    name: TcpDynamicPorts
+    data: ''
+    type: string
+  register: win_reg_dyn_2022
+  when: sql_version == "MSSQL_2022"
+
+- name: Clear dynamic TCP port (2019)
+  win_regedit:
+    path: 'HKLM:\Software\Microsoft\Microsoft SQL Server\MSSQL15.{{ sql_instance_name }}\MSSQLServer\SuperSocketNetLib\Tcp\IPAll'
+    name: TcpDynamicPorts
+    data: ''
+    type: string
+  register: win_reg_dyn_2019
+  when: sql_version == "MSSQL_2019"
+
 - name: Reboot
   win_reboot:
-  when: win_reg.changed
+  when: win_reg.changed or (win_reg_dyn_2022 is defined and win_reg_dyn_2022.changed) or (win_reg_dyn_2019 is defined and win_reg_dyn_2019.changed)
 
 - name: Firewall | Allow MSSQL through Firewall
   win_dsc:

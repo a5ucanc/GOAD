@@ -57,6 +57,13 @@ boxes.append(
         target.vm.box_version = box[:box_version]
       end
 
+      # extra data disks (ex: DPM backup storage), :disks => [ {:name => "data", :size => "60GB"} ]
+      if box.has_key?(:disks)
+        box[:disks].each do |disk|
+          target.vm.disk :disk, name: disk[:name], size: disk[:size]
+        end
+      end
+
       # issues/49
       target.vm.synced_folder '.', '/vagrant', disabled: true
 

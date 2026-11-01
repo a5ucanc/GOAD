@@ -24,18 +24,22 @@
     script: |
       $ErrorActionPreference = "Stop"
       $Ansible.Changed = $false
-      $roots = @(
-        "\\{{ dpm_server_name }}\c$\Program Files\Microsoft DPM\DPM\ProtectionAgents\RA",
-        "\\{{ dpm_server_name }}\c$\Program Files\Microsoft System Center\DPM\DPM\ProtectionAgents\RA"
-      )
-      $base = $roots | Where-Object { Test-Path $_ } | Select-Object -First 1
-      if (-not $base) { throw "ProtectionAgents\RA folder not found on \\{{ dpm_server_name }} - is the DPM server installed ?" }
-      $ver = Get-ChildItem $base -Directory | Sort-Object Name -Descending | Select-Object -First 1
-      $exe = Join-Path $ver.FullName "amd64\DPMAgentInstaller_x64.exe"
-      if (-not (Test-Path $exe)) { throw "DPMAgentInstaller_x64.exe not found under $($ver.FullName)" }
-      Copy-Item -Path $exe -Destination "C:\setup\dpm\DPMAgentInstaller_x64.exe" -Force
+      # The DPM install directory name varies by version (e.g. "Microsoft System Center 2022"), so resolve
+      # the matching Program Files folders by pattern and search them recursively.
+      $pf = "\\{{ dpm_server_name }}\c$\Program Files"
+      $roots = Get-ChildItem -Path $pf -Directory -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -match 'System Center|DPM|Data Protection' } |
+               Select-Object -ExpandProperty FullName
+      $exe = $null
+      foreach ($r in $roots) {
+        $exe = Get-ChildItem -Path $r -Recurse -Filter DPMAgentInstaller_x64.exe -ErrorAction SilentlyContinue |
+               Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($exe) { break }
+      }
+      if (-not $exe) { throw "DPMAgentInstaller_x64.exe not found on \\{{ dpm_server_name }} - is the DPM server installed ?" }
+      Copy-Item -Path $exe.FullName -Destination "C:\setup\dpm\DPMAgentInstaller_x64.exe" -Force
       $Ansible.Changed = $true
-      $Ansible.Result = @{ source = $exe }
+      $Ansible.Result = @{ source = $exe.FullName }
   become: yes
   become_method: runas
   become_user: "{{ domain_username }}"
@@ -46,12 +50,26 @@
   when: not agent_installed
 
 # Passing the DPM server FQDN installs the agent *and* configures the trust/firewall with that server.
+# Official silent command : DpmAgentInstaller_x64.exe /q <DPMServerName> /IAcceptEULA (from an elevated prompt).
+# The installer is a bootstrapper that hands over to msiexec : it is started with "start /wait" and the DPMRA
+# service is awaited before the reboot (a reboot during the msi leaves the agent half installed).
 - name: install the DPM protection agent (silent, trust the DPM server)
-  win_shell: ".\\DPMAgentInstaller_x64.exe /q {{ dpm_server_fqdn }} /IAcceptEULA"
+  win_command: 'cmd.exe /c start "" /wait C:\setup\dpm\DPMAgentInstaller_x64.exe /q {{ dpm_server_fqdn }} /IAcceptEULA'
   args:
     chdir: C:\setup\dpm
   register: agent_install
   failed_when: agent_install.rc is defined and agent_install.rc not in [0, 3010]
+  when: not agent_installed
+
+- name: wait for the agent installation to finish (DPMRA service registered, installer exited)
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      for ($i = 0; $i -lt 60; $i++) {
+        if ((Get-Service DPMRA -ErrorAction SilentlyContinue) -and -not (Get-Process DPMAgentInstaller_x64 -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Seconds 10
+      }
+      if (-not (Get-Service DPMRA -ErrorAction SilentlyContinue)) { throw "the DPMRA service was not created by the agent installer" }
   when: not agent_installed
 
 # A restart is required to load the volume filter DPM uses to track block-level changes
@@ -59,6 +77,28 @@
   ansible.windows.win_reboot:
     reboot_timeout: 900
   when: not agent_installed
+
+# The trust (DPMRA* local groups, DCOM, firewall) is normally configured by the installer when given the server name.
+# Official fallback when it is missing : SetDpmServer.exe -dpmServerName <DPMServerName>. Without it DPM gets
+# "DPM cannot browse <server> because access is denied. (ID: 32)".
+- name: configure the trust with the DPM server (SetDpmServer)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $Ansible.Changed = $false
+      $members = @(Get-LocalGroupMember -Group DPMRADCOMTrustedMachines -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+      if ($members -notcontains "{{ lab.domains[domain].netbios_name }}\{{ dpm_server_name }}$") {
+        $exe = Get-ChildItem "C:\Program Files\Microsoft Data Protection Manager" -Recurse -Filter SetDpmServer.exe | Select-Object -First 1
+        $out = & $exe.FullName -dpmServerName {{ dpm_server_name }} 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "SetDpmServer failed ($LASTEXITCODE) : $out" }
+        $Ansible.Changed = $true
+      }
+      $Ansible.Result = @(Get-LocalGroupMember -Group DPMRADCOMTrustedMachines | ForEach-Object { $_.Name })
+  become: yes
+  become_method: runas
+  become_user: "{{ domain_username }}"
+  vars:
+    ansible_become_password: "{{ domain_password }}"
 
 - name: verify the DPM protection agent service
   ansible.windows.win_service_info:
