@@ -33,11 +33,13 @@ def test_setting_scenario_touches_known_keys(name):
 
 @pytest.mark.skipif(ANSIBLE_PLAYBOOK is None, reason="ansible-playbook not found")
 @pytest.mark.parametrize("name", SCENARIOS)
-def test_scenario_playbooks_syntax(name):
+def test_scenario_playbooks_syntax(name, tmp_path):
+    run_inv = tmp_path / "scenario_run_inventory"
+    run_inv.write_text("[scenario_target]\ndc01\n\n[all:vars]\nscenario_name=%s\nscenario_target=dc01\n" % name)
     for pb in ["install.yml", "uninstall.yml"]:
         r = subprocess.run(
             [ANSIBLE_PLAYBOOK, "--syntax-check", "-i", "ad/GOAD-Mini-Base/data/inventory",
-             "-e", "scenario_target=dc01 scenario_name=%s" % name,
+             "-i", str(run_inv),
              "scenarios/%s/ansible/%s" % (name, pb)],
             capture_output=True, cwd=str(ROOT))
         assert r.returncode == 0, r.stderr.decode()

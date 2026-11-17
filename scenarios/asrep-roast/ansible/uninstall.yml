@@ -5,7 +5,7 @@
   tags: 'data'
 
 - name: "Uninstall asrep-roast scenario"
-  hosts: "{{ scenario_target }}"
+  hosts: scenario_target
   vars_files:
     - ../data/vars.yml
   vars:

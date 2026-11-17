@@ -5,7 +5,7 @@
   tags: 'data'
 
 - name: "Install asrep-roast scenario"
-  hosts: "{{ scenario_target }}"
+  hosts: scenario_target
   vars_files:
     - ../data/vars.yml
   vars:

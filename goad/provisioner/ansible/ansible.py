@@ -113,7 +113,7 @@ class Ansible(Provisioner):
         # add the scenario run inventory at the end
         scenario_inventory = self.instance_path + os.path.sep + 'scenario_run_inventory'
         with open(scenario_inventory, 'w') as f:
-            f.write(f'[all:vars]\nscenario_name={scenario.name}\nscenario_target={target}\n')
+            f.write(f'[scenario_target]\n{target}\n\n[all:vars]\nscenario_name={scenario.name}\nscenario_target={target}\n')
         inventory.append(scenario_inventory)
 
         playbook = scenario.get_playbook(install)

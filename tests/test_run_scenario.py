@@ -33,6 +33,7 @@ def test_run_scenario_inventory_and_playbook(tmp_path, scenario_dir):
     assert inv[-1].endswith("scenario_run_inventory")
     assert path == s.get_ansible_path() + os.path.sep
     content = open(inv[-1]).read()
+    assert "[scenario_target]\nsrv03\n" in content
     assert "scenario_name=esc8" in content and "scenario_target=srv03" in content
 
 
