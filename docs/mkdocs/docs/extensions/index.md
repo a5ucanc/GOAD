@@ -6,3 +6,4 @@
 - [lx01](lx01.md) : Add a linux vm to GOAD or GOAD-Light lab
 - [wazuh](wazuh.md) : Add wazuh EDR to visualize alerts
 - [elk](elk.md) : Add an ELK to collect and read the logs
+- [kali](kali.md) : Add a Kali attacker box on the lab network (Vagrant only)

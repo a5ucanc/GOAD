@@ -34,6 +34,8 @@ nav:
     - ws01: extensions/ws01.md
     - elk: extensions/elk.md
     - wazuh: extensions/wazuh.md
+    - kali: extensions/kali.md
+  - 🎯 Scenarios: scenarios.md
   - 💻 Usage: 
     - index : usage/index.md
     - Arguments: usage/goad_args.md
