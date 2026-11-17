@@ -360,6 +360,35 @@ class Goad(cmd.Cmd):
                                self.lab_manager.get_current_instance_lab(),
                                self.lab_manager.get_current_instance_provisioner())
 
+    def do_show_credentials(self, arg=''):
+        """Print every user and password of the current lab (instance lab, or the selected lab)."""
+        import json
+        from rich.table import Table
+        from rich import print as rich_print
+        from goad.credentials import collect_credentials
+        from goad.goadpath import GoadPath
+
+        instance = self.lab_manager.get_current_instance()
+        lab_name = instance.lab_name if instance is not None else self.lab_manager.get_current_lab_name()
+        config_file = GoadPath.get_lab_data_path(lab_name) + os.path.sep + 'config.json'
+        try:
+            with open(config_file, 'r') as f:
+                lab = json.load(f).get('lab', {})
+        except (OSError, ValueError) as e:
+            Log.error(f'cannot read {config_file}: {e}')
+            return
+        enabled = [(s.name, s.target) for s in instance.scenarios] if instance is not None else []
+        rows = collect_credentials(lab, enabled, GoadPath.get_scenarios_path())
+
+        table = Table(title=f'{lab_name} credentials')
+        table.add_column('Domain / host', overflow='fold')
+        table.add_column('Account', overflow='fold')
+        table.add_column('Password', overflow='fold')
+        table.add_column('Type', overflow='fold')
+        for row in rows:
+            table.add_row(*row)
+        rich_print(table)
+
     def do_list_scenarios(self, arg):
         service = self._scenario_service()
         if service is None:

@@ -92,6 +92,7 @@ def print_menu(lab_manager, advanced=True, debug=False):
             print_menu_entry('enable_vagrant', 'enable vagrant user')
     print_menu_entry('list', 'list lab instances')
     print_menu_entry('load <instance_id>', 'load a lab instance')
+    print_menu_entry('show_credentials', 'show lab users and passwords')
 
     print_menu_title('Configuration')
     print_menu_entry('config', 'show current configuration')

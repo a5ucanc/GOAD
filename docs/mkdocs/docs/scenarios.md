@@ -41,6 +41,7 @@ instance_id> reset_scenarios
 - `enable_scenario` installs a scenario. Without `host`, the target is chosen automatically (see below).
 - `disable_scenario` uninstalls it. If the scenario is enabled on several hosts you must name the host.
 - `reset_scenarios` uninstalls every enabled scenario, dependents first.
+- `show_credentials` prints every account of the current lab and its password: domain Administrators, domain users, each host's local Administrator, MSSQL `sa` logins, and the accounts created by enabled scenarios. It also works without a loaded instance, for the lab selected with `set_lab`.
 
 ### Targets
 
