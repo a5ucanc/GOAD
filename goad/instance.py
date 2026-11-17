@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 import shutil
 import os
 from jinja2 import Template, Environment, FileSystemLoader
@@ -7,11 +8,13 @@ from goad.log import Log
 from goad.exceptions import ProviderPathNotFound, JumpBoxInitFailed
 from goad.provisioner.provisioner_factory import ProvisionerFactory
 from goad.utils import *
+from goad.scenario_resolver import EnabledScenario
+from datetime import datetime, timezone
 
 
 class LabInstance:
 
-    def __init__(self, instance_id, lab_name, config, provider_name, provisioner_name, ip_range, extensions=None, status='', default=False):
+    def __init__(self, instance_id, lab_name, config, provider_name, provisioner_name, ip_range, extensions=None, status='', default=False, scenarios=None):
         if instance_id is None:
             random_id = ''.join(random.choices(string.hexdigits, k=6))
             self.instance_id = f'{random_id}-{lab_name}-{provider_name}'.lower()
@@ -27,6 +30,7 @@ class LabInstance:
             extensions = []
         self.extensions = extensions
         self.is_default = default
+        self.scenarios = [EnabledScenario(**scenario) for scenario in (scenarios or [])]
 
         # paths
         self.instance_path = GoadPath.get_instance_path(self.instance_id)
@@ -108,11 +112,29 @@ class LabInstance:
             "ip_range": self.ip_range,
             "extensions": self.extensions,
             "status": self.status,
-            "is_default": self.is_default
+            "is_default": self.is_default,
+            "scenarios": [asdict(scenario) for scenario in self.scenarios]
         }
         json_object = json.dumps(instance_info, indent=4)
         with open(self.instance_path + sep + "instance.json", "w") as outfile:
             outfile.write(json_object)
+
+    def add_scenario(self, name, target):
+        enabled_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        self.scenarios.append(EnabledScenario(name, target, enabled_at))
+        self.save_json_instance()
+
+    def remove_scenario(self, name, target):
+        key = f'{name}@{target}'
+        self.scenarios = [scenario for scenario in self.scenarios if scenario.key != key]
+        self.save_json_instance()
+
+    def mark_scenario_dirty(self, name, target):
+        key = f'{name}@{target}'
+        for scenario in self.scenarios:
+            if scenario.key == key:
+                scenario.status = 'dirty'
+        self.save_json_instance()
 
     def _create_vagrantfile(self):
         # load lab vagrantfile

@@ -28,7 +28,8 @@ class LabInstances:
                     extensions = instance_info['extensions']
                     status = instance_info['status']
                     is_default = instance_info['is_default']
-                    self.instances[instance] = LabInstance(instance, lab_name, config, provider_name, provisioning_method, ip_range, extensions, status, is_default)
+                    scenarios = instance_info.get('scenarios', [])
+                    self.instances[instance] = LabInstance(instance, lab_name, config, provider_name, provisioning_method, ip_range, extensions, status, is_default, scenarios)
 
     def nb_instances(self):
         return len(self.instances)

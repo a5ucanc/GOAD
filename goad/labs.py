@@ -3,6 +3,9 @@ from goad.provider.provider_factory import ProviderFactory
 from goad.utils import *
 from goad.goadpath import GoadPath
 from goad.log import Log
+from goad.scenario import Scenarios
+from goad.scenario_resolver import ScenarioResolver
+import json
 from goad.exceptions import *
 
 
@@ -33,6 +36,11 @@ class Lab:
         self.lab_name = lab_name
         self.providers = {}
         self.extensions = {}
+        self.capabilities = None
+        self.dcs = []
+        self.root_dc = ''
+        self._scenario_resolver = None
+        self._load_lab_config(lab_name)
         try:
             self._load_providers(lab_name, config)
         except FileNotFoundError as e:
@@ -42,6 +50,50 @@ class Lab:
         except FileNotFoundError as e:
             # no extensions
             pass
+
+    def _load_lab_config(self, lab_name):
+        config_file = GoadPath.get_lab_data_path(lab_name) + os.path.sep + 'config.json'
+        try:
+            with open(config_file, 'r') as config_openfile:
+                lab_config = json.load(config_openfile)['lab']
+            capabilities = lab_config.get('capabilities')
+            hosts = lab_config.get('hosts', {})
+            domains = lab_config.get('domains', {})
+            dcs = [key for key, host in hosts.items() if host.get('type') == 'dc']
+            root_dc = self._find_root_dc(domains)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return
+        self.capabilities = capabilities
+        self.dcs = dcs
+        self.root_dc = root_dc
+
+    @staticmethod
+    def _find_root_dc(domains):
+        def is_child(name):
+            return any(name.endswith('.' + other) for other in domains if other != name)
+
+        roots = [name for name in domains if not is_child(name)]
+        if not roots:
+            return ''
+
+        def children_count(root):
+            return sum(1 for name in domains if name.endswith('.' + root))
+
+        # most child domains first, tie: lowest dc key
+        best = sorted(roots, key=lambda root: (-children_count(root), domains[root]['dc']))[0]
+        return domains[best]['dc']
+
+    def is_base(self):
+        return self.capabilities is not None
+
+    def get_scenario_resolver(self):
+        if self._scenario_resolver is None:
+            scenarios = Scenarios(GoadPath.get_scenarios_path())
+            self._scenario_resolver = ScenarioResolver(scenarios, self.lab_name, self.capabilities, self.root_dc, self.dcs)
+        return self._scenario_resolver
+
+    def get_scenario(self, name):
+        return self.get_scenario_resolver().scenarios.get(name)
 
     def _load_providers(self, lab_name, config):
         for provider_name in Utils.list_folders(GoadPath.get_lab_providers_path(lab_name)):
