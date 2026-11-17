@@ -166,3 +166,32 @@ class GoadPath:
         :return <project>/extensions/<extension_name>/ansible
         """
         return GoadPath.get_extension_path(extension_name) + 'ansible'
+
+    # SCENARIOS
+    @staticmethod
+    def get_scenarios_path():
+        """
+        :return: <project>/scenarios
+        """
+        return project_path + os.path.sep + 'scenarios'
+
+    @staticmethod
+    def get_scenario_path(scenario_name):
+        """
+        :return: <project>/scenarios/<scenario_name>/
+        """
+        return GoadPath.get_scenarios_path() + os.path.sep + scenario_name + os.path.sep
+
+    @staticmethod
+    def get_scenario_config_file(scenario_name):
+        """
+        :return: <project>/scenarios/<scenario_name>/scenario.json
+        """
+        return GoadPath.get_scenario_path(scenario_name) + 'scenario.json'
+
+    @staticmethod
+    def get_scenario_ansible_path(scenario_name):
+        """
+        :return <project>/scenarios/<scenario_name>/ansible
+        """
+        return GoadPath.get_scenario_path(scenario_name) + 'ansible'
