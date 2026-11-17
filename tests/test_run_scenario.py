@@ -51,3 +51,41 @@ def test_run_scenario_failure_returns_false(tmp_path, scenario_dir):
     prov = make_ansible_stub(tmp_path, lambda *a: False)
     s = Scenario.from_file("esc8", scenario_dir.make("esc8", type="setting"))
     assert prov.run_scenario(s, "srv03", []) is False
+
+
+class _Extension:
+    name = "elk"
+
+    def get_playbook(self, install=True):
+        return "install.yml" if install else "uninstall.yml"
+
+    def get_ansible_path(self):
+        return "/ext/elk/ansible/"
+
+
+def _make_extension_prov(tmp_path, monkeypatch, calls):
+    from goad.goadpath import GoadPath
+    lab_inventory = tmp_path / "lab_inventory"
+    lab_inventory.write_text("")
+    (tmp_path / "inventory").write_text("")
+    (tmp_path / "global_inventory").write_text("")
+    monkeypatch.setattr(GoadPath, "get_lab_inventory_file", staticmethod(lambda lab: str(lab_inventory)))
+    prov = make_ansible_stub(tmp_path, lambda pb, inv, tries=3, timeout=30, playbook_path=None: calls.append(inv) or True)
+    prov._get_global_inventory = lambda: str(tmp_path / "global_inventory")
+    return prov
+
+
+def test_run_extension_default_uses_vagrant_inventory(tmp_path, monkeypatch):
+    calls = []
+    prov = _make_extension_prov(tmp_path, monkeypatch, calls)
+    assert prov.run_extension(_Extension(), ["elk", "ws01"])
+    names = [os.path.basename(i) for i in calls[0]]
+    assert names == ["lab_inventory", "inventory", "ws01_inventory", "elk_inventory", "global_inventory"]
+
+
+def test_run_extension_disable_vagrant_inventory(tmp_path, monkeypatch):
+    calls = []
+    prov = _make_extension_prov(tmp_path, monkeypatch, calls)
+    assert prov.run_extension(_Extension(), ["elk", "ws01"], use_disable_vagrant_inventory=True)
+    names = [os.path.basename(i) for i in calls[0]]
+    assert names == ["inventory_disable_vagrant", "ws01_inventory", "elk_inventory", "global_inventory"]

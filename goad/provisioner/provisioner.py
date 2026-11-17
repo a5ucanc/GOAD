@@ -26,7 +26,7 @@ class Provisioner(ABC):
     def run(self, arg):
         pass
 
-    def run_extension(self, arg, current_instance_extensions):
+    def run_extension(self, arg, current_instance_extensions, install=True, use_disable_vagrant_inventory=False):
         pass
 
     def run_from(self, arg):

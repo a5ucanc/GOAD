@@ -73,8 +73,14 @@ class Ansible(Provisioner):
             provision_result = self.run_playbook(playbook, inventory)
         return provision_result
 
-    def run_extension(self, extension, current_instance_extensions_name, install=True):
-        inventory = self._get_lab_inventory(self.lab_name, self.provider_name)
+    def run_extension(self, extension, current_instance_extensions_name, install=True, use_disable_vagrant_inventory=False):
+        global_inventory = self._get_global_inventory()
+        if use_disable_vagrant_inventory:
+            # vagrant user is disabled on the lab hosts: connect with the inventory_disable_vagrant credentials
+            # (the global inventory is kept at the end, as for the other inventories)
+            inventory = [i for i in self.get_disable_vagrant_inventory() if i != global_inventory]
+        else:
+            inventory = self._get_lab_inventory(self.lab_name, self.provider_name)
 
         # add the inventory of other enabled extensions
         for instances_extension_name in current_instance_extensions_name:
@@ -88,7 +94,6 @@ class Ansible(Provisioner):
         if extension_inventory is not None:
             inventory.append(extension_inventory)
 
-        global_inventory = self._get_global_inventory()
         if global_inventory is not None:
             inventory.append(global_inventory)
 
