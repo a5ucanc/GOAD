@@ -136,7 +136,7 @@ class ScenarioResolver:
                     continue
                 seen.add(entry.name)
                 visit(entry.name)
-                result.append(entry)
+                result.extend(e for e in enabled if e.name == entry.name)
 
         visit(name)
         return result

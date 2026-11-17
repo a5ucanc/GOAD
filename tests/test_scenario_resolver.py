@@ -134,3 +134,9 @@ def test_install_order_unknown_raises(resolver):
 def test_dependents_deepest_first(resolver):
     on = [EnabledScenario("esc8", "dc01", "t"), EnabledScenario("relay", "dc01", "t"), EnabledScenario("relay2", "dc01", "t")]
     assert [e.name for e in resolver.dependents("esc8", on)] == ["relay2", "relay"]
+
+
+def test_dependents_include_every_target_of_a_dependent(resolver):
+    on = [EnabledScenario("esc8", "dc01", "t"), EnabledScenario("relay", "dc01", "t"), EnabledScenario("relay", "srv03", "t")]
+    keys = [e.key for e in resolver.dependents("esc8", on)]
+    assert keys == ["relay@dc01", "relay@srv03"]

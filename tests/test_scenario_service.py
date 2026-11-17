@@ -133,3 +133,13 @@ def test_listing_enabled_first(svc):
     svc.enable("esc8", None)
     rows = svc.listing(False)
     assert rows[0] == ("esc8", "enabled", "dc01")
+
+
+def test_cascade_disables_dependent_on_every_target(svc, prov):
+    svc.enable("esc8", None)
+    svc.instance.add_scenario("relay", "dc01")
+    svc.instance.add_scenario("relay", "srv03")
+    prov.calls.clear()
+    assert svc.disable("esc8", None, cascade=True)
+    assert prov.calls == [("relay", "dc01", False), ("relay", "srv03", False), ("esc8", "dc01", False)]
+    assert svc.instance.scenarios == []
