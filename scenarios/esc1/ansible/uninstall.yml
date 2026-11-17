@@ -1,0 +1,30 @@
+---
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Uninstall esc1 scenario"
+  hosts: scenario_target
+  vars_files:
+    - ../data/vars.yml
+  vars:
+    domain: "{{ lab.hosts[scenario_target].domain }}"
+    domain_username: "{{ domain }}\\administrator"
+    domain_password: "{{ lab.domains[domain].domain_password }}"
+    netbios: "{{ lab.domains[domain].netbios_name }}"
+  tasks:
+    - name: "Unpublish and remove ESC1 template"
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        if (Get-CATemplate | Where-Object { $_.Name -eq "{{ template }}" }) {
+          Remove-CATemplate -Name "{{ template }}" -Force
+        }
+        if (Get-ADCSTemplate -DisplayName "{{ template }}") {
+          Remove-ADCSTemplate -DisplayName "{{ template }}"
+        }
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ domain_username }}"
+        ansible_become_password: "{{ domain_password }}"
