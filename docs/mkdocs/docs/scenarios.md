@@ -142,6 +142,8 @@ Each package has a `README.md` with the attack and a verification step.
 | `adcs.editf_san` | `off`, `on` |
 | `adcs.enforce_encrypt` | `on`, `off` |
 
+`kerberos.rc4` also sets `msDS-SupportedEncryptionTypes` on every trust object (`objectClass=trustedDomain` under `CN=System,<domain DN>`) when it runs on a DC: `24` (AES128 + AES256) for `disabled`, `28` (RC4 + AES) for `enabled`. Without it, inter-realm referrals across the `sevenkingdoms.local` / `essos.local` forest trust fall back to RC4 and fail once RC4 is disabled. This has not yet been checked on a live lab. To check it on `GOAD-Base`, log on as a `sevenkingdoms.local` user and run `klist get cifs/meereen.essos.local`: it must return an AES ticket.
+
 ## How to write a scenario
 
 The `esc8` scenario is the smallest complete example of a `setting` scenario.

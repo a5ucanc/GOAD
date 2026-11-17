@@ -11,3 +11,31 @@
     data: "{{ 24 if setting_value | string == 'disabled' else 28 }}"
     type: dword
     state: present
+
+# Trust objects have no msDS-SupportedEncryptionTypes by default, so the KDC assumes RC4 for
+# inter-realm referrals. With RC4 disabled the referral would fail: declare the AES types on
+# every trustedDomain object of the DC's domain. hardening runs on every DC, so both sides of a
+# trust are set.
+- name: "Set Kerberos encryption types on trust objects"
+  ansible.windows.win_powershell:
+    script: |
+      param([int]$Wanted)
+      $Ansible.Changed = $false
+      if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) { return }
+      Import-Module ActiveDirectory
+      $base = 'CN=System,' + (Get-ADDomain).DistinguishedName
+      $trusts = Get-ADObject -SearchBase $base -SearchScope OneLevel -LDAPFilter '(objectClass=trustedDomain)' -Properties 'msDS-SupportedEncryptionTypes'
+      foreach ($trust in $trusts) {
+        if ($trust.'msDS-SupportedEncryptionTypes' -ne $Wanted) {
+          Set-ADObject -Identity $trust.DistinguishedName -Replace @{ 'msDS-SupportedEncryptionTypes' = $Wanted }
+          $Ansible.Changed = $true
+        }
+      }
+    parameters:
+      Wanted: "{{ 24 if setting_value | string == 'disabled' else 28 }}"
+    error_action: stop
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_username}}"
+    ansible_become_password: "{{domain_password}}"
