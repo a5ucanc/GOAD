@@ -56,6 +56,15 @@ GOAD-Mini:
   - security.yml
   - vulnerabilities.yml
 
+GOAD-Mini-Base:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  - ad-data.yml
+  - ad-relations.yml
+  - adcs.yml
+  - hardening.yml
+
 DRACARYS:
   - build.yml
   - ad-servers.yml
