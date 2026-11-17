@@ -5,7 +5,7 @@ import subprocess
 import pytest
 import yaml
 
-BASE_LABS = ["GOAD-Mini-Base"]  # Task 10 extends this list
+BASE_LABS = ["GOAD-Mini-Base", "GOAD-Light-Base", "GOAD-Base"]
 
 
 @pytest.mark.parametrize("lab", BASE_LABS)

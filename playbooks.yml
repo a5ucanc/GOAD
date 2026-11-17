@@ -100,3 +100,39 @@ default:
   - servers.yml
   - security.yml
   - vulnerabilities.yml
+
+GOAD-Light-Base:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  # Wait after the child domain creation before adding servers
+  - ad-child_domain.yml
+  # Waiting 5 minutes for the child domain to be ready
+  - wait5m.yml
+  - ad-members.yml
+  - ad-trusts.yml
+  - ad-data.yml
+  - ad-gmsa.yml
+  - laps.yml
+  - ad-relations.yml
+  - adcs.yml
+  - servers.yml
+  - hardening.yml
+
+GOAD-Base:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  # Wait after the child domain creation before adding servers
+  - ad-child_domain.yml
+  # Waiting 5 minutes for the child domain to be ready
+  - wait5m.yml
+  - ad-members.yml
+  - ad-trusts.yml
+  - ad-data.yml
+  - ad-gmsa.yml
+  - laps.yml
+  - ad-relations.yml
+  - adcs.yml
+  - servers.yml
+  - hardening.yml
