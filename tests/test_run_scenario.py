@@ -1,3 +1,4 @@
+import pytest
 import os
 from goad.provisioner.ansible.ansible import Ansible
 from goad.scenario import Scenario
@@ -89,3 +90,27 @@ def test_run_extension_disable_vagrant_inventory(tmp_path, monkeypatch):
     assert prov.run_extension(_Extension(), ["elk", "ws01"], use_disable_vagrant_inventory=True)
     names = [os.path.basename(i) for i in calls[0]]
     assert names == ["inventory_disable_vagrant", "ws01_inventory", "elk_inventory", "global_inventory"]
+
+
+def test_run_scenario_syncs_jumpbox_after_writing_run_inventory(tmp_path, scenario_dir):
+    events = []
+    inventory = tmp_path / "scenario_run_inventory"
+
+    def run_playbook(pb, inv, tries=3, timeout=30, playbook_path=None):
+        events.append("run_playbook")
+        return True
+
+    prov = make_ansible_stub(tmp_path, run_playbook)
+    prov.use_jumpbox = True
+    prov.sync_source_jumpbox = lambda: events.append("sync:" + inventory.read_text().splitlines()[1])
+    s = Scenario.from_file("esc8", scenario_dir.make("esc8", type="setting"))
+    assert prov.run_scenario(s, "srv03", [])
+    assert prov.run_scenario(s, "dc01", [])
+    assert events == ["sync:srv03", "run_playbook", "sync:dc01", "run_playbook"]
+
+
+def test_run_scenario_local_provisioner_does_not_sync(tmp_path, scenario_dir):
+    prov = make_ansible_stub(tmp_path, lambda *a, **k: True)
+    prov.sync_source_jumpbox = lambda: pytest.fail("sync called without jumpbox")
+    s = Scenario.from_file("esc8", scenario_dir.make("esc8", type="setting"))
+    assert prov.run_scenario(s, "srv03", [])

@@ -121,6 +121,10 @@ class Ansible(Provisioner):
             f.write(f'[scenario_target]\n{target}\n\n[all:vars]\nscenario_name={scenario.name}\nscenario_target={target}\n')
         inventory.append(scenario_inventory)
 
+        if self.use_jumpbox:
+            # the playbook runs on the jumpbox: push the scenario files and the run inventory written above
+            self.sync_source_jumpbox()
+
         playbook = scenario.get_playbook(install)
         scenario_ansible_path = scenario.get_ansible_path() + os.path.sep
 
