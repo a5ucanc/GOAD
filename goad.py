@@ -139,9 +139,26 @@ class Goad(cmd.Cmd):
             time_provision = time.ctime(time.time() - start)[11:19]
             Log.info(f'Provisioned with {arg} in {time_provision}')
 
+    def _is_base_lab(self):
+        lab = self.lab_manager.get_current_instance_lab()
+        return lab is not None and lab.is_base()
+
+    def _provision_base_lab(self, from_task=None):
+        from goad.base_lab_flow import provision_base_lab
+        service = self._scenario_service()
+        if service is None:
+            return False
+        return provision_base_lab(self.lab_manager.get_current_instance(),
+                                  self.lab_manager.get_current_instance_lab(),
+                                  self.lab_manager.get_current_instance_provisioner(),
+                                  service, from_task=from_task)
+
     def do_provision_lab(self, arg=''):
         start = time.time()
-        provision_result = self.lab_manager.get_current_instance_provisioner().run()
+        if self._is_base_lab():
+            provision_result = self._provision_base_lab()
+        else:
+            provision_result = self.lab_manager.get_current_instance_provisioner().run()
         if provision_result:
             self.lab_manager.get_current_instance().set_status(READY)
             time_provision = time.ctime(time.time() - start)[11:19]
@@ -150,7 +167,10 @@ class Goad(cmd.Cmd):
 
     def do_provision_lab_from(self, arg):
         start = time.time()
-        provision_result = self.lab_manager.get_current_instance_provisioner().run_from(arg)
+        if self._is_base_lab():
+            provision_result = self._provision_base_lab(from_task=arg)
+        else:
+            provision_result = self.lab_manager.get_current_instance_provisioner().run_from(arg)
         if provision_result:
             self.lab_manager.get_current_instance().set_status(READY)
             time_provision = time.ctime(time.time() - start)[11:19]
