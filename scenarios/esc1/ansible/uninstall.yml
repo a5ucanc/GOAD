@@ -21,7 +21,7 @@
           Remove-CATemplate -Name "{{ template }}" -Force
         }
         if (Get-ADCSTemplate -DisplayName "{{ template }}") {
-          Remove-ADCSTemplate -DisplayName "{{ template }}"
+          Remove-ADCSTemplate -DisplayName "{{ template }}" -Confirm:$false
         }
       vars:
         ansible_become: yes
