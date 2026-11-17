@@ -1,0 +1,13 @@
+- name: "Check accepted values for kerberos.rc4"
+  ansible.builtin.assert:
+    that: "(setting_value | string) in ['disabled', 'enabled']"
+    fail_msg: "Invalid value '{{ setting_value }}' for kerberos.rc4, accepted: ['disabled', 'enabled']"
+    quiet: true
+
+- name: "Set Kerberos supported encryption types"
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters
+    name: SupportedEncryptionTypes
+    data: "{{ 24 if setting_value | string == 'disabled' else 28 }}"
+    type: dword
+    state: present

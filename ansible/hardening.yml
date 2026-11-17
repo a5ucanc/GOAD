@@ -1,0 +1,20 @@
+---
+# Load datas
+- import_playbook: data.yml
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Apply base settings"
+  hosts: domain
+  tasks:
+    - name: "Apply base setting"
+      ansible.builtin.include_role:
+        name: base_setting
+      vars:
+        setting_key: "{{ item.key }}"
+        setting_value: "{{ item.value }}"
+        domain: "{{ lab.hosts[dict_key].domain }}"
+        domain_username: "{{ domain }}\\{{ admin_user }}"
+        domain_password: "{{ lab.domains[domain].domain_password }}"
+      loop: "{{ lab.base_settings[dict_key] | default({}) | dict2items }}"

@@ -1,0 +1,13 @@
+- name: "Check accepted values for ldap.channel_binding"
+  ansible.builtin.assert:
+    that: "(setting_value | string) in ['always', 'never']"
+    fail_msg: "Invalid value '{{ setting_value }}' for ldap.channel_binding, accepted: ['always', 'never']"
+    quiet: true
+
+- name: "Set LDAP channel binding"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters
+    name: LdapEnforceChannelBinding
+    data: "{{ 2 if setting_value | string == 'always' else 0 }}"
+    type: dword
+    state: present

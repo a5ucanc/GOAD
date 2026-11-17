@@ -1,0 +1,13 @@
+- name: "Check accepted values for firewall.state"
+  ansible.builtin.assert:
+    that: "(setting_value | string) in ['on', 'off']"
+    fail_msg: "Invalid value '{{ setting_value }}' for firewall.state, accepted: ['on', 'off']"
+    quiet: true
+
+- name: "Set firewall state on all profiles"
+  community.windows.win_firewall:
+    profiles:
+      - Domain
+      - Private
+      - Public
+    state: "{{ 'enabled' if setting_value | string == 'on' else 'disabled' }}"

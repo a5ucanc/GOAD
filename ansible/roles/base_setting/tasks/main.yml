@@ -1,0 +1,2 @@
+- name: "Apply base setting {{ setting_key }}={{ setting_value }}"
+  ansible.builtin.include_tasks: "{{ setting_key | replace('.', '_') }}.yml"
