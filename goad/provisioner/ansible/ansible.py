@@ -101,6 +101,30 @@ class Ansible(Provisioner):
             return False
         return provision_result
 
+    def run_scenario(self, scenario, target, current_instance_extensions_name, install=True):
+        inventory = self.get_disable_vagrant_inventory()
+
+        # add the inventory of enabled extensions (only if the file exists)
+        for extension_name in current_instance_extensions_name:
+            extension_inventory = self.instance_path + os.path.sep + extension_name + '_inventory'
+            if os.path.isfile(extension_inventory):
+                inventory.append(extension_inventory)
+
+        # add the scenario run inventory at the end
+        scenario_inventory = self.instance_path + os.path.sep + 'scenario_run_inventory'
+        with open(scenario_inventory, 'w') as f:
+            f.write(f'[all:vars]\nscenario_name={scenario.name}\nscenario_target={target}\n')
+        inventory.append(scenario_inventory)
+
+        playbook = scenario.get_playbook(install)
+        scenario_ansible_path = scenario.get_ansible_path() + os.path.sep
+
+        provision_result = self.run_playbook(playbook, inventory, playbook_path=scenario_ansible_path)
+        if not provision_result:
+            Log.error(f'Something wrong during the provisioning task : {playbook}')
+            return False
+        return provision_result
+
     def run_from(self, task):
         inventory = self.get_inventory(self.lab_name, self.provider_name)
         playbooks = self.get_playbook_list(self.lab_name)
