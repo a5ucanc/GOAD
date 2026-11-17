@@ -440,9 +440,6 @@
             ],
             "member_server": [
                 "srv02"
-            ],
-            "laps": [
-                "srv02"
             ]
         },
         "base_settings": {

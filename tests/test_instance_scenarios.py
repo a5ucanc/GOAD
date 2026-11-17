@@ -69,6 +69,13 @@ def test_instance_loads_scenarios_from_dicts(workspace):
     assert inst.scenarios[0].status == "dirty"
 
 
+def test_instance_ignores_unknown_scenario_keys(workspace):
+    inst = LabInstance('a', 'GOAD', None, 'virtualbox', 'local', '1.1.1',
+                       scenarios=[{"name": "n", "target": "t", "enabled_at": "x", "extra": 1}])
+    assert inst.scenarios[0].key == "n@t"
+    assert inst.scenarios[0].status == "enabled"
+
+
 def _write_config(root, lab, config):
     data = root / lab / 'data'
     data.mkdir(parents=True)

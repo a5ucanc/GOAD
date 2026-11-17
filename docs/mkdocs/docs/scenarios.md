@@ -20,8 +20,8 @@ Each `-Base` lab declares `lab.capabilities` in its `config.json`: a map from a 
 
 | Lab | Capabilities |
 |-----|--------------|
-| `GOAD-Base` | `adcs`: dc01, srv03; `mssql`: srv02, srv03; `child_domain`: dc02; `forest_trust`: dc01, dc03; `member_server`: srv02, srv03; `laps`: srv02, srv03 |
-| `GOAD-Light-Base` | `adcs`: dc01; `mssql`: srv02; `child_domain`: dc02; `member_server`: srv02; `laps`: srv02 |
+| `GOAD-Base` | `adcs`: dc01, srv03; `mssql`: srv02, srv03; `child_domain`: dc02; `forest_trust`: dc01, dc03; `member_server`: srv02, srv03; `laps`: srv03 |
+| `GOAD-Light-Base` | `adcs`: dc01; `mssql`: srv02; `child_domain`: dc02; `member_server`: srv02 |
 | `GOAD-Mini-Base` | `adcs`: dc01 |
 
 Existing labs (`GOAD`, `GOAD-Light`, `GOAD-Mini`, ...) are unchanged and have no scenarios.

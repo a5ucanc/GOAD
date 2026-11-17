@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict
+from dataclasses import asdict, fields
 import shutil
 import os
 from jinja2 import Template, Environment, FileSystemLoader
@@ -31,7 +31,9 @@ class LabInstance:
         self.extensions = extensions
         self.is_default = default
         self.vagrant_disabled = vagrant_disabled
-        self.scenarios = [EnabledScenario(**scenario) for scenario in (scenarios or [])]
+        # ignore unknown keys so a newer or hand-edited instance.json still loads
+        known = {f.name for f in fields(EnabledScenario)}
+        self.scenarios = [EnabledScenario(**{k: v for k, v in scenario.items() if k in known}) for scenario in (scenarios or [])]
 
         # paths
         self.instance_path = GoadPath.get_instance_path(self.instance_id)

@@ -77,3 +77,26 @@ def test_playbooks_entry_has_no_vuln_playbooks(lab):
 
 def test_original_labs_untouched():
     assert subprocess.run(["git", "diff", "--quiet", "main", "--", "ad/GOAD", "ad/GOAD-Light", "ad/GOAD-Mini", "extensions/lx01", "extensions/ws01", "extensions/exchange"]).returncode == 0
+
+
+def _inventory_group(lab, group):
+    hosts, current = [], None
+    for line in open(f"ad/{lab}/data/inventory").read().splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            current = line.strip("[]")
+        elif current == group and line and not line.startswith(";"):
+            hosts.append(line.split()[0])
+    return hosts
+
+
+@pytest.mark.parametrize("lab", BASE_LABS)
+def test_laps_capability_matches_laps_hosts(lab):
+    cfg = json.load(open(f"ad/{lab}/data/config.json"))["lab"]
+    laps_hosts = {h for h, v in cfg["hosts"].items() if v.get("use_laps")}
+    laps_hosts |= set(_inventory_group(lab, "laps_server")) | set(_inventory_group(lab, "laps_workstation"))
+    capability = (cfg.get("capabilities") or {}).get("laps")
+    if laps_hosts:
+        assert sorted(capability) == sorted(laps_hosts)
+    else:
+        assert capability is None

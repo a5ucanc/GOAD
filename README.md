@@ -56,4 +56,4 @@ This lab use free Windows VM only (180 days). After that delay enter a license o
 
 ## Vulnerability scenarios
 
-The `GOAD-Base`, `GOAD-Light-Base` and `GOAD-Mini-Base` labs ship fully hardened, with a uniform password and no intentional weakness. Individual vulnerabilities (kerberoast, asrep-roast, ESC1, ESC8, LLMNR) are then turned on and off one at a time with the `enable_scenario` / `disable_scenario` commands. A `kali` extension adds an attacker box on the lab network. See the [scenarios documentation](https://orange-cyberdefense.github.io/GOAD/scenarios/).
+The `GOAD-Base`, `GOAD-Light-Base` and `GOAD-Mini-Base` labs ship fully hardened, with a uniform password and no intentional weakness. Individual vulnerabilities (kerberoast, asrep-roast, ESC1, ESC8, LLMNR) are then turned on and off one at a time with the `enable_scenario` / `disable_scenario` commands. A `kali` extension adds an attacker box on the lab network. See the [scenarios documentation](./docs/mkdocs/docs/scenarios.md).
