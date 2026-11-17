@@ -1,0 +1,3 @@
+touched_settings:
+  - key: adcs.web_enrollment
+    vulnerable_value: true
