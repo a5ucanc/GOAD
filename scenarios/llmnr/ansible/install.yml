@@ -15,7 +15,7 @@
   tasks:
     - name: "Apply install value for each touched setting"
       ansible.builtin.include_role:
-        name: base_setting
+        name: "{{ playbook_dir }}/../../../ansible/roles/base_setting"
       vars:
         setting_key: "{{ scenario_setting.key }}"
         setting_value: "{{ scenario_setting.vulnerable_value }}"

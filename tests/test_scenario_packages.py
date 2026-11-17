@@ -43,3 +43,44 @@ def test_scenario_playbooks_syntax(name, tmp_path):
              "scenarios/%s/ansible/%s" % (name, pb)],
             capture_output=True, cwd=str(ROOT))
         assert r.returncode == 0, r.stderr.decode()
+
+
+def _role_includes(path):
+    import yaml
+
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key.split(".")[-1] in ("include_role", "import_role") and isinstance(value, dict):
+                    found.append(value["name"])
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(yaml.safe_load(path.read_text()))
+    return found
+
+
+ROLE_FILES = sorted(
+    list((ROOT / "scenarios").glob("*/ansible/*.yml"))
+    + list((ROOT / "ansible/roles/base_setting/tasks").glob("*.yml"))
+)
+
+
+@pytest.mark.parametrize("path", ROLE_FILES, ids=lambda p: str(p.relative_to(ROOT)))
+def test_included_roles_resolve(path):
+    role_path = ROOT / "ansible/roles/base_setting"
+    for name in _role_includes(path):
+        resolved = name.replace("{{ playbook_dir }}", str(path.parent)).replace("{{ role_path }}", str(role_path))
+        assert "{{" not in resolved, name
+        if "/" in name and ("{{ playbook_dir }}" in name or "{{ role_path }}" in name):
+            target = Path(resolved)
+        else:
+            # a bare name is only found when the playbook runs from ansible/
+            assert path.parent == ROOT / "ansible", "bare role name %s outside ansible/" % name
+            target = ROOT / "ansible/roles" / name
+        assert target.is_dir(), "%s: role %s not found at %s" % (path, name, target)

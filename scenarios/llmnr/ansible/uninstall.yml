@@ -15,7 +15,7 @@
   tasks:
     - name: "Apply uninstall value for each touched setting"
       ansible.builtin.include_role:
-        name: base_setting
+        name: "{{ playbook_dir }}/../../../ansible/roles/base_setting"
       vars:
         setting_key: "{{ scenario_setting.key }}"
         setting_value: "{{ lab.base_settings[scenario_target][scenario_setting.key] }}"

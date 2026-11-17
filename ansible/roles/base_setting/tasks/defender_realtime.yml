@@ -6,7 +6,7 @@
 
 - name: "Set Defender realtime protection"
   ansible.builtin.include_role:
-    name: settings/windows_defender
+    name: "{{ role_path }}/../settings/windows_defender"
   vars:
     windows_defender_status: "{{ setting_value | string }}"
 

@@ -188,7 +188,7 @@ touched_settings:
   tasks:
     - name: "Apply install value for each touched setting"
       ansible.builtin.include_role:
-        name: base_setting
+        name: "{{ playbook_dir }}/../../../ansible/roles/base_setting"
       vars:
         setting_key: "{{ scenario_setting.key }}"
         setting_value: "{{ scenario_setting.vulnerable_value }}"
@@ -202,7 +202,7 @@ Points to note:
 - `hosts: scenario_target`. GOAD writes an inventory with a `[scenario_target]` group that contains only the chosen host, plus the vars `scenario_name` and `scenario_target`. It is added after the `inventory_disable_vagrant` inventory (and the inventories of enabled extensions), so connections use `administrator`.
 - `import_playbook: ../../../ansible/data.yml` loads the lab data (`lab`, `lab.hosts`, `lab.domains`, `lab.base_settings`), as the lab playbooks do.
 - `domain`, `domain_username` and `domain_password` are the variables the `base_setting` role expects.
-- `include_role: base_setting` applies each key with `setting_key` and `setting_value`.
+- `include_role` applies each key of the `base_setting` role with `setting_key` and `setting_value`. The role is referenced by path from `playbook_dir`: the playbook runs from `scenarios/<name>/ansible`, where Ansible does not search `ansible/roles`, so a bare `name: base_setting` fails with "the role 'base_setting' was not found".
 
 ### 4. ansible/uninstall.yml
 
