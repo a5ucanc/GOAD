@@ -519,6 +519,7 @@ class Goad(cmd.Cmd):
         start = time.time()
         provision_result = self.lab_manager.get_current_instance_provisioner().run_disable_vagrant(disable_vagrant=True)
         if provision_result:
+            self.lab_manager.get_current_instance().set_vagrant_disabled(True)
             time_provision = time.ctime(time.time() - start)[11:19]
             Log.info(f'Disable vagrant done in {time_provision}')
             Log.info(f'Please restart the lab to avoid administrator NT hash in lsass')
@@ -527,6 +528,7 @@ class Goad(cmd.Cmd):
         start = time.time()
         provision_result = self.lab_manager.get_current_instance_provisioner().run_disable_vagrant(disable_vagrant=False)
         if provision_result:
+            self.lab_manager.get_current_instance().set_vagrant_disabled(False)
             time_provision = time.ctime(time.time() - start)[11:19]
             Log.info(f'Enable vagrant done in {time_provision}')
 

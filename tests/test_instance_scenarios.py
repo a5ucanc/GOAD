@@ -38,6 +38,14 @@ def test_load_legacy_instance_without_scenarios(workspace):
         "ip_range": "192.168.56", "extensions": [], "status": "ready", "is_default": False}))
     insts = LabInstances(None)
     assert insts.get_instance('x').scenarios == []
+    assert insts.get_instance('x').vagrant_disabled is False
+
+
+def test_vagrant_disabled_roundtrip(tmp_instance):
+    assert _read(tmp_instance)["vagrant_disabled"] is False
+    tmp_instance.set_vagrant_disabled(True)
+    assert _read(tmp_instance)["vagrant_disabled"] is True
+    assert LabInstances(None).get_instance('abc-goad').vagrant_disabled is True
 
 
 def test_add_remove_dirty_roundtrip(tmp_instance):

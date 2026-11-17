@@ -72,7 +72,7 @@ A scenario's identity is `name@target`, for example `esc8@dc01`.
 
 ### Re-provisioning
 
-Provisioning a `-Base` lab again re-enables vagrant, runs the full provisioning, disables vagrant again, then re-applies every enabled scenario in dependency order. The scenarios you enabled are therefore still in place after a re-provision.
+GOAD records in `instance.json` (`vagrant_disabled`) whether the vagrant account is currently disabled. The flag is set after a successful `disable_vagrant` and cleared after a successful `enable_vagrant`, whether run by the base lab flow or by hand. Provisioning a `-Base` lab again (including a new `install` on an existing instance) re-enables vagrant first when the flag is set, runs the full provisioning, disables vagrant again, then re-applies every enabled scenario in dependency order. The scenarios you enabled are therefore still in place after a re-provision.
 
 ## Package layout
 

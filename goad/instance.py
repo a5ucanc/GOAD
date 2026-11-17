@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 class LabInstance:
 
-    def __init__(self, instance_id, lab_name, config, provider_name, provisioner_name, ip_range, extensions=None, status='', default=False, scenarios=None):
+    def __init__(self, instance_id, lab_name, config, provider_name, provisioner_name, ip_range, extensions=None, status='', default=False, scenarios=None, vagrant_disabled=False):
         if instance_id is None:
             random_id = ''.join(random.choices(string.hexdigits, k=6))
             self.instance_id = f'{random_id}-{lab_name}-{provider_name}'.lower()
@@ -30,6 +30,7 @@ class LabInstance:
             extensions = []
         self.extensions = extensions
         self.is_default = default
+        self.vagrant_disabled = vagrant_disabled
         self.scenarios = [EnabledScenario(**scenario) for scenario in (scenarios or [])]
 
         # paths
@@ -113,6 +114,7 @@ class LabInstance:
             "extensions": self.extensions,
             "status": self.status,
             "is_default": self.is_default,
+            "vagrant_disabled": self.vagrant_disabled,
             "scenarios": [asdict(scenario) for scenario in self.scenarios]
         }
         json_object = json.dumps(instance_info, indent=4)
@@ -408,6 +410,10 @@ class LabInstance:
 
     def set_status(self, status):
         self.status = status
+        self.save_json_instance()
+
+    def set_vagrant_disabled(self, vagrant_disabled):
+        self.vagrant_disabled = vagrant_disabled
         self.save_json_instance()
 
     def get_status(self):
