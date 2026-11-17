@@ -1,6 +1,10 @@
+- name: "Normalize adcs.web_enrollment (JSON bool renders as True/False; set_fact would coerce a 'true' string back to bool)"
+  ansible.builtin.set_fact:
+    web_enrollment_state: "{{ {'true': 'on', 'false': 'off'}.get(setting_value | string | lower, 'invalid') }}"
+
 - name: "Check accepted values for adcs.web_enrollment"
   ansible.builtin.assert:
-    that: "(setting_value | string) in ['false', 'true']"
+    that: "web_enrollment_state in ['on', 'off']"
     fail_msg: "Invalid value '{{ setting_value }}' for adcs.web_enrollment, accepted: ['false', 'true']"
     quiet: true
 
@@ -20,7 +24,7 @@
         Install-AdcsWebEnrollment -Force | Out-Null
         $Ansible.Changed = $true
       }
-  when: setting_value | string == 'true'
+  when: web_enrollment_state == 'on'
   vars:
     ansible_become: yes
     ansible_become_method: runas
@@ -51,7 +55,7 @@
         Set-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter 'system.webServer/security/access' -Name sslFlags -Value 'None'
         $Ansible.Changed = $true
       }
-  when: setting_value | string == 'true'
+  when: web_enrollment_state == 'on'
   vars:
     ansible_become: yes
     ansible_become_method: runas
@@ -68,7 +72,7 @@
         Uninstall-WindowsFeature ADCS-Web-Enrollment | Out-Null
         $Ansible.Changed = $true
       }
-  when: setting_value | string == 'false'
+  when: web_enrollment_state == 'off'
   vars:
     ansible_become: yes
     ansible_become_method: runas

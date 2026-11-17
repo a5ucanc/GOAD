@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 
 import pytest
@@ -35,6 +36,36 @@ def test_base_settings_cover_all_hosts_and_keys(lab):
     assert set(cfg["base_settings"]) == set(cfg["hosts"])
     for host, settings in cfg["base_settings"].items():
         assert {"net.llmnr", "net.nbtns", "smb.signing", "kerberos.rc4", "firewall.state", "defender.realtime"} <= set(settings)
+
+
+ACCEPTED = {
+    "net.llmnr": {"disabled", "enabled"},
+    "net.nbtns": {"disabled", "enabled"},
+    "net.mdns": {"disabled", "enabled"},
+    "smb.signing": {"required", "optional"},
+    "ldap.signing": {"required", "none"},
+    "ldap.channel_binding": {"always", "never"},
+    "kerberos.rc4": {"disabled", "enabled"},
+    "ntlm.lmcompat": {"0", "1", "2", "3", "4", "5"},
+    "defender.realtime": {"on", "off"},
+    "firewall.state": {"on", "off"},
+    "dc.spooler": {"disabled", "enabled"},
+    "dc.strong_cert_binding": {"0", "1", "2"},
+    "adcs.web_enrollment": {"false", "true"},
+    "adcs.editf_san": {"off", "on"},
+    "adcs.enforce_encrypt": {"on", "off"},
+}
+
+
+@pytest.mark.parametrize("lab", BASE_LABS)
+def test_base_settings_values_accepted_by_role(lab):
+    cfg = json.load(open(f"ad/{lab}/data/config.json"))["lab"]
+    for host, settings in cfg["base_settings"].items():
+        for key, value in settings.items():
+            assert key in ACCEPTED, f"{host}: unknown key {key}"
+            assert str(value).lower() in ACCEPTED[key], f"{host}: {key}={value!r}"
+            task = f"ansible/roles/base_setting/tasks/{key.replace('.', '_')}.yml"
+            assert os.path.exists(task), task
 
 
 @pytest.mark.parametrize("lab", BASE_LABS)
