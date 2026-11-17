@@ -1,0 +1,5 @@
+{
+  "description": "Service account with an SPN, roastable",
+  "type": "object",
+  "target": ""
+}

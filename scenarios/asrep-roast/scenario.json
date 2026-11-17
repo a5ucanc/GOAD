@@ -1,0 +1,5 @@
+{
+  "description": "User without Kerberos pre-authentication",
+  "type": "object",
+  "target": ""
+}

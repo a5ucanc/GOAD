@@ -1,0 +1,24 @@
+---
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Install asrep-roast scenario"
+  hosts: "{{ scenario_target }}"
+  vars_files:
+    - ../data/vars.yml
+  vars:
+    domain: "{{ lab.hosts[scenario_target].domain }}"
+  tasks:
+    - name: "Create user without pre-authentication"
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          Import-Module ActiveDirectory
+          $dn = (Get-ADDomain -Identity '{{ domain }}').DistinguishedName
+          $sec = ConvertTo-SecureString '{{ password }}' -AsPlainText -Force
+          if (-not (Get-ADUser -Filter "SamAccountName -eq '{{ user }}'")) {
+            New-ADUser -Name '{{ user }}' -SamAccountName '{{ user }}' -Path "CN=Users,$dn" -AccountPassword $sec -Enabled $true -PasswordNeverExpires $true
+          }
+          Set-ADAccountControl -Identity '{{ user }}' -DoesNotRequirePreAuth $true
