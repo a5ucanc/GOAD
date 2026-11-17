@@ -1,7 +1,26 @@
-import pytest
 import os
+import shutil
+import subprocess
+
+import pytest
+
+from goad.goadpath import GoadPath
 from goad.provisioner.ansible.ansible import Ansible
 from goad.scenario import Scenario
+
+ANSIBLE_INVENTORY = os.path.expanduser("~/.goad/.venv/bin/ansible-inventory")
+if not os.path.exists(ANSIBLE_INVENTORY):
+    ANSIBLE_INVENTORY = shutil.which("ansible-inventory")
+
+
+@pytest.fixture(autouse=True)
+def lab_inventory_files(tmp_path, monkeypatch):
+    # lab data inventory and instance (provider) inventory, as _get_lab_inventory finds them
+    lab_inventory = tmp_path / "lab_inventory"
+    lab_inventory.write_text("")
+    (tmp_path / "inventory").write_text("")
+    monkeypatch.setattr(GoadPath, "get_lab_inventory_file", staticmethod(lambda lab: str(lab_inventory)))
+    return lab_inventory
 
 
 class _Prov(Ansible):
@@ -45,7 +64,20 @@ def test_run_scenario_only_includes_existing_extension_inventories(tmp_path, sce
     s = Scenario.from_file("esc8", scenario_dir.make("esc8", type="setting"))
     assert prov.run_scenario(s, "srv03", ["ext1", "ext2"])
     names = [os.path.basename(i) for i in calls[0]]
-    assert names == ["inventory_disable_vagrant", "ext1_inventory", "scenario_run_inventory"]
+    assert names == ["inventory_disable_vagrant", "lab_inventory", "inventory", "ext1_inventory", "scenario_run_inventory"]
+
+
+def test_run_scenario_inventory_order_with_global(tmp_path, scenario_dir):
+    calls = []
+    prov = make_ansible_stub(tmp_path, lambda pb, inv, tries=3, timeout=30, playbook_path=None: calls.append(inv) or True)
+    (tmp_path / "ext1_inventory").write_text("")
+    (tmp_path / "global_inventory").write_text("")
+    prov._get_global_inventory = lambda: str(tmp_path / "global_inventory")
+    s = Scenario.from_file("esc8", scenario_dir.make("esc8", type="setting"))
+    assert prov.run_scenario(s, "srv03", ["ext1"])
+    names = [os.path.basename(i) for i in calls[0]]
+    assert names == ["inventory_disable_vagrant", "lab_inventory", "inventory", "ext1_inventory",
+                     "scenario_run_inventory", "global_inventory"]
 
 
 def test_run_scenario_failure_returns_false(tmp_path, scenario_dir):
@@ -65,12 +97,7 @@ class _Extension:
 
 
 def _make_extension_prov(tmp_path, monkeypatch, calls):
-    from goad.goadpath import GoadPath
-    lab_inventory = tmp_path / "lab_inventory"
-    lab_inventory.write_text("")
-    (tmp_path / "inventory").write_text("")
     (tmp_path / "global_inventory").write_text("")
-    monkeypatch.setattr(GoadPath, "get_lab_inventory_file", staticmethod(lambda lab: str(lab_inventory)))
     prov = make_ansible_stub(tmp_path, lambda pb, inv, tries=3, timeout=30, playbook_path=None: calls.append(inv) or True)
     prov._get_global_inventory = lambda: str(tmp_path / "global_inventory")
     return prov
@@ -89,7 +116,42 @@ def test_run_extension_disable_vagrant_inventory(tmp_path, monkeypatch):
     prov = _make_extension_prov(tmp_path, monkeypatch, calls)
     assert prov.run_extension(_Extension(), ["elk", "ws01"], use_disable_vagrant_inventory=True)
     names = [os.path.basename(i) for i in calls[0]]
-    assert names == ["inventory_disable_vagrant", "ws01_inventory", "elk_inventory", "global_inventory"]
+    assert names == ["inventory_disable_vagrant", "lab_inventory", "inventory", "ws01_inventory", "elk_inventory",
+                     "global_inventory"]
+
+
+def _host_vars(inventories, host):
+    import json
+    cmd = [ANSIBLE_INVENTORY]
+    for inventory in inventories:
+        cmd += ["-i", inventory]
+    r = subprocess.run(cmd + ["--host", host], capture_output=True)
+    assert r.returncode == 0, r.stderr.decode()
+    return json.loads(r.stdout.decode())
+
+
+@pytest.mark.skipif(ANSIBLE_INVENTORY is None, reason="ansible-inventory not found")
+def test_run_extension_disable_vagrant_inventory_resolves_credentials(tmp_path, monkeypatch, lab_inventory_files):
+    lab_inventory_files.write_text(
+        "[default]\ndc01 ansible_host=10.0.0.10\n\n"
+        "[all:vars]\nansible_user=vagrant\nansible_password=vagrant\ndns_server_forwarder=1.1.1.1\n")
+    (tmp_path / "elk_inventory").write_text("[extensions]\nkali ansible_host=10.0.0.99 ansible_connection=ssh\n")
+    calls = []
+    prov = _make_extension_prov(tmp_path, monkeypatch, calls)
+    prov._get_global_inventory = lambda: None
+    # written after the stub, which creates an empty inventory_disable_vagrant
+    (tmp_path / "inventory_disable_vagrant").write_text(
+        "[default]\n"
+        "dc01 ansible_host=10.0.0.10 ansible_user=administrator@x ansible_password=Aa1234567890!\n\n"
+        "[all:vars]\nansible_user=notused\nansible_password=notused\n")
+    assert prov.run_extension(_Extension(), ["elk"], use_disable_vagrant_inventory=True)
+    inventories = calls[0]
+
+    kali = _host_vars(inventories, "kali")
+    assert (kali["ansible_user"], kali["ansible_password"]) == ("vagrant", "vagrant")
+    assert kali["dns_server_forwarder"] == "1.1.1.1"
+    dc01 = _host_vars(inventories, "dc01")
+    assert (dc01["ansible_user"], dc01["ansible_password"]) == ("administrator@x", "Aa1234567890!")
 
 
 def test_run_scenario_syncs_jumpbox_after_writing_run_inventory(tmp_path, scenario_dir):

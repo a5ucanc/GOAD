@@ -74,13 +74,10 @@ class Ansible(Provisioner):
         return provision_result
 
     def run_extension(self, extension, current_instance_extensions_name, install=True, use_disable_vagrant_inventory=False):
-        global_inventory = self._get_global_inventory()
+        inventory = []
         if use_disable_vagrant_inventory:
-            # vagrant user is disabled on the lab hosts: connect with the inventory_disable_vagrant credentials
-            # (the global inventory is kept at the end, as for the other inventories)
-            inventory = [i for i in self.get_disable_vagrant_inventory() if i != global_inventory]
-        else:
-            inventory = self._get_lab_inventory(self.lab_name, self.provider_name)
+            inventory += self._get_disable_vagrant_lab_inventory()
+        inventory += self._get_lab_inventory(self.lab_name, self.provider_name)
 
         # add the inventory of other enabled extensions
         for instances_extension_name in current_instance_extensions_name:
@@ -94,6 +91,7 @@ class Ansible(Provisioner):
         if extension_inventory is not None:
             inventory.append(extension_inventory)
 
+        global_inventory = self._get_global_inventory()
         if global_inventory is not None:
             inventory.append(global_inventory)
 
@@ -106,8 +104,22 @@ class Ansible(Provisioner):
             return False
         return provision_result
 
+    def _get_disable_vagrant_lab_inventory(self):
+        # inventory_disable_vagrant must come FIRST, before the normal lab inventories:
+        # - its Windows hosts carry host-level administrator credentials, which beat the
+        #   [all:vars] ansible_user/ansible_password of the inventories loaded after it;
+        # - its own [all:vars] (ansible_user=notused) is overridden by the lab inventory, so
+        #   linux hosts (extensions) keep the lab credentials and all the lab vars and groups.
+        inventory = []
+        lab_inventory = self.instance_path + os.path.sep + 'inventory_disable_vagrant'
+        if os.path.isfile(lab_inventory):
+            inventory.append(lab_inventory)
+            Log.success(f'Lab inventory disable_vagrant : {lab_inventory} file found')
+        return inventory
+
     def run_scenario(self, scenario, target, current_instance_extensions_name, install=True):
-        inventory = self.get_disable_vagrant_inventory()
+        inventory = self._get_disable_vagrant_lab_inventory()
+        inventory += self._get_lab_inventory(self.lab_name, self.provider_name)
 
         # add the inventory of enabled extensions (only if the file exists)
         for extension_name in current_instance_extensions_name:
@@ -115,11 +127,15 @@ class Ansible(Provisioner):
             if os.path.isfile(extension_inventory):
                 inventory.append(extension_inventory)
 
-        # add the scenario run inventory at the end
+        # add the scenario run inventory after the lab and extension inventories
         scenario_inventory = self.instance_path + os.path.sep + 'scenario_run_inventory'
         with open(scenario_inventory, 'w') as f:
             f.write(f'[scenario_target]\n{target}\n\n[all:vars]\nscenario_name={scenario.name}\nscenario_target={target}\n')
         inventory.append(scenario_inventory)
+
+        global_inventory = self._get_global_inventory()
+        if global_inventory is not None:
+            inventory.append(global_inventory)
 
         if self.use_jumpbox:
             # the playbook runs on the jumpbox: push the scenario files and the run inventory written above
@@ -164,11 +180,7 @@ class Ansible(Provisioner):
 
     def get_disable_vagrant_inventory(self):
         Log.info('Loading inventory')
-        inventory = []
-        lab_inventory = self.instance_path + os.path.sep + 'inventory_disable_vagrant'
-        if os.path.isfile(lab_inventory):
-            inventory.append(lab_inventory)
-            Log.success(f'Lab inventory disable_vagrant : {lab_inventory} file found')
+        inventory = self._get_disable_vagrant_lab_inventory()
         global_inventory = self._get_global_inventory()
         if global_inventory is not None:
             inventory.append(global_inventory)
