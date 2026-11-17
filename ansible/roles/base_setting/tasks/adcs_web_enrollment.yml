@@ -6,6 +6,7 @@
 
 - name: "Install ADCS web enrollment"
   ansible.windows.win_powershell:
+    error_action: stop
     script: |
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
@@ -28,6 +29,7 @@
 
 - name: "Allow NTLM over HTTP on /certsrv, EPA off"
   ansible.windows.win_powershell:
+    error_action: stop
     script: |
       Import-Module WebAdministration
       $Ansible.Changed = $false
@@ -58,6 +60,7 @@
 
 - name: "Uninstall ADCS web enrollment"
   ansible.windows.win_powershell:
+    error_action: stop
     script: |
       $Ansible.Changed = $false
       if ((Get-WindowsFeature ADCS-Web-Enrollment).Installed) {

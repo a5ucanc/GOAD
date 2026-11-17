@@ -11,3 +11,16 @@
     data: "{{ 2 if setting_value | string == 'required' else 1 }}"
     type: dword
     state: present
+
+- name: "Set LDAP server signing in Default Domain Controllers Policy"
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'set_dc_gpo_value.ps1') }}"
+    parameters:
+      RegKey: 'MACHINE\System\CurrentControlSet\Services\NTDS\Parameters\LDAPServerIntegrity'
+      Value: "{{ 2 if setting_value | string == 'required' else 1 }}"
+    error_action: stop
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_username}}"
+    ansible_become_password: "{{domain_password}}"

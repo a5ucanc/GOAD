@@ -11,3 +11,4 @@
     data: "{{ 0 if setting_value | string == 'disabled' else 1 }}"
     type: dword
     state: present
+  notify: reboot-base-setting

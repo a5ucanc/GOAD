@@ -25,3 +25,6 @@
     ansible_become_user: "{{domain_username}}"
     ansible_become_password: "{{domain_password}}"
   notify: restart-adcs
+
+- name: "Restart certsvc now"
+  ansible.builtin.meta: flush_handlers

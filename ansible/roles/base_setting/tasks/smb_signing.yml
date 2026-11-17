@@ -6,7 +6,7 @@
 
 - name: "Set SMB signing requirement"
   ansible.windows.win_regedit:
-    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\{{ item }}\\Parameters"
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\{{ smb_service }}\\Parameters"
     name: RequireSecuritySignature
     data: "{{ 1 if setting_value | string == 'required' else 0 }}"
     type: dword
@@ -14,3 +14,18 @@
   loop:
     - LanmanServer
     - LanmanWorkstation
+  loop_control:
+    loop_var: smb_service
+
+- name: "Set SMB server signing in Default Domain Controllers Policy (DC only)"
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'set_dc_gpo_value.ps1') }}"
+    parameters:
+      RegKey: 'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\RequireSecuritySignature'
+      Value: "{{ 1 if setting_value | string == 'required' else 0 }}"
+    error_action: stop
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_username}}"
+    ansible_become_password: "{{domain_password}}"
