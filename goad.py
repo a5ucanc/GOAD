@@ -327,6 +327,71 @@ class Goad(cmd.Cmd):
             else:
                 Log.error(f'extension {extension_name} not enabled in instance abort')
 
+    def _scenario_service(self):
+        if self.lab_manager.get_current_instance() is None:
+            Log.error('Scenarios can only be used from an instance')
+            return None
+        from goad.scenario_service import ScenarioService
+        return ScenarioService(self.lab_manager.get_current_instance(),
+                               self.lab_manager.get_current_instance_lab(),
+                               self.lab_manager.get_current_instance_provisioner())
+
+    def do_list_scenarios(self, arg):
+        service = self._scenario_service()
+        if service is None:
+            return
+        from rich.table import Table
+        from rich import print as rich_print
+        table = Table(title='Scenarios')
+        table.add_column('Scenario')
+        table.add_column('State')
+        table.add_column('Target / reason')
+        for name, state, detail in service.listing(arg.strip() == 'all'):
+            table.add_row(name, state, detail)
+        rich_print(table)
+
+    def do_enable_scenario(self, arg):
+        service = self._scenario_service()
+        if service is None:
+            return
+        parts = arg.split()
+        if not parts or len(parts) > 2:
+            Log.error('usage: enable_scenario <name> [host]')
+            return
+        service.enable(parts[0], parts[1] if len(parts) > 1 else None)
+
+    def do_disable_scenario(self, arg):
+        service = self._scenario_service()
+        if service is None:
+            return
+        parts = arg.split()
+        cascade = '--cascade' in parts
+        parts = [part for part in parts if part != '--cascade']
+        if not parts or len(parts) > 2:
+            Log.error('usage: disable_scenario <name> [host] [--cascade]')
+            return
+        service.disable(parts[0], parts[1] if len(parts) > 1 else None, cascade=cascade)
+
+    def do_reset_scenarios(self, arg):
+        service = self._scenario_service()
+        if service is None:
+            return
+        service.reset()
+
+    def complete_enable_scenario(self, text, line, begidx, endidx):
+        instance = self.lab_manager.get_current_instance()
+        if instance is None:
+            return []
+        scenarios = self.lab_manager.get_current_instance_lab().get_scenario_resolver().scenarios
+        return [s.name for s in scenarios.all() if s.name.startswith(text)]
+
+    def complete_disable_scenario(self, text, line, begidx, endidx):
+        instance = self.lab_manager.get_current_instance()
+        if instance is None:
+            return []
+        names = sorted({e.name for e in instance.scenarios})
+        return [name for name in names if name.startswith(text)]
+
     def do_labs(self, arg):
         show_labs_providers_table(self.lab_manager.get_labs())
 

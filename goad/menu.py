@@ -55,6 +55,12 @@ def print_menu(lab_manager, advanced=True, debug=False):
         if advanced:
             print_menu_entry('provision_extension <extension>', 'provision extension (provisioning only)')
 
+        print_menu_title('Scenarios')
+        print_menu_entry('list_scenarios [all]', 'list scenarios (all: include unavailable)')
+        print_menu_entry('enable_scenario <name> [host]', 'enable a vulnerability scenario')
+        print_menu_entry('disable_scenario <name> [host] [--cascade]', 'disable a scenario (cascade: and its dependents)')
+        print_menu_entry('reset_scenarios', 'disable all scenarios')
+
         if use_jumpbox:
             print_menu_title('JumpBox')
             if advanced:
