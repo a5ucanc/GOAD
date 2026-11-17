@@ -1,0 +1,108 @@
+---
+# read global configuration file and set up adapters
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+# kali has no local config file and is not merged with lab_extension
+- name: Setup kali attacker box
+  hosts: kali
+  become: yes
+  vars:
+    dc_keys: "{{ lab.domains.values() | map(attribute='dc') | list }}"
+    dc_ips: "{{ lab.domains.values() | map(attribute='dc') | map('extract', hostvars, 'ansible_host') | list }}"
+    dns_servers: "{{ dc_ips + [dns_server_forwarder] }}"
+  tasks:
+    # lab is re-read from the lab config because data.yml only guarantees it on its own play hosts
+    - name: Load lab config
+      include_vars:
+        file: "{{ playbook_dir }}/../../../ad/{{domain_name}}/data/config.json"
+
+    - name: Find lab interface
+      set_fact:
+        lab_iface: "{{ ansible_facts.interfaces | select('in', ansible_facts) | map('extract', ansible_facts) | selectattr('ipv4', 'defined') | selectattr('ipv4.address', 'equalto', ansible_host) | map(attribute='device') | first }}"
+
+    - name: Get NetworkManager connection of lab interface
+      command: nmcli -g GENERAL.CONNECTION device show {{ lab_iface }}
+      register: lab_con
+      changed_when: false
+
+    - name: Write NetworkManager dns drop-in
+      copy:
+        dest: /etc/NetworkManager/conf.d/goad-dns.conf
+        content: |
+          [main]
+          dns=default
+          rc-manager=file
+        mode: '0644'
+      register: nm_conf
+
+    - name: Read current connection dns
+      command: nmcli -g ipv4.dns,ipv4.ignore-auto-dns connection show "{{ lab_con.stdout }}"
+      register: current_dns
+      changed_when: false
+
+    - name: Override dns on lab connection
+      command: >-
+        nmcli connection modify "{{ lab_con.stdout }}"
+        ipv4.dns "{{ dns_servers | join(' ') }}" ipv4.ignore-auto-dns yes
+      when: current_dns.stdout_lines != [dns_servers | join(','), 'yes']
+      register: nm_con
+
+    - name: Restart NetworkManager
+      service:
+        name: NetworkManager
+        state: restarted
+      when: nm_conf.changed or nm_con.changed
+
+    - name: Reapply lab connection
+      command: nmcli connection up "{{ lab_con.stdout }}"
+      when: nm_con.changed
+
+    - name: Add lab hosts to /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: '\s{{ item.value.hostname }}\.{{ item.value.domain | regex_escape }}(\s|$)'
+        line: "{{ hostvars[item.key].ansible_host }} {{ item.value.hostname }}.{{ item.value.domain }} {{ item.value.hostname }}"
+      loop: "{{ lab.hosts | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Write krb5.conf
+      copy:
+        dest: /etc/krb5.conf
+        mode: '0644'
+        content: |
+          [libdefaults]
+              default_realm = {{ (lab.domains.keys() | first) | upper }}
+              dns_lookup_kdc = true
+              dns_lookup_realm = false
+              rdns = false
+
+          [realms]
+          {% for domain, d in lab.domains.items() %}
+              {{ domain | upper }} = {
+                  kdc = {{ lab.hosts[d.dc].hostname }}.{{ domain }}
+                  admin_server = {{ lab.hosts[d.dc].hostname }}.{{ domain }}
+              }
+          {% endfor %}
+
+          [domain_realm]
+          {% for domain in lab.domains.keys() %}
+              .{{ domain }} = {{ domain | upper }}
+              {{ domain }} = {{ domain | upper }}
+          {% endfor %}
+
+    - name: Check kali-linux-default
+      command: dpkg -s kali-linux-default
+      register: kali_default
+      changed_when: false
+      failed_when: false
+
+    - name: Install kali-linux-default
+      apt:
+        name: kali-linux-default
+        state: present
+        update_cache: yes
+      when: kali_default.rc != 0

@@ -1,0 +1,11 @@
+{
+    "name": "kali",
+    "description": "Add a Kali attacker box on the lab network (not domain joined)",
+    "machines": [
+        "kali"
+    ],
+    "compatibility": [
+        "*"
+    ],
+    "impact": "none"
+}
