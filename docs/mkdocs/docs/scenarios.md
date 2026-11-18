@@ -114,15 +114,107 @@ Scenarios never merge into the lab data. They read their own `data/vars.yml`. Fo
 
 ## Provided scenarios
 
+### Kerberos and delegation
+
 | Scenario | Type | Target | Description |
 |----------|------|--------|-------------|
-| `kerberoast` | object | DC | Service account with an SPN, roastable |
-| `asrep-roast` | object | DC | User without Kerberos pre-authentication |
-| `esc1` | object | `adcs` | Certificate template where the enrollee supplies the subject, enrollable by Domain Users |
-| `esc8` | setting | `adcs` | ADCS web enrollment over HTTP with NTLM, no EPA |
-| `llmnr` | setting | `member_server` | LLMNR and NBT-NS enabled on a host |
+| `kerberoast` | object | DC | Service account with an SPN, roastable. |
+| `asrep-roast` | object | DC | User without Kerberos pre-authentication. |
+| `rc4` | setting | DC | Kerberos RC4 allowed. |
+| `constrained-deleg-any` | object | DC | Service account with constrained delegation and protocol transition to the DC (CIFS). |
+| `constrained-deleg-kerb` | object | `member_server` | Member server computer account with Kerberos-only constrained delegation to HTTP on the DC. |
+| `unconstrained-computer` | object | `member_server` | Member server trusted for unconstrained delegation. |
+| `unconstrained-user` | object | DC | Service account trusted for unconstrained delegation. |
+| `rbcd` | object | `member_server` | User with GenericWrite on a member server computer account (resource-based constrained delegation). Depends on `maq` (same domain). |
+| `writespn` | object | DC | User that can write the servicePrincipalName of another user (targeted kerberoast). |
 
-Each package has a `README.md` with the attack and a verification step.
+### ADCS
+
+| Scenario | Type | Target | Description |
+|----------|------|--------|-------------|
+| `esc1` | object | `adcs` | Certificate template where the enrollee supplies the subject, enrollable by Domain Users. |
+| `esc2` | object | `adcs` | Certificate template with the Any Purpose EKU, enrollable by Domain Users (ESC2). |
+| `esc3` | object | `adcs` | Enrollment agent template plus a template that accepts enrollment agents (ESC3). |
+| `esc4` | object | `adcs` | Certificate template writable by a low-privileged user (ESC4). |
+| `esc6` | setting | `adcs` | CA flag EDITF_ATTRIBUTESUBJECTALTNAME2 (enrollee-supplied SAN on any template, ESC6). |
+| `esc7` | object | `adcs` | Low-privileged user with ManageCA on the CA (ESC7). |
+| `esc8` | setting | `adcs` | ADCS web enrollment over HTTP with NTLM, no EPA. |
+| `esc9` | object | `adcs` | Template without the security extension, plus GenericWrite on a user (ESC9). Depends on `esc10-case1` (same domain). |
+| `esc10-case1` | setting | DC | KDC weak certificate binding (StrongCertificateBindingEnforcement 0, ESC10 case 1). |
+| `esc10-case2` | setting | DC | Schannel maps certificates by UPN (CertificateMappingMethods 0x4, ESC10 case 2). |
+| `esc11` | setting | `adcs` | CA accepts unencrypted ICertPassage requests (IF_ENFORCEENCRYPTICERTREQUEST off, ESC11). |
+| `esc13` | object | `adcs` | Template with an issuance policy linked to a privileged group (ESC13). |
+| `esc15` | object | `adcs` | Domain Users can enroll in the schema v1 Web Server template (ESC15). |
+
+### ACL
+
+| Scenario | Type | Target | Description |
+|----------|------|--------|-------------|
+| `acl-forcechangepassword` | object | DC | User that can reset another user's password (ForceChangePassword). |
+| `acl-genericwrite-user` | object | DC | User with GenericWrite on another user. |
+| `acl-writedacl-user` | object | DC | User with WriteDacl on another user. |
+| `acl-self-membership` | object | DC | User that can add itself to a group (Self-Membership). |
+| `acl-addmember` | object | DC | User that can write the member attribute of a group (AddMember). |
+| `acl-writeowner` | object | DC | User with WriteOwner on a group. |
+| `acl-genericall-user` | object | DC | User with GenericAll on another user. |
+| `acl-genericall-computer` | object | DC | User with GenericAll on a domain controller computer object. |
+| `acl-genericall-group` | object | `member_server` | User with GenericAll on a group that is local administrator of a member server. |
+| `acl-adminsdholder` | object | DC | User with GenericAll on AdminSDHolder (persistence on every protected object). |
+| `acl-writedacl-ou` | object | DC | User with WriteDacl on an OU (inheritable control over its objects). |
+| `acl-writeproperty` | object | DC | User with WriteProperty (all properties) on another user. |
+| `anonymous-rpc` | object | DC | Anonymous read on the domain root (anonymous RPC/SAMR enumeration). |
+| `gpo-abuse` | object | DC | User that can edit a GPO linked to the domain root. |
+| `foreign-group-acl` | object | `forest_trust` | Group with a member from the trusted forest that has GenericAll on a domain controller. |
+| `local-admin` | object | `member_server` | Ordinary domain user that is local administrator of a member server. |
+
+### Network, relay and coercion
+
+| Scenario | Type | Target | Description |
+|----------|------|--------|-------------|
+| `llmnr` | setting | `member_server` | LLMNR and NBT-NS enabled on a host. |
+| `mdns` | setting | `member_server` | mDNS enabled on a member server. |
+| `smb-signing-off` | setting | `member_server` | SMB signing not required on a member server. |
+| `smbv1` | setting | `member_server` | SMBv1 enabled on a member server. |
+| `ntlm-downgrade` | setting | DC | DC accepts LM and NTLMv1 (LmCompatibilityLevel 2). |
+| `ldap-signing-off` | setting | DC | DC does not require LDAP signing. |
+| `ldap-cbt-off` | setting | DC | DC does not enforce LDAPS channel binding. |
+| `printerbug` | setting | DC | Print Spooler running on the DC (PrinterBug coercion). |
+| `webdav` | setting | `member_server` | WebDAV client (WebClient service) installed and running on a member server. |
+| `credssp` | setting | `member_server` | WinRM CredSSP server role enabled on a member server. |
+| `maq` | setting | DC | Machine account quota 10: any domain user can create computer accounts. |
+
+### Host
+
+| Scenario | Type | Target | Description |
+|----------|------|--------|-------------|
+| `defender-off` | setting | `member_server` | Defender real-time protection off on a member server. |
+| `firewall-off` | setting | `member_server` | Windows firewall off on a member server. |
+
+### Trust
+
+| Scenario | Type | Target | Description |
+|----------|------|--------|-------------|
+| `sid-history` | setting | `forest_trust` | SID history accepted on the forest trust. |
+
+### MSSQL and web
+
+| Scenario | Type | Target | Description |
+|----------|------|--------|-------------|
+| `mssql-impersonate-login` | object | `mssql` | SQL login that can impersonate sa. |
+| `mssql-impersonate-user` | object | `mssql` | SQL login that can impersonate dbo in msdb (TRUSTWORTHY). |
+| `mssql-sysadmin` | object | `mssql` | Domain user that is sysadmin on SQL Server (xp_cmdshell as the service account). |
+| `mssql-linked` | object | `mssql_link` | Linked server to the SQL Server of the other forest, mapped to its sa. |
+| `iis-upload` | object | `iis` | IIS site with an unrestricted file upload page (webshell). |
+
+Each package has a `README.md` with the attack, a verification step, and what disable removes.
+
+Dependencies are checked per domain. For example `rbcd` on srv02 (north) needs `maq` enabled on dc02 (`enable_scenario maq dc02`), and `esc9` on a CA needs `esc10-case1` enabled on the DC of the CA's domain.
+
+### What disable cleans
+
+Disable returns the lab to its Base state for everything the scenario owns: objects it created (all named `scn-*`), access rights and attributes it added to lab objects, settings it changed, files it copied. It also cleans the cheap attack leftovers: certificates issued from a scenario template are revoked, computer accounts created through the machine account quota are deleted (`maq`, `rbcd`, `acl-genericall-computer`), shadow credentials and RBCD written on lab computer objects are cleared, and `xp_cmdshell` is turned off again. What a scenario does not clean (for example GPO settings already applied to hosts, or secrets dumped during the attack) is listed in its README.
+
+Tooling installed by scenarios stays: the `ADCSTemplate` PowerShell module, `C:\setup\*.json`, the PSPKI module and the NuGet provider.
 
 ## base_settings keys
 
@@ -242,5 +334,15 @@ This is what makes disable restore the declared baseline for that host.
 Describe what the scenario does, how to attack it and how to check that it is enabled.
 
 For an `object` scenario (see `kerberoast`), install adds the object and uninstall removes it. Use the same `hosts: scenario_target` header. Make both playbooks idempotent, because install is re-run on re-provisioning and uninstall is also run to clean up after a failed install.
+
+### Shared roles for object scenarios
+
+Object scenarios use three roles from `ansible/roles`, included by path like `base_setting`. Each runs its AD work on the DC of the scenario's domain (`delegate_to: "{{ dc }}"`), so a playbook must define `dc: "{{ lab.domains[domain].dc }}"`. AD work has to run there because a member server target (srv02, the srv03 CA) has no AD PowerShell module.
+
+- `scenario_ad` (`tasks_from: users` or `groups`, `ad_state: present|absent`): creates or deletes `scn-*` users and groups in `CN=Users`.
+- `scenario_acl` (`tasks_from: add` or `remove`): adds or removes one explicit Allow ACE. Set `acl_principal`, `acl_target_dn`, `acl_right` and `acl_inheritance`. The target DN can use `%DOMAIN%`, `%CONFIG%` or `sam:<account>`. Remove takes away only the rights bits the scenario added, even when Windows merged them into another ACE.
+- `scenario_adcs_template` (`tasks_from: add` or `remove`): creates and publishes a template from `ansible/roles/adcs_templates/files`. Remove revokes the certificates issued from the template, unpublishes it and deletes it.
+
+Do not pass a role variable as `x: "{{ x }}"` in an include: that is a recursive template at run time. The play variable of the same name is already visible to the role.
 
 To test a new scenario, run `list_scenarios` (it should appear as `available`), then `enable_scenario <name>`, verify, then `disable_scenario <name>` and verify the baseline is back.

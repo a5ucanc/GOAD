@@ -217,3 +217,10 @@ def test_ad_tasks_delegate_to_dc(name):
             body = json.dumps(task)
             if AD_MARKERS.search(body) and not any(k.endswith("include_role") for k in task):
                 assert task.get("delegate_to") == "{{ dc }}", f"{pb}: {task['name']}"
+
+
+def test_docs_list_every_scenario():
+    text = (ROOT / "docs" / "mkdocs" / "docs" / "scenarios.md").read_text()
+    section = text.split("## Provided scenarios", 1)[1].split("\n## ", 1)[0]
+    missing = [n for n in PACKAGES if f"| `{n}` |" not in section]
+    assert not missing, missing
