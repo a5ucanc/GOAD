@@ -157,3 +157,9 @@ def test_cascade_only_disables_dependents_in_same_domain(scenario_dir, tmp_path,
     assert svc.enable("rbcd", None)
     assert svc.disable("maq", "dc01")
     assert [e.key for e in svc.instance.scenarios] == ["maq@dc02", "rbcd@srv02"]
+
+
+def test_failed_install_and_failed_cleanup_marks_dirty(svc, prov):
+    prov.fail_on = {("esc8", True), ("esc8", False)}
+    assert not svc.enable("esc8", None)
+    assert [(e.key, e.status) for e in svc.instance.scenarios] == [("esc8@dc01", "dirty")]

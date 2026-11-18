@@ -67,7 +67,7 @@ A scenario's identity is `name@target`, for example `esc8@dc01`.
 ### Disable, cascade and dirty
 
 - If other enabled scenarios in the same domain depend on the one you disable, the command is refused and lists them. Dependents in other domains are not affected. Use `--cascade` to uninstall the dependents first, then the scenario.
-- If an install fails, the scenario is uninstalled again to clean up and is not recorded as enabled.
+- If an install fails, the scenario is uninstalled again to clean up and is not recorded as enabled. If that cleanup also fails, the scenario is recorded as `dirty` so `disable_scenario` can retry it.
 - If an uninstall fails, the scenario stays recorded and is marked `dirty`. The command stops there. Fix the cause and run `disable_scenario` again.
 
 ### Reset

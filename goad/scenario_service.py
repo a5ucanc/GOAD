@@ -28,7 +28,11 @@ class ScenarioService:
             self.instance.add_scenario(name, target)
             return True
         Log.error(f'scenario {name} failed on {target}, cleaning up')
-        self._run(name, target, False)
+        if not self._run(name, target, False):
+            # keep the residue visible: a dirty entry can be retried with disable_scenario
+            self.instance.add_scenario(name, target)
+            self.instance.mark_scenario_dirty(name, target)
+            Log.error(f'cleanup of {name}@{target} failed, marked dirty: run disable_scenario {name} {target}')
         return False
 
     def _disable_entry(self, entry):
