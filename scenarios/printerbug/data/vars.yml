@@ -1,0 +1,3 @@
+touched_settings:
+- key: dc.spooler
+  vulnerable_value: enabled

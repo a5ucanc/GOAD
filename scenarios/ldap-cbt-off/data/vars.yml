@@ -1,0 +1,3 @@
+touched_settings:
+- key: ldap.channel_binding
+  vulnerable_value: never

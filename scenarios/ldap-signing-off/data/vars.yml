@@ -1,0 +1,3 @@
+touched_settings:
+- key: ldap.signing
+  vulnerable_value: none

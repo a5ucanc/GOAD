@@ -1,0 +1,11 @@
+{
+  "description": "KDC weak certificate binding (StrongCertificateBindingEnforcement 0, ESC10 case 1)",
+  "type": "setting",
+  "requires": [
+    "adcs"
+  ],
+  "target": "",
+  "touches": [
+    "dc.strong_cert_binding"
+  ]
+}

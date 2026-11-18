@@ -1,0 +1,11 @@
+{
+  "description": "CA accepts unencrypted ICertPassage requests (IF_ENFORCEENCRYPTICERTREQUEST off, ESC11)",
+  "type": "setting",
+  "requires": [
+    "adcs"
+  ],
+  "target": "adcs",
+  "touches": [
+    "adcs.enforce_encrypt"
+  ]
+}

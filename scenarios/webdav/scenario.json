@@ -1,0 +1,11 @@
+{
+  "description": "WebDAV client (WebClient service) installed and running on a member server",
+  "type": "setting",
+  "requires": [
+    "member_server"
+  ],
+  "target": "member_server",
+  "touches": [
+    "net.webclient"
+  ]
+}

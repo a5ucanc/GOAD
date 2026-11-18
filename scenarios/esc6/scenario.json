@@ -1,0 +1,11 @@
+{
+  "description": "CA flag EDITF_ATTRIBUTESUBJECTALTNAME2 (enrollee-supplied SAN on any template, ESC6)",
+  "type": "setting",
+  "requires": [
+    "adcs"
+  ],
+  "target": "adcs",
+  "touches": [
+    "adcs.editf_san"
+  ]
+}

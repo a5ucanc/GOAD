@@ -1,0 +1,11 @@
+{
+  "description": "SMB signing not required on a member server",
+  "type": "setting",
+  "requires": [
+    "member_server"
+  ],
+  "target": "member_server",
+  "touches": [
+    "smb.signing"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "description": "Defender real-time protection off on a member server",
+  "type": "setting",
+  "requires": [
+    "member_server"
+  ],
+  "target": "member_server",
+  "touches": [
+    "defender.realtime"
+  ]
+}

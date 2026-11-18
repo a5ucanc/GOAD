@@ -1,0 +1,3 @@
+touched_settings:
+- key: defender.realtime
+  vulnerable_value: 'off'

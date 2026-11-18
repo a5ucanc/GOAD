@@ -1,0 +1,3 @@
+touched_settings:
+- key: net.mdns
+  vulnerable_value: enabled

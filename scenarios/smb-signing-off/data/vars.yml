@@ -1,0 +1,3 @@
+touched_settings:
+- key: smb.signing
+  vulnerable_value: optional

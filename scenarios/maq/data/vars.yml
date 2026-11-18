@@ -1,0 +1,3 @@
+touched_settings:
+- key: dc.maq
+  vulnerable_value: 10

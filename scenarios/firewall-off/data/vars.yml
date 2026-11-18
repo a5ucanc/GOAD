@@ -1,0 +1,3 @@
+touched_settings:
+- key: firewall.state
+  vulnerable_value: 'off'

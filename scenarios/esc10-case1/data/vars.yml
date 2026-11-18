@@ -1,0 +1,3 @@
+touched_settings:
+- key: dc.strong_cert_binding
+  vulnerable_value: 0

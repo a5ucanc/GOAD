@@ -1,0 +1,3 @@
+touched_settings:
+- key: smb.v1
+  vulnerable_value: enabled

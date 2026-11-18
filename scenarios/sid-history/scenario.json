@@ -1,0 +1,11 @@
+{
+  "description": "SID history accepted on the forest trust",
+  "type": "setting",
+  "requires": [
+    "forest_trust"
+  ],
+  "target": "forest_trust",
+  "touches": [
+    "trust.sid_history"
+  ]
+}
