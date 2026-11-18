@@ -14,14 +14,17 @@ The `-Base` labs have the same machines and domains as their parent, but the vul
 
 - Every domain account, every `domain_password` and every `local_admin_password` is `Aa1234567890!`.
 - The `vagrant` user is disabled after provisioning. Scenarios are therefore provisioned as `administrator@<domain>` with `Aa1234567890!` (the `inventory_disable_vagrant` inventory).
-- `ansible/hardening.yml` applies the `base_settings` declared per host in the lab `config.json` (SMB signing required, LDAP signing and channel binding, NTLMv2 only, LLMNR/NBT-NS/mDNS disabled, Defender and firewall on, print spooler disabled on DCs, ADCS web enrollment off, and so on).
+- `ansible/hardening.yml` applies the `base_settings` declared per host in the lab `config.json` (SMB signing required, LDAP signing and channel binding, NTLMv2 only, LLMNR/NBT-NS/mDNS disabled, Defender and firewall on, print spooler disabled on DCs, machine account quota 0, ADCS web enrollment off, and so on).
+- Admin accounts follow the Tier 0/1/2 model. Each domain has the groups `T0-Admins`, `T1-ServerAdmins` and `T2-WorkstationAdmins`. T0 is the Domain Admins (`cersei.lannister`, `robert.baratheon`, `eddard.stark`, `daenerys.targaryen`), who are also in `Protected Users` and marked sensitive. T1 is local Administrator on the member servers (`jeor.mormont` on srv02, `khal.drogo` on srv03). T2 is empty. Every other user has no admin rights. The `host.tier` setting enforces the logon restrictions (see below).
+- `ansible/security.yml` enables LSA protection (RunAsPPL) on every host and the Defender ASR rule that blocks credential stealing from LSASS on member servers.
+- The WebDAV client is not installed and no gMSA is created.
 
 Each `-Base` lab declares `lab.capabilities` in its `config.json`: a map from a capability name to the hosts that provide it. Scenarios use capabilities to decide where they can run.
 
 | Lab | Capabilities |
 |-----|--------------|
-| `GOAD-Base` | `adcs`: dc01, srv03; `mssql`: srv02, srv03; `child_domain`: dc02; `forest_trust`: dc01, dc03; `member_server`: srv02, srv03; `laps`: srv03 |
-| `GOAD-Light-Base` | `adcs`: dc01; `mssql`: srv02; `child_domain`: dc02; `member_server`: srv02 |
+| `GOAD-Base` | `adcs`: dc01, srv03; `mssql`: srv02, srv03; `child_domain`: dc02; `forest_trust`: dc01, dc03; `member_server`: srv02, srv03; `laps`: srv03; `iis`: srv02; `mssql_link`: srv02 |
+| `GOAD-Light-Base` | `adcs`: dc01; `mssql`: srv02; `child_domain`: dc02; `member_server`: srv02; `iis`: srv02 |
 | `GOAD-Mini-Base` | `adcs`: dc01 |
 
 Existing labs (`GOAD`, `GOAD-Light`, `GOAD-Mini`, ...) are unchanged and have no scenarios.
@@ -57,13 +60,13 @@ A scenario's identity is `name@target`, for example `esc8@dc01`.
 - the lab has no `lab.capabilities`, or the scenario is unknown or not allowed on the lab (`labs`);
 - a capability listed in `requires` is missing;
 - the scenario is already enabled on the target;
-- a scenario listed in `depends` is not enabled;
+- a scenario listed in `depends` is not enabled on a host of the target's domain (for example `rbcd` on srv02 needs `maq` enabled on dc02, the north DC, not on dc01);
 - a scenario listed in `conflicts` (in either direction) is enabled;
 - another enabled scenario on the same target host already changes one of its `touches` settings. A `touches` overlap is a conflict only on the same target host.
 
 ### Disable, cascade and dirty
 
-- If other enabled scenarios depend on the one you disable, the command is refused and lists them. Use `--cascade` to uninstall the dependents first, then the scenario.
+- If other enabled scenarios in the same domain depend on the one you disable, the command is refused and lists them. Dependents in other domains are not affected. Use `--cascade` to uninstall the dependents first, then the scenario.
 - If an install fails, the scenario is uninstalled again to clean up and is not recorded as enabled.
 - If an uninstall fails, the scenario stays recorded and is marked `dirty`. The command stops there. Fix the cause and run `disable_scenario` again.
 
@@ -99,7 +102,7 @@ Scenarios never merge into the lab data. They read their own `data/vars.yml`. Fo
 | `type` | yes | `object` or `setting` (see below). |
 | `target` | no | Capability that provides the host to run on. Empty or missing: run on a domain controller. |
 | `requires` | no | Capabilities the lab must declare. |
-| `depends` | no | Scenarios that must already be enabled. |
+| `depends` | no | Scenarios that must already be enabled in the target's domain. |
 | `conflicts` | no | Scenarios that cannot be enabled together with this one. |
 | `touches` | no | Setting keys this scenario changes. Two scenarios touching the same key cannot be enabled on the same host. |
 | `labs` | no | Lab names allowed. Defaults to `["*"]` (all labs with capabilities). |
@@ -137,11 +140,23 @@ Each package has a `README.md` with the attack and a verification step.
 | `firewall.state` | `on`, `off` |
 | `ldap.signing` | `required`, `none` |
 | `ldap.channel_binding` | `always`, `never` |
+| `dc.maq` | `0` to `10` |
+| `host.tier` | `0`, `1`, `2` |
 | `dc.spooler` | `disabled`, `enabled` |
 | `dc.strong_cert_binding` | `0`, `1`, `2` |
 | `adcs.web_enrollment` | `true`, `false` |
 | `adcs.editf_san` | `off`, `on` |
 | `adcs.enforce_encrypt` | `on`, `off` |
+
+`host.tier` applies the tier model's logon restrictions on a host with deny user rights. The groups listed are the tier groups (`T0-Admins`, `T1-ServerAdmins`, `T2-WorkstationAdmins`) of every domain of the lab:
+
+| Tier | Deny log on locally, through RDP, as a batch job, as a service | Deny access from the network |
+|------|------|------|
+| `0` (DCs) | T1, T2 | nobody |
+| `1` (member servers) | T0, T2 | T2 |
+| `2` (workstations) | T0, T1 | T0, T1 |
+
+Nobody is denied network logon on a DC, because every account needs LDAP, SYSVOL and Group Policy there. T0 keeps network logon on tier 1 because GOAD provisions member servers as a domain admin over WinRM. The built-in `Administrator` is in no tier group, so it is never restricted.
 
 `kerberos.rc4` also sets `msDS-SupportedEncryptionTypes` on every trust object (`objectClass=trustedDomain` under `CN=System,<domain DN>`) when it runs on a DC: `24` (AES128 + AES256) for `disabled`, `28` (RC4 + AES) for `enabled`. Without it, inter-realm referrals across the `sevenkingdoms.local` / `essos.local` forest trust fall back to RC4 and fail once RC4 is disabled. This has not yet been checked on a live lab. To check it on `GOAD-Base`, log on as a `sevenkingdoms.local` user and run `klist get cifs/meereen.essos.local`: it must return an AES ticket.
 

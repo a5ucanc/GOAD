@@ -1,0 +1,28 @@
+- name: "Check accepted values for dc.maq"
+  ansible.builtin.assert:
+    that: "(setting_value | string) in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']"
+    fail_msg: "Invalid value '{{ setting_value }}' for dc.maq, accepted: 0 to 10"
+    quiet: true
+
+# ms-DS-MachineAccountQuota is a domain attribute: any DC of the domain can set it.
+# 10 is the Windows default and lets any domain user create computer accounts (RBCD, noPAC, ...).
+- name: "Set ms-DS-MachineAccountQuota"
+  ansible.windows.win_powershell:
+    script: |
+      param([int]$Wanted)
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      $domain = Get-ADDomain
+      $current = (Get-ADObject -Identity $domain.DistinguishedName -Properties 'ms-DS-MachineAccountQuota').'ms-DS-MachineAccountQuota'
+      if ($current -ne $Wanted) {
+        Set-ADDomain -Identity $domain -Replace @{ 'ms-DS-MachineAccountQuota' = $Wanted }
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Wanted: "{{ setting_value | int }}"
+    error_action: stop
+  vars:
+    ansible_become: yes
+    ansible_become_method: runas
+    ansible_become_user: "{{domain_username}}"
+    ansible_become_password: "{{domain_password}}"

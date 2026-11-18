@@ -116,8 +116,6 @@ srv02
 
 ; install webdav 
 [webdav]
-srv02
-srv03
 
 [laps_dc]
 dc03

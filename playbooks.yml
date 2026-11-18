@@ -63,6 +63,8 @@ GOAD-Mini-Base:
   - ad-data.yml
   - ad-relations.yml
   - adcs.yml
+  - security.yml
+  - reboot.yml
   - hardening.yml
 
 DRACARYS:
@@ -110,13 +112,12 @@ GOAD-Light-Base:
   # Waiting 5 minutes for the child domain to be ready
   - wait5m.yml
   - ad-members.yml
-  - ad-trusts.yml
   - ad-data.yml
-  - ad-gmsa.yml
-  - laps.yml
   - ad-relations.yml
   - adcs.yml
   - servers.yml
+  - security.yml
+  - reboot.yml
   - hardening.yml
 
 GOAD-Base:
@@ -130,9 +131,10 @@ GOAD-Base:
   - ad-members.yml
   - ad-trusts.yml
   - ad-data.yml
-  - ad-gmsa.yml
   - laps.yml
   - ad-relations.yml
   - adcs.yml
   - servers.yml
+  - security.yml
+  - reboot.yml
   - hardening.yml

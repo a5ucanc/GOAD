@@ -49,6 +49,8 @@ ACCEPTED = {
     "ntlm.lmcompat": {"0", "1", "2", "3", "4", "5"},
     "defender.realtime": {"on", "off"},
     "firewall.state": {"on", "off"},
+    "dc.maq": {str(i) for i in range(11)},
+    "host.tier": {"0", "1", "2"},
     "dc.spooler": {"disabled", "enabled"},
     "dc.strong_cert_binding": {"0", "1", "2"},
     "adcs.web_enrollment": {"false", "true"},
@@ -71,7 +73,7 @@ def test_base_settings_values_accepted_by_role(lab):
 @pytest.mark.parametrize("lab", BASE_LABS)
 def test_playbooks_entry_has_no_vuln_playbooks(lab):
     pb = yaml.safe_load(open("playbooks.yml"))[lab]
-    assert "vulnerabilities.yml" not in pb and "security.yml" not in pb and "ad-acl.yml" not in pb
+    assert "vulnerabilities.yml" not in pb and "ad-acl.yml" not in pb
     assert pb[-1] == "hardening.yml"
 
 

@@ -7,16 +7,20 @@
                 "local_admin_password": "Aa1234567890!",
                 "domain": "sevenkingdoms.local",
                 "path": "DC=sevenkingdoms,DC=local",
-                "local_groups": {
-                    "Administrators": [
-                        "sevenkingdoms\\robert.baratheon",
-                        "sevenkingdoms\\cersei.lannister",
-                        "sevenkingdoms\\DragonRider"
-                    ],
-                    "Remote Desktop Users": [
-                        "sevenkingdoms\\Small Council",
-                        "sevenkingdoms\\Baratheon"
-                    ]
+                "local_groups": {},
+                "security": [
+                    "enable_run_as_ppl",
+                    "account_is_sensitive"
+                ],
+                "security_vars": {
+                    "account_is_sensitive": {
+                        "cersei.lannister": {
+                            "account": "cersei.lannister"
+                        },
+                        "robert.baratheon": {
+                            "account": "robert.baratheon"
+                        }
+                    }
                 }
             }
         },
@@ -75,6 +79,15 @@
                         },
                         "DragonRider": {
                             "path": "OU=Crownlands,DC=sevenkingdoms,DC=local"
+                        },
+                        "T0-Admins": {
+                            "path": "CN=Users,DC=sevenkingdoms,DC=local"
+                        },
+                        "T1-ServerAdmins": {
+                            "path": "CN=Users,DC=sevenkingdoms,DC=local"
+                        },
+                        "T2-WorkstationAdmins": {
+                            "path": "CN=Users,DC=sevenkingdoms,DC=local"
                         }
                     },
                     "domainlocal": {
@@ -117,7 +130,9 @@
                             "Lannister",
                             "Baratheon",
                             "Domain Admins",
-                            "Small Council"
+                            "Small Council",
+                            "T0-Admins",
+                            "Protected Users"
                         ],
                         "path": "OU=Crownlands,DC=sevenkingdoms,DC=local"
                     },
@@ -142,7 +157,8 @@
                             "Baratheon",
                             "Domain Admins",
                             "Small Council",
-                            "Protected Users"
+                            "Protected Users",
+                            "T0-Admins"
                         ],
                         "path": "OU=Crownlands,DC=sevenkingdoms,DC=local"
                     },
@@ -226,6 +242,7 @@
         },
         "base_settings": {
             "dc01": {
+                "host.tier": 0,
                 "net.llmnr": "disabled",
                 "net.nbtns": "disabled",
                 "net.mdns": "disabled",
@@ -236,6 +253,7 @@
                 "ntlm.lmcompat": 5,
                 "defender.realtime": "on",
                 "firewall.state": "on",
+                "dc.maq": 0,
                 "dc.spooler": "disabled",
                 "dc.strong_cert_binding": 2,
                 "adcs.web_enrollment": false,

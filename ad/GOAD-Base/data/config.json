@@ -7,16 +7,20 @@
                 "local_admin_password": "Aa1234567890!",
                 "domain": "sevenkingdoms.local",
                 "path": "DC=sevenkingdoms,DC=local",
-                "local_groups": {
-                    "Administrators": [
-                        "sevenkingdoms\\robert.baratheon",
-                        "sevenkingdoms\\cersei.lannister",
-                        "sevenkingdoms\\DragonRider"
-                    ],
-                    "Remote Desktop Users": [
-                        "sevenkingdoms\\Small Council",
-                        "sevenkingdoms\\Baratheon"
-                    ]
+                "local_groups": {},
+                "security": [
+                    "enable_run_as_ppl",
+                    "account_is_sensitive"
+                ],
+                "security_vars": {
+                    "account_is_sensitive": {
+                        "cersei.lannister": {
+                            "account": "cersei.lannister"
+                        },
+                        "robert.baratheon": {
+                            "account": "robert.baratheon"
+                        }
+                    }
                 }
             },
             "dc02": {
@@ -25,15 +29,17 @@
                 "local_admin_password": "Aa1234567890!",
                 "domain": "north.sevenkingdoms.local",
                 "path": "DC=north,DC=sevenkingdoms,DC=local",
-                "local_groups": {
-                    "Administrators": [
-                        "north\\eddard.stark",
-                        "north\\catelyn.stark",
-                        "north\\robb.stark"
-                    ],
-                    "Remote Desktop Users": [
-                        "north\\Stark"
-                    ]
+                "local_groups": {},
+                "security": [
+                    "enable_run_as_ppl",
+                    "account_is_sensitive"
+                ],
+                "security_vars": {
+                    "account_is_sensitive": {
+                        "eddard.stark": {
+                            "account": "eddard.stark"
+                        }
+                    }
                 }
             },
             "srv02": {
@@ -45,7 +51,7 @@
                 "use_laps": false,
                 "local_groups": {
                     "Administrators": [
-                        "north\\jeor.mormont"
+                        "north\\T1-ServerAdmins"
                     ],
                     "Remote Desktop Users": [
                         "north\\Night Watch",
@@ -59,6 +65,17 @@
                     "sysadmins": [
                         "NORTH\\Administrator"
                     ]
+                },
+                "security": [
+                    "enable_run_as_ppl",
+                    "asr"
+                ],
+                "security_vars": {
+                    "asr": {
+                        "block lsass stealing": {
+                            "ruleid": "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2"
+                        }
+                    }
                 }
             },
             "dc03": {
@@ -67,14 +84,17 @@
                 "local_admin_password": "Aa1234567890!",
                 "domain": "essos.local",
                 "path": "DC=essos,DC=local",
-                "local_groups": {
-                    "Administrators": [
-                        "essos\\daenerys.targaryen",
-                        "essos\\greatmaster"
-                    ],
-                    "Remote Desktop Users": [
-                        "essos\\Targaryen"
-                    ]
+                "local_groups": {},
+                "security": [
+                    "enable_run_as_ppl",
+                    "account_is_sensitive"
+                ],
+                "security_vars": {
+                    "account_is_sensitive": {
+                        "daenerys.targaryen": {
+                            "account": "daenerys.targaryen"
+                        }
+                    }
                 }
             },
             "srv03": {
@@ -86,7 +106,7 @@
                 "use_laps": true,
                 "local_groups": {
                     "Administrators": [
-                        "essos\\khal.drogo"
+                        "essos\\T1-ServerAdmins"
                     ]
                 },
                 "Remote Desktop Users": [
@@ -98,6 +118,17 @@
                     "sysadmins": [
                         "ESSOS\\Administrator"
                     ]
+                },
+                "security": [
+                    "enable_run_as_ppl",
+                    "asr"
+                ],
+                "security_vars": {
+                    "asr": {
+                        "block lsass stealing": {
+                            "ruleid": "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2"
+                        }
+                    }
                 }
             }
         },
@@ -142,6 +173,15 @@
                             "members": [
                                 "ESSOS\\QueenProtector"
                             ]
+                        },
+                        "T0-Admins": {
+                            "path": "CN=Users,DC=essos,DC=local"
+                        },
+                        "T1-ServerAdmins": {
+                            "path": "CN=Users,DC=essos,DC=local"
+                        },
+                        "T2-WorkstationAdmins": {
+                            "path": "CN=Users,DC=essos,DC=local"
                         }
                     },
                     "domainlocal": {
@@ -172,7 +212,9 @@
                         "description": "Darnerys Targaryen",
                         "groups": [
                             "Targaryen",
-                            "Domain Admins"
+                            "Domain Admins",
+                            "T0-Admins",
+                            "Protected Users"
                         ],
                         "path": "CN=Users,DC=essos,DC=local"
                     },
@@ -194,7 +236,8 @@
                         "city": "-",
                         "description": "Khal Drogo",
                         "groups": [
-                            "Dothraki"
+                            "Dothraki",
+                            "T1-ServerAdmins"
                         ],
                         "path": "CN=Users,DC=essos,DC=local"
                     },
@@ -262,6 +305,15 @@
                         "Mormont": {
                             "managed_by": "jeor.mormont",
                             "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
+                        },
+                        "T0-Admins": {
+                            "path": "CN=Users,DC=north,DC=sevenkingdoms,DC=local"
+                        },
+                        "T1-ServerAdmins": {
+                            "path": "CN=Users,DC=north,DC=sevenkingdoms,DC=local"
+                        },
+                        "T2-WorkstationAdmins": {
+                            "path": "CN=Users,DC=north,DC=sevenkingdoms,DC=local"
                         }
                     },
                     "domainlocal": {
@@ -291,7 +343,9 @@
                         "description": "Eddard Stark",
                         "groups": [
                             "Stark",
-                            "Domain Admins"
+                            "Domain Admins",
+                            "T0-Admins",
+                            "Protected Users"
                         ],
                         "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
                     },
@@ -392,7 +446,8 @@
                         "description": "Jeor Mormont",
                         "groups": [
                             "Night Watch",
-                            "Mormont"
+                            "Mormont",
+                            "T1-ServerAdmins"
                         ],
                         "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
                     },
@@ -462,6 +517,15 @@
                         },
                         "DragonRider": {
                             "path": "OU=Crownlands,DC=sevenkingdoms,DC=local"
+                        },
+                        "T0-Admins": {
+                            "path": "CN=Users,DC=sevenkingdoms,DC=local"
+                        },
+                        "T1-ServerAdmins": {
+                            "path": "CN=Users,DC=sevenkingdoms,DC=local"
+                        },
+                        "T2-WorkstationAdmins": {
+                            "path": "CN=Users,DC=sevenkingdoms,DC=local"
                         }
                     },
                     "domainlocal": {
@@ -508,7 +572,9 @@
                             "Lannister",
                             "Baratheon",
                             "Domain Admins",
-                            "Small Council"
+                            "Small Council",
+                            "T0-Admins",
+                            "Protected Users"
                         ],
                         "path": "OU=Crownlands,DC=sevenkingdoms,DC=local"
                     },
@@ -533,7 +599,8 @@
                             "Baratheon",
                             "Domain Admins",
                             "Small Council",
-                            "Protected Users"
+                            "Protected Users",
+                            "T0-Admins"
                         ],
                         "path": "OU=Crownlands,DC=sevenkingdoms,DC=local"
                     },
@@ -632,10 +699,17 @@
             ],
             "laps": [
                 "srv03"
+            ],
+            "iis": [
+                "srv02"
+            ],
+            "mssql_link": [
+                "srv02"
             ]
         },
         "base_settings": {
             "dc01": {
+                "host.tier": 0,
                 "net.llmnr": "disabled",
                 "net.nbtns": "disabled",
                 "net.mdns": "disabled",
@@ -646,6 +720,7 @@
                 "firewall.state": "on",
                 "ldap.signing": "required",
                 "ldap.channel_binding": "always",
+                "dc.maq": 0,
                 "dc.spooler": "disabled",
                 "dc.strong_cert_binding": 2,
                 "adcs.web_enrollment": false,
@@ -653,6 +728,7 @@
                 "adcs.enforce_encrypt": "on"
             },
             "dc02": {
+                "host.tier": 0,
                 "net.llmnr": "disabled",
                 "net.nbtns": "disabled",
                 "net.mdns": "disabled",
@@ -663,10 +739,12 @@
                 "firewall.state": "on",
                 "ldap.signing": "required",
                 "ldap.channel_binding": "always",
+                "dc.maq": 0,
                 "dc.spooler": "disabled",
                 "dc.strong_cert_binding": 2
             },
             "srv02": {
+                "host.tier": 1,
                 "net.llmnr": "disabled",
                 "net.nbtns": "disabled",
                 "net.mdns": "disabled",
@@ -677,6 +755,7 @@
                 "firewall.state": "on"
             },
             "dc03": {
+                "host.tier": 0,
                 "net.llmnr": "disabled",
                 "net.nbtns": "disabled",
                 "net.mdns": "disabled",
@@ -687,10 +766,12 @@
                 "firewall.state": "on",
                 "ldap.signing": "required",
                 "ldap.channel_binding": "always",
+                "dc.maq": 0,
                 "dc.spooler": "disabled",
                 "dc.strong_cert_binding": 2
             },
             "srv03": {
+                "host.tier": 1,
                 "net.llmnr": "disabled",
                 "net.nbtns": "disabled",
                 "net.mdns": "disabled",

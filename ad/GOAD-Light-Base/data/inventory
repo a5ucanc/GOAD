@@ -90,7 +90,6 @@ srv02
 
 ; install webdav 
 [webdav]
-srv02
 
 ; install elk
 ; usage : elk.yml
