@@ -1,0 +1,39 @@
+---
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Install mssql-impersonate-user scenario"
+  hosts: scenario_target
+  vars_files:
+    - ../data/vars.yml
+  vars:
+    domain: "{{ lab.hosts[scenario_target].domain }}"
+    domain_username: "{{ domain }}\\administrator"
+    domain_password: "{{ lab.domains[domain].domain_password }}"
+    netbios: "{{ lab.domains[domain].netbios_name }}"
+    dc: "{{ lab.domains[domain].dc }}"
+    dc_fqdn: "{{ lab.hosts[dc].hostname }}.{{ domain }}"
+  tasks:
+    - name: "Create scenario users"
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/../../../ansible/roles/scenario_ad"
+        tasks_from: users
+      vars:
+        ad_users: ["{{ user }}"]
+        ad_state: "present"
+
+    - name: "Create the login, its msdb user and grant IMPERSONATE on dbo"
+      ansible.windows.win_powershell:
+        script: |
+          param([string[]]$Statements)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          foreach ($q in $Statements) {
+            $out = SqlCmd -S 127.0.0.1,1433 -E -b -Q $q 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "SqlCmd failed ($LASTEXITCODE): $q`n$out" }
+            if ($out -match 'SCN_CHANGED') { $Ansible.Changed = $true }
+          }
+        parameters:
+          Statements: ["IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'{{ netbios }}\\{{ user }}') BEGIN CREATE LOGIN [{{ netbios }}\\{{ user }}] FROM WINDOWS; PRINT 'SCN_CHANGED' END", "USE msdb; IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'{{ netbios }}\\{{ user }}') BEGIN CREATE USER [{{ netbios }}\\{{ user }}] FOR LOGIN [{{ netbios }}\\{{ user }}]; PRINT 'SCN_CHANGED' END", "USE msdb; IF NOT EXISTS (SELECT 1 FROM sys.database_permissions p JOIN sys.database_principals g ON p.grantee_principal_id = g.principal_id WHERE p.class = 4 AND p.permission_name = 'IMPERSONATE' AND g.name = N'{{ netbios }}\\{{ user }}' AND p.major_id = USER_ID('dbo')) BEGIN GRANT IMPERSONATE ON USER::[dbo] TO [{{ netbios }}\\{{ user }}]; PRINT 'SCN_CHANGED' END"]

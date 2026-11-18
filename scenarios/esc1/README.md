@@ -12,4 +12,4 @@ The `-Base` labs enforce strong certificate binding on the DCs (`dc.strong_cert_
 
     certipy account read -u <user>@<domain> -p '<pass>' -dc-ip <dc ip> -user administrator
 
-Disable unpublishes (`Remove-CATemplate`) and removes the template (`Remove-ADCSTemplate`).
+Disable revokes every certificate issued from `ESC1`, unpublishes the template and deletes it (with its OID object).

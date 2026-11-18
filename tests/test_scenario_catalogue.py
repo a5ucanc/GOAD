@@ -72,6 +72,12 @@ CATALOGUE = {
     "unconstrained-user": obj(),
     "rbcd": obj("member_server", MS, ["maq"]),
     "writespn": obj(),
+    # MSSQL / IIS
+    "mssql-impersonate-login": obj("mssql", ["mssql"]),
+    "mssql-impersonate-user": obj("mssql", ["mssql"]),
+    "mssql-sysadmin": obj("mssql", ["mssql"]),
+    "mssql-linked": obj("mssql_link", ["mssql_link"]),
+    "iis-upload": obj("iis", ["iis"]),
 }
 
 SETTINGS = [n for n, c in CATALOGUE.items() if c["type"] == "setting"]
@@ -175,3 +181,39 @@ def test_include_vars_not_self_referential(name):
         for task in _includes(yaml.safe_load((ROOT / "scenarios" / name / "ansible" / pb).read_text())):
             for key, value in (task.get("vars") or {}).items():
                 assert not re.fullmatch(r"\{\{\s*%s\s*\}\}" % re.escape(key), str(value)), f"{pb}: {key}"
+
+
+AD_MARKERS = re.compile(r"Import-Module ActiveDirectory|-AD[A-Z]|\bAD:|\[ADSI\]|Get-GP|New-GP|Remove-GP")
+
+
+def _tasks(node):
+    if isinstance(node, dict):
+        if "name" in node and any(k.startswith("ansible.") for k in node):
+            yield node
+        for v in node.values():
+            yield from _tasks(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _tasks(v)
+
+
+def _non_dc_targets():
+    found = set()
+    for lab_name in BASE_LABS:
+        cfg = lab(lab_name)
+        dcs = {h for h, v in cfg["hosts"].items() if v["type"] == "dc"}
+        for name in PACKAGES:
+            s = load(name)
+            if s.type == "object" and s.target and set(cfg["capabilities"].get(s.target, [])) - dcs:
+                found.add(name)
+    return sorted(found)
+
+
+@pytest.mark.parametrize("name", _non_dc_targets())
+def test_ad_tasks_delegate_to_dc(name):
+    # AD work must run on the domain DC when the target can be a member server
+    for pb in ("install.yml", "uninstall.yml"):
+        for task in _tasks(yaml.safe_load((ROOT / "scenarios" / name / "ansible" / pb).read_text())):
+            body = json.dumps(task)
+            if AD_MARKERS.search(body) and not any(k.endswith("include_role") for k in task):
+                assert task.get("delegate_to") == "{{ dc }}", f"{pb}: {task['name']}"

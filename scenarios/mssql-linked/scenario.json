@@ -1,0 +1,8 @@
+{
+  "description": "Linked server to the SQL Server of the other forest, mapped to its sa",
+  "type": "object",
+  "requires": [
+    "mssql_link"
+  ],
+  "target": "mssql_link"
+}

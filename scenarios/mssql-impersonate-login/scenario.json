@@ -1,0 +1,8 @@
+{
+  "description": "SQL login that can impersonate sa",
+  "type": "object",
+  "requires": [
+    "mssql"
+  ],
+  "target": "mssql"
+}
