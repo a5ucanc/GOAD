@@ -140,3 +140,49 @@ def test_dependents_include_every_target_of_a_dependent(resolver):
     on = [EnabledScenario("esc8", "dc01", "t"), EnabledScenario("relay", "dc01", "t"), EnabledScenario("relay", "srv03", "t")]
     keys = [e.key for e in resolver.dependents("esc8", on)]
     assert keys == ["relay@dc01", "relay@srv03"]
+
+
+HOST_DOMAINS = {"dc01": "sevenkingdoms.local", "dc02": "north.sevenkingdoms.local",
+                "srv02": "north.sevenkingdoms.local", "dc03": "essos.local", "srv03": "essos.local"}
+
+
+@pytest.fixture
+def domain_resolver(scenarios, scenario_dir, tmp_path):
+    scenario_dir.make("maq", type="setting", touches=["dc.maq"])
+    scenario_dir.make("rbcd", requires=["mssql"], target="mssql", depends=["maq"])
+    return ScenarioResolver(Scenarios(str(tmp_path)), "GOAD-Base", {"adcs": ["dc01", "srv03"], "mssql": ["srv02"]},
+                            "dc01", ["dc01", "dc02", "dc03"], host_domains=HOST_DOMAINS)
+
+
+def test_dependency_in_same_domain_is_met(domain_resolver):
+    on = [EnabledScenario("maq", "dc02", "t")]
+    assert domain_resolver.check_enable("rbcd", None, on) == "srv02"
+
+
+def test_dependency_in_other_domain_is_refused(domain_resolver):
+    on = [EnabledScenario("maq", "dc01", "t")]
+    with pytest.raises(ScenarioRefused) as e:
+        domain_resolver.check_enable("rbcd", None, on)
+    assert "requires scenario maq in domain north.sevenkingdoms.local" in e.value.reasons
+
+
+def test_dependents_filtered_by_domain(domain_resolver):
+    on = [EnabledScenario("maq", "dc01", "t"), EnabledScenario("maq", "dc02", "t"),
+          EnabledScenario("rbcd", "srv02", "t")]
+    assert domain_resolver.dependents("maq", on, "dc01") == []
+    assert [e.key for e in domain_resolver.dependents("maq", on, "dc02")] == ["rbcd@srv02"]
+
+
+def test_without_host_domains_any_host_meets_dependency(resolver):
+    on = [EnabledScenario("esc8", "srv03", "t")]
+    assert resolver.check_enable("relay", None, on) == "dc01"
+
+
+def test_available_when_a_non_default_target_meets_dependency(scenario_dir, tmp_path):
+    scenario_dir.make("maq", type="setting", touches=["dc.maq"])
+    scenario_dir.make("rbcd", requires=["mssql"], target="mssql", depends=["maq"])
+    r = ScenarioResolver(Scenarios(str(tmp_path)), "GOAD-Base", {"mssql": ["srv02", "srv03"]},
+                         "dc01", ["dc01", "dc02", "dc03"], host_domains=HOST_DOMAINS)
+    on = [EnabledScenario("maq", "dc03", "t")]
+    reasons = dict((s.name, why) for s, why in r.available(on))
+    assert reasons["rbcd"] == []

@@ -143,3 +143,17 @@ def test_cascade_disables_dependent_on_every_target(svc, prov):
     assert svc.disable("esc8", None, cascade=True)
     assert prov.calls == [("relay", "dc01", False), ("relay", "srv03", False), ("esc8", "dc01", False)]
     assert svc.instance.scenarios == []
+
+
+def test_cascade_only_disables_dependents_in_same_domain(scenario_dir, tmp_path, prov):
+    scenario_dir.make("maq", type="setting", touches=["dc.maq"])
+    scenario_dir.make("rbcd", requires=["mssql"], target="mssql", depends=["maq"])
+    domains = {"dc01": "sevenkingdoms.local", "dc02": "north.sevenkingdoms.local", "srv02": "north.sevenkingdoms.local"}
+    resolver = ScenarioResolver(Scenarios(str(tmp_path)), "GOAD-Base", {"mssql": ["srv02"]}, "dc01",
+                                ["dc01", "dc02"], host_domains=domains)
+    svc = ScenarioService(FakeInstance(), FakeLab(resolver), prov)
+    assert svc.enable("maq", "dc01")
+    assert svc.enable("maq", "dc02")
+    assert svc.enable("rbcd", None)
+    assert svc.disable("maq", "dc01")
+    assert [e.key for e in svc.instance.scenarios] == ["maq@dc02", "rbcd@srv02"]

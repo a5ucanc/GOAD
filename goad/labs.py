@@ -38,6 +38,7 @@ class Lab:
         self.extensions = {}
         self.capabilities = None
         self.dcs = []
+        self.host_domains = {}
         self.root_dc = ''
         self._scenario_resolver = None
         self._load_lab_config(lab_name)
@@ -61,10 +62,12 @@ class Lab:
             domains = lab_config.get('domains', {})
             dcs = [key for key, host in hosts.items() if host.get('type') == 'dc']
             root_dc = self._find_root_dc(domains)
+            host_domains = {key: host.get('domain', '') for key, host in hosts.items()}
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return
         self.capabilities = capabilities
         self.dcs = dcs
+        self.host_domains = host_domains
         self.root_dc = root_dc
 
     @staticmethod
@@ -89,7 +92,8 @@ class Lab:
     def get_scenario_resolver(self):
         if self._scenario_resolver is None:
             scenarios = Scenarios(GoadPath.get_scenarios_path())
-            self._scenario_resolver = ScenarioResolver(scenarios, self.lab_name, self.capabilities, self.root_dc, self.dcs)
+            self._scenario_resolver = ScenarioResolver(scenarios, self.lab_name, self.capabilities, self.root_dc, self.dcs,
+                                                       self.host_domains)
         return self._scenario_resolver
 
     def get_scenario(self, name):

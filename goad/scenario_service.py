@@ -52,7 +52,7 @@ class ScenarioService:
             Log.error(f'{name} is enabled on {targets}: name the host')
             return False
         entry = entries[0]
-        dependents = resolver.dependents(name, self.instance.scenarios)
+        dependents = resolver.dependents(name, self.instance.scenarios, entry.target)
         if dependents and not cascade:
             keys = ', '.join(d.key for d in dependents)
             Log.error(f'{name} has enabled dependents: {keys}; use --cascade')

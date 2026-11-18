@@ -26,12 +26,20 @@ class EnabledScenario:
 class ScenarioResolver:
 
     def __init__(self, scenarios: Scenarios, lab_name: str,
-                 capabilities: Optional[Dict[str, List[str]]], root_dc: str, dcs: List[str]):
+                 capabilities: Optional[Dict[str, List[str]]], root_dc: str, dcs: List[str],
+                 host_domains: Optional[Dict[str, str]] = None):
         self.scenarios = scenarios
         self.lab_name = lab_name
         self.capabilities = capabilities
         self.root_dc = root_dc
         self.dcs = dcs
+        self.host_domains = host_domains
+
+    def domain_of(self, host: str) -> str:
+        # without a host-to-domain map every host shares one domain
+        if self.host_domains is None:
+            return ""
+        return self.host_domains.get(host, "")
 
     def resolve_target(self, scenario: Scenario, host: Optional[str]) -> str:
         if scenario.target:
@@ -71,8 +79,13 @@ class ScenarioResolver:
             if any(e.name == name and e.target == target for e in enabled):
                 reasons.append(f"already enabled on {target}")
         for dep in scenario.depends:
-            if dep not in enabled_names:
-                reasons.append(f"requires scenario {dep}")
+            if target is None or self.host_domains is None:
+                if dep not in enabled_names:
+                    reasons.append(f"requires scenario {dep}")
+                continue
+            domain = self.domain_of(target)
+            if not any(e.name == dep and self.domain_of(e.target) == domain for e in enabled):
+                reasons.append(f"requires scenario {dep} in domain {domain}")
         for entry in enabled:
             other = self.scenarios.get(entry.name)
             if entry.name in scenario.conflicts or (other is not None and name in other.conflicts):
@@ -96,8 +109,24 @@ class ScenarioResolver:
                 self.check_enable(scenario.name, None, enabled)
                 result.append((scenario, []))
             except ScenarioRefused as e:
-                result.append((scenario, e.reasons))
+                # the default target may fail where another candidate host passes (depends per domain)
+                if any(self._enable_ok(scenario.name, host, enabled) for host in self._candidates(scenario)):
+                    result.append((scenario, []))
+                else:
+                    result.append((scenario, e.reasons))
         return result
+
+    def _candidates(self, scenario: Scenario) -> List[str]:
+        if scenario.target:
+            return list((self.capabilities or {}).get(scenario.target) or [])
+        return list(self.dcs)
+
+    def _enable_ok(self, name: str, host: str, enabled: List[EnabledScenario]) -> bool:
+        try:
+            self.check_enable(name, host, enabled)
+            return True
+        except ScenarioRefused:
+            return False
 
     def install_order(self, names: List[str]) -> List[str]:
         requested = set(names)
@@ -125,7 +154,12 @@ class ScenarioResolver:
             visit(name)
         return order
 
-    def dependents(self, name: str, enabled: List[EnabledScenario]) -> List[EnabledScenario]:
+    def dependents(self, name: str, enabled: List[EnabledScenario],
+                   target: Optional[str] = None) -> List[EnabledScenario]:
+        # with a target, only dependents in the target's domain count
+        if target is not None:
+            domain = self.domain_of(target)
+            enabled = [e for e in enabled if self.domain_of(e.target) == domain]
         result = []
         seen = {name}
 
