@@ -142,6 +142,11 @@ Each package has a `README.md` with the attack and a verification step.
 | `ldap.channel_binding` | `always`, `never` |
 | `dc.maq` | `0` to `10` |
 | `host.tier` | `0`, `1`, `2` |
+| `dc.cert_mapping` | `absent`, `0x4` |
+| `smb.v1` | `disabled`, `enabled` |
+| `winrm.credssp` | `disabled`, `server`, `client` |
+| `trust.sid_history` | `disabled`, `enabled` |
+| `net.webclient` | `absent`, `present` |
 | `dc.spooler` | `disabled`, `enabled` |
 | `dc.strong_cert_binding` | `0`, `1`, `2` |
 | `adcs.web_enrollment` | `true`, `false` |

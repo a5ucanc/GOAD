@@ -51,6 +51,11 @@ ACCEPTED = {
     "firewall.state": {"on", "off"},
     "dc.maq": {str(i) for i in range(11)},
     "host.tier": {"0", "1", "2"},
+    "dc.cert_mapping": {"absent", "0x4"},
+    "smb.v1": {"disabled", "enabled"},
+    "winrm.credssp": {"disabled", "server", "client"},
+    "trust.sid_history": {"disabled", "enabled"},
+    "net.webclient": {"absent", "present"},
     "dc.spooler": {"disabled", "enabled"},
     "dc.strong_cert_binding": {"0", "1", "2"},
     "adcs.web_enrollment": {"false", "true"},
@@ -102,3 +107,19 @@ def test_laps_capability_matches_laps_hosts(lab):
         assert sorted(capability) == sorted(laps_hosts)
     else:
         assert capability is None
+
+
+@pytest.mark.parametrize("lab", BASE_LABS)
+def test_new_keys_baseline(lab):
+    cfg = json.load(open(f"ad/{lab}/data/config.json"))["lab"]
+    caps = cfg["capabilities"]
+    for host, v in cfg["hosts"].items():
+        settings = cfg["base_settings"][host]
+        assert settings["smb.v1"] == "disabled", host
+        if v["type"] == "dc":
+            assert settings["dc.cert_mapping"] == "absent", host
+        if host in caps.get("member_server", []):
+            assert settings["winrm.credssp"] == "disabled", host
+            assert settings["net.webclient"] == "absent", host
+        if host in caps.get("forest_trust", []):
+            assert settings["trust.sid_history"] == "disabled", host

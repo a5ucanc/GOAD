@@ -725,7 +725,10 @@
                 "dc.strong_cert_binding": 2,
                 "adcs.web_enrollment": false,
                 "adcs.editf_san": "off",
-                "adcs.enforce_encrypt": "on"
+                "adcs.enforce_encrypt": "on",
+                "smb.v1": "disabled",
+                "dc.cert_mapping": "absent",
+                "trust.sid_history": "disabled"
             },
             "dc02": {
                 "host.tier": 0,
@@ -741,7 +744,9 @@
                 "ldap.channel_binding": "always",
                 "dc.maq": 0,
                 "dc.spooler": "disabled",
-                "dc.strong_cert_binding": 2
+                "dc.strong_cert_binding": 2,
+                "smb.v1": "disabled",
+                "dc.cert_mapping": "absent"
             },
             "srv02": {
                 "host.tier": 1,
@@ -752,7 +757,10 @@
                 "kerberos.rc4": "disabled",
                 "ntlm.lmcompat": 5,
                 "defender.realtime": "on",
-                "firewall.state": "on"
+                "firewall.state": "on",
+                "smb.v1": "disabled",
+                "winrm.credssp": "disabled",
+                "net.webclient": "absent"
             },
             "dc03": {
                 "host.tier": 0,
@@ -768,7 +776,10 @@
                 "ldap.channel_binding": "always",
                 "dc.maq": 0,
                 "dc.spooler": "disabled",
-                "dc.strong_cert_binding": 2
+                "dc.strong_cert_binding": 2,
+                "smb.v1": "disabled",
+                "dc.cert_mapping": "absent",
+                "trust.sid_history": "disabled"
             },
             "srv03": {
                 "host.tier": 1,
@@ -782,7 +793,10 @@
                 "firewall.state": "on",
                 "adcs.web_enrollment": false,
                 "adcs.editf_san": "off",
-                "adcs.enforce_encrypt": "on"
+                "adcs.enforce_encrypt": "on",
+                "smb.v1": "disabled",
+                "winrm.credssp": "disabled",
+                "net.webclient": "absent"
             }
         }
     }

@@ -1,0 +1,31 @@
+- name: "Check accepted values for trust.sid_history"
+  ansible.builtin.assert:
+    that: "(setting_value | string) in ['disabled', 'enabled']"
+    fail_msg: "Invalid value '{{ setting_value }}' for trust.sid_history, accepted: ['disabled', 'enabled']"
+    quiet: true
+
+# On the DC of <domain>: let <domain> accept SID history from users of the forest trust
+# partner (trustAttributes bit 0x40, TREAT_AS_EXTERNAL). netdom needs the partner's admin.
+- name: "Set SID history on the forest trust"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Domain, [string]$Partner, [string]$PartnerUser, [string]$PartnerPassword, [string]$Wanted)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      $tdo = Get-ADObject -Identity "CN=$Partner,CN=System,$((Get-ADDomain).DistinguishedName)" -Properties trustAttributes
+      $enabled = ($tdo.trustAttributes -band 0x40) -ne 0
+      if ($enabled -ne ($Wanted -eq 'enabled')) {
+        $flag = if ($Wanted -eq 'enabled') { 'yes' } else { 'no' }
+        $out = netdom trust $Domain /d:$Partner /enablesidhistory:$flag /ud:$PartnerUser /pd:$PartnerPassword 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "netdom failed: $out" }
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Domain: "{{ domain }}"
+      Partner: "{{ lab.domains[domain].trust }}"
+      PartnerUser: "{{ lab.domains[lab.domains[domain].trust].netbios_name }}\\administrator"
+      PartnerPassword: "{{ lab.domains[lab.domains[domain].trust].domain_password }}"
+      Wanted: "{{ setting_value | string }}"
+  no_log: true
+  when: lab.domains[domain].trust | default('') | length > 0
