@@ -19,7 +19,7 @@
         Install-WindowsFeature ADCS-Web-Enrollment -IncludeManagementTools | Out-Null
         $Ansible.Changed = $true
       }
-      if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\CertSvc\Configuration')) { throw 'No CA configured' }
+      if (-not (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration')) { throw 'No CA configured' }
       if (-not (Get-WebApplication -Site 'Default Web Site' -Name 'CertSrv' -ErrorAction SilentlyContinue)) {
         Install-AdcsWebEnrollment -Force | Out-Null
         $Ansible.Changed = $true
