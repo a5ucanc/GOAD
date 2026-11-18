@@ -40,6 +40,14 @@ CATALOGUE = {
     "credssp": setting("member_server", MS, "winrm.credssp", "server"),
     "sid-history": setting("forest_trust", ["forest_trust"], "trust.sid_history", "enabled"),
     "webdav": setting("member_server", MS, "net.webclient", "present"),
+    # ADCS
+    "esc2": obj("adcs", ["adcs"]),
+    "esc3": obj("adcs", ["adcs"]),
+    "esc4": obj("adcs", ["adcs"]),
+    "esc7": obj("adcs", ["adcs"]),
+    "esc9": obj("adcs", ["adcs"], ["esc10-case1"]),
+    "esc13": obj("adcs", ["adcs"]),
+    "esc15": obj("adcs", ["adcs"]),
 }
 
 SETTINGS = [n for n, c in CATALOGUE.items() if c["type"] == "setting"]
@@ -123,3 +131,23 @@ def test_uninstall_references_every_scn_name(name):
 def test_uninstall_deletes_quota_computers(name):
     text = (ROOT / "scenarios" / name / "ansible" / "uninstall.yml").read_text()
     assert "mS-DS-CreatorSID" in text and "Remove-ADComputer" in text
+
+
+def _includes(node):
+    if isinstance(node, dict):
+        if any(k.split(".")[-1] == "include_role" for k in node):
+            yield node
+        for v in node.values():
+            yield from _includes(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _includes(v)
+
+
+@pytest.mark.parametrize("name", PACKAGES)
+def test_include_vars_not_self_referential(name):
+    # vars: {x: "{{ x }}"} on an include is a recursive template loop at runtime
+    for pb in ("install.yml", "uninstall.yml"):
+        for task in _includes(yaml.safe_load((ROOT / "scenarios" / name / "ansible" / pb).read_text())):
+            for key, value in (task.get("vars") or {}).items():
+                assert not re.fullmatch(r"\{\{\s*%s\s*\}\}" % re.escape(key), str(value)), f"{pb}: {key}"

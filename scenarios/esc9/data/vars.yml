@@ -1,0 +1,4 @@
+template: ESC9
+template_json: ESC9.json
+attacker: scn-esc9-attacker
+victim: scn-esc9-victim

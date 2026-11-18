@@ -1,0 +1,8 @@
+{
+  "description": "Low-privileged user with ManageCA on the CA (ESC7)",
+  "type": "object",
+  "requires": [
+    "adcs"
+  ],
+  "target": "adcs"
+}

@@ -1,0 +1,8 @@
+{
+  "description": "Domain Users can enroll in the schema v1 Web Server template (ESC15)",
+  "type": "object",
+  "requires": [
+    "adcs"
+  ],
+  "target": "adcs"
+}

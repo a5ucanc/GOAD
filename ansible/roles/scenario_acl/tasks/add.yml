@@ -1,0 +1,21 @@
+- name: "Check scenario_acl variables"
+  ansible.builtin.assert:
+    that:
+      - acl_principal is defined
+      - acl_target_dn is defined
+      - acl_right is defined
+      - acl_inheritance | default('None') in ['None', 'All']
+      - dc is defined
+    quiet: true
+
+# AD changes always run on the DC of the scenario's domain.
+- name: "Add ACE {{ acl_right }} for {{ acl_principal }} on {{ acl_target_dn }}"
+  ansible.windows.win_powershell:
+    script: "{{ lookup('file', 'scenario_ace.ps1') }}"
+    parameters:
+      Principal: "{{ acl_principal }}"
+      TargetDn: "{{ acl_target_dn }}"
+      Right: "{{ acl_right }}"
+      Inheritance: "{{ acl_inheritance | default('None') }}"
+      Mode: add
+  delegate_to: "{{ dc }}"

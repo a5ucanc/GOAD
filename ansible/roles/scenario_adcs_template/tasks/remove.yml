@@ -1,0 +1,62 @@
+# Revoke the certificates issued from a scenario template, then unpublish and delete it.
+# vars: template, dc. Runs the CA part on scenario_target (the CA host).
+- name: "Read OID of template {{ template }}"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Template)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      $config = (Get-ADRootDSE).configurationNamingContext
+      $t = Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$config" -LDAPFilter "(displayName=$Template)" -Properties msPKI-Cert-Template-OID
+      if ($t) { $t.'msPKI-Cert-Template-OID' } else { '' }
+    parameters:
+      Template: "{{ template }}"
+  register: scenario_template_oid
+  delegate_to: "{{ dc }}"
+
+- name: "Revoke certificates issued from {{ template }}"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Oid)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $rows = certutil -view -restrict "CertificateTemplate=$Oid,Disposition=20" -out SerialNumber csv
+      if ($LASTEXITCODE -ne 0) { throw "certutil -view failed: $rows" }
+      $serials = $rows | Select-Object -Skip 1 | ForEach-Object { $_.Trim().Trim('"') } | Where-Object { $_ -match '^[0-9a-fA-F]+$' }
+      foreach ($s in $serials) {
+        certutil -revoke $s 0 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "certutil -revoke $s failed" }
+        $Ansible.Changed = $true
+      }
+      if ($Ansible.Changed) { certutil -crl | Out-Null }
+    parameters:
+      Oid: "{{ scenario_template_oid.output[0] }}"
+  when: scenario_template_oid.output[0] | length > 0
+
+- name: "Unpublish and delete template {{ template }}"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Template)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      $config = (Get-ADRootDSE).configurationNamingContext
+      $t = Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$config" -LDAPFilter "(displayName=$Template)" -Properties cn
+      if ($t) {
+        foreach ($ca in Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$config" -SearchScope OneLevel -Filter * -Properties certificateTemplates) {
+          if ($ca.certificateTemplates -contains $t.cn) {
+            Set-ADObject -Identity $ca.DistinguishedName -Remove @{certificateTemplates = $t.cn}
+          }
+        }
+        Remove-ADObject -Identity $t.DistinguishedName -Confirm:$false
+        $Ansible.Changed = $true
+      }
+      # the template's OID object (created by New-ADCSTemplate, same display name)
+      foreach ($o in Get-ADObject -SearchBase "CN=OID,CN=Public Key Services,CN=Services,$config" -LDAPFilter "(displayName=$Template)") {
+        Remove-ADObject -Identity $o.DistinguishedName -Confirm:$false
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Template: "{{ template }}"
+  delegate_to: "{{ dc }}"

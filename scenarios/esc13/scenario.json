@@ -1,0 +1,8 @@
+{
+  "description": "Template with an issuance policy linked to a privileged group (ESC13)",
+  "type": "object",
+  "requires": [
+    "adcs"
+  ],
+  "target": "adcs"
+}

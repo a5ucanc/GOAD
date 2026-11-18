@@ -1,0 +1,48 @@
+---
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Install esc7 scenario"
+  hosts: scenario_target
+  vars_files:
+    - ../data/vars.yml
+  vars:
+    domain: "{{ lab.hosts[scenario_target].domain }}"
+    domain_username: "{{ domain }}\\administrator"
+    domain_password: "{{ lab.domains[domain].domain_password }}"
+    netbios: "{{ lab.domains[domain].netbios_name }}"
+    dc: "{{ lab.domains[domain].dc }}"
+    dc_fqdn: "{{ lab.hosts[dc].hostname }}.{{ domain }}"
+  tasks:
+    - name: "Create scenario users"
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/../../../ansible/roles/scenario_ad"
+        tasks_from: users
+      vars:
+        ad_users: ["{{ user }}"]
+        ad_state: "present"
+
+    - name: "Grant ManageCA to {{ user }}"
+      ansible.windows.win_powershell:
+        script: |
+          param([string]$Identity)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          if (-not (Get-Module -ListAvailable -Name PSPKI)) {
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null
+            Install-Module -Name PSPKI -Force -AllowClobber
+            $Ansible.Changed = $true
+          }
+          Import-Module PSPKI
+          $ca = Get-CertificationAuthority -ComputerName ([Net.Dns]::GetHostByName($env:COMPUTERNAME).HostName)
+          $acl = $ca | Get-CertificationAuthorityAcl
+          $sid = (New-Object Security.Principal.NTAccount $Identity).Translate([Security.Principal.SecurityIdentifier])
+          $has = $acl.Access | Where-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]) -eq $sid -and $_.Rights -match 'ManageCA' }
+          if (-not $has) {
+            $acl | Add-CertificationAuthorityAcl -Identity $Identity -AccessType Allow -AccessMask ManageCA | Set-CertificationAuthorityAcl -RestartCA | Out-Null
+            $Ansible.Changed = $true
+          }
+        parameters:
+          Identity: "{{ netbios }}\\{{ user }}"

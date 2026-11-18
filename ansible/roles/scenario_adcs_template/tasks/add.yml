@@ -1,0 +1,47 @@
+# Create and publish a certificate template from ansible/roles/adcs_templates/files/<template_json>.
+# vars: template, template_json, enroll_identity (default <NB>\Domain Users), dc, netbios.
+- name: "Copy ADCSTemplate module to the DC"
+  ansible.windows.win_copy:
+    src: "{{ role_path }}/../adcs_templates/files/ADCSTemplate"
+    dest: "C:\\Program Files\\WindowsPowerShell\\Modules"
+  delegate_to: "{{ dc }}"
+
+- name: "Create setup directory on the DC"
+  ansible.windows.win_file:
+    path: C:\setup
+    state: directory
+  delegate_to: "{{ dc }}"
+
+- name: "Copy {{ template_json }} to the DC"
+  ansible.windows.win_copy:
+    src: "{{ role_path }}/../adcs_templates/files/{{ template_json }}"
+    dest: "C:\\setup\\{{ template_json }}"
+  delegate_to: "{{ dc }}"
+
+- name: "Create and publish template {{ template }}"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Template, [string]$Json, [string]$Identity)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      Import-Module ADCSTemplate
+      $server = (Get-ADDomainController).HostName
+      if (-not (Get-ADCSTemplate -DisplayName $Template -Server $server)) {
+        New-ADCSTemplate -DisplayName $Template -JSON (Get-Content $Json -Raw) -Identity $Identity -Server $server -Publish
+        $Ansible.Changed = $true
+      }
+      # publish again when a previous run stopped before publishing
+      $config = (Get-ADRootDSE).configurationNamingContext
+      $cn = (Get-ADCSTemplate -DisplayName $Template -Server $server).cn
+      foreach ($ca in Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$config" -SearchScope OneLevel -Filter * -Properties certificateTemplates) {
+        if ($ca.certificateTemplates -notcontains $cn) {
+          Set-ADObject -Identity $ca.DistinguishedName -Add @{certificateTemplates = $cn}
+          $Ansible.Changed = $true
+        }
+      }
+    parameters:
+      Template: "{{ template }}"
+      Json: "C:\\setup\\{{ template_json }}"
+      Identity: "{{ enroll_identity | default(netbios + '\\Domain Users') }}"
+  delegate_to: "{{ dc }}"
