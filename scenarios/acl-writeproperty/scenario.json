@@ -1,0 +1,5 @@
+{
+  "description": "User with WriteProperty (all properties) on another user",
+  "type": "object",
+  "target": ""
+}

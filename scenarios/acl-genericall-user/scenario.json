@@ -1,0 +1,5 @@
+{
+  "description": "User with GenericAll on another user",
+  "type": "object",
+  "target": ""
+}

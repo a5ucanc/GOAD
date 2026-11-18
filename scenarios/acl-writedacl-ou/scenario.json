@@ -1,0 +1,5 @@
+{
+  "description": "User with WriteDacl on an OU (inheritable control over its objects)",
+  "type": "object",
+  "target": ""
+}

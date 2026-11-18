@@ -48,6 +48,23 @@ CATALOGUE = {
     "esc9": obj("adcs", ["adcs"], ["esc10-case1"]),
     "esc13": obj("adcs", ["adcs"]),
     "esc15": obj("adcs", ["adcs"]),
+    # ACL
+    "acl-forcechangepassword": obj(),
+    "acl-genericwrite-user": obj(),
+    "acl-writedacl-user": obj(),
+    "acl-self-membership": obj(),
+    "acl-addmember": obj(),
+    "acl-writeowner": obj(),
+    "acl-genericall-user": obj(),
+    "acl-genericall-computer": obj(),
+    "acl-genericall-group": obj("member_server", MS),
+    "acl-adminsdholder": obj(),
+    "acl-writedacl-ou": obj(),
+    "acl-writeproperty": obj(),
+    "anonymous-rpc": obj(),
+    "gpo-abuse": obj(),
+    "foreign-group-acl": obj("forest_trust", ["forest_trust"]),
+    "local-admin": obj("member_server", MS),
 }
 
 SETTINGS = [n for n, c in CATALOGUE.items() if c["type"] == "setting"]

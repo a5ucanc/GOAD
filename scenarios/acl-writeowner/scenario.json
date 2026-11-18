@@ -1,0 +1,5 @@
+{
+  "description": "User with WriteOwner on a group",
+  "type": "object",
+  "target": ""
+}

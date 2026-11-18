@@ -1,0 +1,8 @@
+{
+  "description": "Ordinary domain user that is local administrator of a member server",
+  "type": "object",
+  "requires": [
+    "member_server"
+  ],
+  "target": "member_server"
+}

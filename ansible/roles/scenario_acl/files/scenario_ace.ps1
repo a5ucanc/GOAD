@@ -51,21 +51,23 @@ $inherit = [DirectoryServices.ActiveDirectorySecurityInheritance]$Inheritance
 
 $path = "AD:$TargetDn"
 $acl = Get-Acl -Path $path
-$matching = @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) | Where-Object {
+# Windows merges ACEs that differ only by rights, so compare rights as bit sets.
+$same = @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) | Where-Object {
     $_.IdentityReference -eq $sid -and $_.AccessControlType -eq 'Allow' -and
-    $_.ActiveDirectoryRights -eq $rights -and $_.ObjectType -eq $guid -and $_.InheritanceType -eq $inherit
+    $_.ObjectType -eq $guid -and $_.InheritanceType -eq $inherit
 })
+$ace = New-Object DirectoryServices.ActiveDirectoryAccessRule $sid, $rights, 'Allow', $guid, $inherit
 
 if ($Mode -eq 'add') {
-    if ($matching.Count -eq 0) {
-        $ace = New-Object DirectoryServices.ActiveDirectoryAccessRule $sid, $rights, 'Allow', $guid, $inherit
+    if (-not ($same | Where-Object { ($_.ActiveDirectoryRights -band $rights) -eq $rights })) {
         $acl.AddAccessRule($ace)
         Set-Acl -Path $path -AclObject $acl
         $Ansible.Changed = $true
     }
 } else {
-    foreach ($rule in $matching) { $acl.RemoveAccessRuleSpecific($rule) }
-    if ($matching.Count -gt 0) {
+    # strips only this scenario's rights bits from the matching explicit ACEs
+    if ($same | Where-Object { ($_.ActiveDirectoryRights -band $rights) -ne 0 }) {
+        $null = $acl.RemoveAccessRule($ace)
         Set-Acl -Path $path -AclObject $acl
         $Ansible.Changed = $true
     }

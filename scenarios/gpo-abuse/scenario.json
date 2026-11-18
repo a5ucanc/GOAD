@@ -1,0 +1,5 @@
+{
+  "description": "User that can edit a GPO linked to the domain root",
+  "type": "object",
+  "target": ""
+}

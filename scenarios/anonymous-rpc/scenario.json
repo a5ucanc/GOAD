@@ -1,0 +1,5 @@
+{
+  "description": "Anonymous read on the domain root (anonymous RPC/SAMR enumeration)",
+  "type": "object",
+  "target": ""
+}
