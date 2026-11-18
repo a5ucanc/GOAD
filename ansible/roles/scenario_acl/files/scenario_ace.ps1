@@ -1,5 +1,6 @@
 # Add or remove one explicit Allow ACE on an AD object, idempotently.
-# Target DN may use %DOMAIN% (domain naming context) and %CONFIG% (configuration naming context).
+# Target DN may use %DOMAIN% (domain naming context) and %CONFIG% (configuration naming context),
+# or be sam:<sAMAccountName>.
 param(
     [string]$Principal,
     [string]$TargetDn,
@@ -13,6 +14,15 @@ Import-Module ActiveDirectory
 
 $root = Get-ADRootDSE
 $TargetDn = $TargetDn.Replace('%DOMAIN%', $root.defaultNamingContext).Replace('%CONFIG%', $root.configurationNamingContext)
+# sam:<sAMAccountName> targets an account wherever it lives (e.g. a member server computer)
+if ($TargetDn.StartsWith('sam:')) {
+    $o = Get-ADObject -LDAPFilter "(sAMAccountName=$($TargetDn.Substring(4)))"
+    if (-not $o) {
+        if ($Mode -eq 'remove') { return }
+        throw "target $TargetDn not found"
+    }
+    $TargetDn = $o.DistinguishedName
+}
 
 $sid = $null
 try {

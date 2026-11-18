@@ -65,6 +65,13 @@ CATALOGUE = {
     "gpo-abuse": obj(),
     "foreign-group-acl": obj("forest_trust", ["forest_trust"]),
     "local-admin": obj("member_server", MS),
+    # delegation
+    "constrained-deleg-any": obj(),
+    "constrained-deleg-kerb": obj("member_server", MS),
+    "unconstrained-computer": obj("member_server", MS),
+    "unconstrained-user": obj(),
+    "rbcd": obj("member_server", MS, ["maq"]),
+    "writespn": obj(),
 }
 
 SETTINGS = [n for n, c in CATALOGUE.items() if c["type"] == "setting"]

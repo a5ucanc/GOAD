@@ -1,0 +1,50 @@
+---
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+- name: "Install constrained-deleg-any scenario"
+  hosts: scenario_target
+  vars_files:
+    - ../data/vars.yml
+  vars:
+    domain: "{{ lab.hosts[scenario_target].domain }}"
+    domain_username: "{{ domain }}\\administrator"
+    domain_password: "{{ lab.domains[domain].domain_password }}"
+    netbios: "{{ lab.domains[domain].netbios_name }}"
+    dc: "{{ lab.domains[domain].dc }}"
+    dc_fqdn: "{{ lab.hosts[dc].hostname }}.{{ domain }}"
+  tasks:
+    - name: "Create scenario users"
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/../../../ansible/roles/scenario_ad"
+        tasks_from: users
+      vars:
+        ad_users: ["{{ user }}"]
+        ad_state: "present"
+
+    - name: "Configure {{ user }}: SPN, protocol transition, delegation to CIFS on the DC"
+      ansible.windows.win_powershell:
+        script: |
+          param([string]$User, [string]$Spn, [string]$Mode, [string[]]$DelegateTo)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          Import-Module ActiveDirectory
+          $u = Get-ADUser -LDAPFilter "(sAMAccountName=$User)" -Properties servicePrincipalName, msDS-AllowedToDelegateTo, userAccountControl
+          if (-not $u) { throw "user $User missing" }
+          if ($u.servicePrincipalName -notcontains $Spn) { Set-ADUser -Identity $u -ServicePrincipalNames @{Add = $Spn}; $Ansible.Changed = $true }
+          if ($Mode -eq 'unconstrained') {
+            if (-not ($u.userAccountControl -band 0x80000)) { Set-ADAccountControl -Identity $u -TrustedForDelegation $true; $Ansible.Changed = $true }
+          } else {
+            if (-not ($u.userAccountControl -band 0x1000000)) { Set-ADAccountControl -Identity $u -TrustedToAuthForDelegation $true; $Ansible.Changed = $true }
+            foreach ($t in $DelegateTo) {
+              if (@($u.'msDS-AllowedToDelegateTo') -notcontains $t) { Set-ADUser -Identity $u -Add @{'msDS-AllowedToDelegateTo' = $t}; $Ansible.Changed = $true }
+            }
+          }
+        parameters:
+          User: "{{ user }}"
+          Spn: "HTTP/scn-cdany.{{ domain }}"
+          Mode: "constrained"
+          DelegateTo: ["CIFS/{{ dc_fqdn }}", "CIFS/{{ lab.hosts[dc].hostname }}"]
+      delegate_to: "{{ dc }}"

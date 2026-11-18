@@ -1,0 +1,5 @@
+{
+  "description": "Service account trusted for unconstrained delegation",
+  "type": "object",
+  "target": ""
+}

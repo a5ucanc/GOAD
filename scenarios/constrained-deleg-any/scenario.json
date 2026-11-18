@@ -1,0 +1,5 @@
+{
+  "description": "Service account with constrained delegation and protocol transition to the DC (CIFS)",
+  "type": "object",
+  "target": ""
+}
