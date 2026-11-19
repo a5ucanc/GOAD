@@ -9,6 +9,7 @@ class Command:
 
     def __init__(self):
         self.vagrant_bin = ''
+        self.vmrun_bin = 'vmrun'
         self.terraform_bin = ''
 
     # CHECK
@@ -145,6 +146,16 @@ class Command:
             result = subprocess.run(command, cwd=path, stderr=sys.stderr, stdout=sys.stdout)
         except subprocess.CalledProcessError as e:
             Log.error(f"An error occurred while running the command: {e}")
+        return result.returncode == 0
+
+    def run_vmrun(self, args, path):
+        command = [self.vmrun_bin] + args
+        Log.cmd(' '.join(command))
+        try:
+            result = subprocess.run(command, cwd=path, stdin=subprocess.DEVNULL, stderr=sys.stderr, stdout=sys.stdout)
+        except OSError as e:
+            Log.error(f"An error occurred while running the command: {e}")
+            return False
         return result.returncode == 0
 
     def run_vagrant_output(self, args, path):

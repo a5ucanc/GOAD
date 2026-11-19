@@ -10,6 +10,7 @@ class WindowsCommand(Command):
         super().__init__()
         self.vagrant_bin = 'vagrant.exe'
         self.terraform_bin = 'terraform.exe'
+        self.vmrun_bin = "c:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe"
 
     def file_exist(self, file):
         exist = os.path.isfile(file)

@@ -33,6 +33,14 @@ def provider():
     return p
 
 
+@pytest.fixture
+def vagrant_provider():
+    p = VirtualboxProvider("GOAD-Base")
+    p.path = "/tmp/nowhere"
+    p.command = FakeCommand()
+    return p
+
+
 def test_snapshot_list_parses_fixture(provider):
     provider.command.output = FIXTURE.read_text()
     assert provider.snapshot_list() == {
@@ -49,7 +57,8 @@ def test_snapshot_save_args(provider):
 LIST = ["snapshot", "list", "--machine-readable"]
 
 
-def test_snapshot_restore_per_vm_no_provision(provider):
+def test_snapshot_restore_per_vm_no_provision(vagrant_provider):
+    provider = vagrant_provider
     assert provider.snapshot_restore("s", ["A", "B"])
     assert provider.command.calls == [LIST, ["snapshot", "restore", "--no-provision", "A", "s"],
                                       ["snapshot", "restore", "--no-provision", "B", "s"]]
@@ -60,8 +69,9 @@ NESTED = ("1,GOAD-Base-DC01,ui,detail,scn-01-maq@dc02\n"
           "1,GOAD-Base-DC02,ui,detail,scn-03-rbcd@srv02\n")
 
 
-def test_nested_snapshots_are_restored_and_deleted_by_tree_path(provider):
+def test_nested_snapshots_are_restored_and_deleted_by_tree_path(vagrant_provider):
     # vagrant-vmware-desktop only finds a nested snapshot by its full tree path
+    provider = vagrant_provider
     provider.command.output = NESTED
     assert provider.snapshot_restore("scn-03-rbcd@srv02", ["GOAD-Base-DC01", "GOAD-Base-DC02"])
     assert provider.snapshot_delete("scn-03-rbcd@srv02", ["GOAD-Base-DC01"])
@@ -71,7 +81,8 @@ def test_nested_snapshots_are_restored_and_deleted_by_tree_path(provider):
         ["snapshot", "delete", "GOAD-Base-DC01", "scn-01-maq@dc02/scn-03-rbcd@srv02"]]
 
 
-def test_snapshot_restore_stops_at_first_failure(provider):
+def test_snapshot_restore_stops_at_first_failure(vagrant_provider):
+    provider = vagrant_provider
     provider.command.results = [False]
     assert not provider.snapshot_restore("s", ["A", "B"])
     assert len(provider.command.calls) == 2
@@ -106,3 +117,51 @@ def test_only_vmware_supports_named_snapshots():
     assert VmwareProvider("x").supports_named_snapshots()
     assert not VirtualboxProvider("x").supports_named_snapshots()
     assert not Provider("x").supports_named_snapshots()
+
+
+class VmrunCommand(FakeCommand):
+    def __init__(self, output="", vmrun_results=None):
+        super().__init__(output=output)
+        self.vmrun_calls = []
+        self.vmrun_results = list(vmrun_results or [])
+
+    def run_vmrun(self, args, path):
+        self.vmrun_calls.append(args)
+        return self.vmrun_results.pop(0) if self.vmrun_results else True
+
+
+def _machine(tmp_path, vm, vmx):
+    folder = tmp_path / ".vagrant" / "machines" / vm / "vmware_desktop"
+    folder.mkdir(parents=True)
+    (folder / "id").write_text(vmx)
+
+
+def test_vmware_restore_uses_vmrun_without_communicator_wait(provider, tmp_path):
+    # vagrant snapshot restore waits for WinRM as the vagrant user, which is disabled on a
+    # provisioned -Base lab: revert and start with vmrun instead.
+    provider.path = str(tmp_path)
+    provider.command = VmrunCommand(output=NESTED)
+    _machine(tmp_path, "GOAD-Base-DC01", "C:/x/dc01.vmx")
+    _machine(tmp_path, "GOAD-Base-DC02", "C:/x/dc02.vmx")
+    assert provider.snapshot_restore("scn-03-rbcd@srv02", ["GOAD-Base-DC01", "GOAD-Base-DC02"])
+    assert provider.command.vmrun_calls == [
+        ["-T", "ws", "revertToSnapshot", "C:/x/dc01.vmx", "scn-01-maq@dc02/scn-03-rbcd@srv02"],
+        ["-T", "ws", "start", "C:/x/dc01.vmx", "nogui"],
+        ["-T", "ws", "revertToSnapshot", "C:/x/dc02.vmx", "scn-03-rbcd@srv02"],
+        ["-T", "ws", "start", "C:/x/dc02.vmx", "nogui"]]
+    assert not any(c[:2] == ["snapshot", "restore"] for c in provider.command.calls)
+
+
+def test_vmware_restore_stops_at_first_failure(provider, tmp_path):
+    provider.path = str(tmp_path)
+    provider.command = VmrunCommand(output=NESTED, vmrun_results=[False])
+    _machine(tmp_path, "GOAD-Base-DC01", "C:/x/dc01.vmx")
+    assert not provider.snapshot_restore("scn-03-rbcd@srv02", ["GOAD-Base-DC01", "GOAD-Base-DC02"])
+    assert len(provider.command.vmrun_calls) == 1
+
+
+def test_vmware_restore_missing_machine_id_fails(provider, tmp_path):
+    provider.path = str(tmp_path)
+    provider.command = VmrunCommand(output=NESTED)
+    assert not provider.snapshot_restore("scn-03-rbcd@srv02", ["GOAD-Base-DC01"])
+    assert provider.command.vmrun_calls == []

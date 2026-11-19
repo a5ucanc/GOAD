@@ -194,3 +194,28 @@ def test_forget_deletes_snapshot_and_record(inst, snaps, prov):
     assert inst.snapshots == []
     assert all(record.name not in names for names in prov.snaps.values())
     snaps.forget("nothing@here")
+
+
+def test_revert_resyncs_clocks_after_restore(inst, prov):
+    # restored VMs resume with the clock of the snapshot: the hook resets guest clocks
+    order = []
+    snaps = LabSnapshots(inst, prov, 'GOAD-Base', '192.168.56', after_restore=lambda: order.append("sync") or True)
+    record = enable(inst, snaps, "maq", "dc02")
+    assert snaps.revert(record)
+    assert order == ["sync"]
+
+
+def test_revert_clock_sync_failure_only_warns(inst, prov):
+    snaps = LabSnapshots(inst, prov, 'GOAD-Base', '192.168.56', after_restore=lambda: False)
+    record = enable(inst, snaps, "maq", "dc02")
+    assert snaps.revert(record)
+    assert inst.scenarios == []
+
+
+def test_no_clock_sync_when_restore_fails(inst, prov):
+    calls = []
+    snaps = LabSnapshots(inst, prov, 'GOAD-Base', '192.168.56', after_restore=lambda: calls.append(1))
+    record = enable(inst, snaps, "maq", "dc02")
+    prov.fail_restore = True
+    assert not snaps.revert(record)
+    assert calls == []

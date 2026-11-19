@@ -324,7 +324,9 @@ class Goad(cmd.Cmd):
     def _lab_snapshots(self):
         instance = self.lab_manager.get_current_instance()
         from goad.lab_snapshots import LabSnapshots
-        return LabSnapshots(instance, self.lab_manager.get_current_instance_provider(), instance.lab_name, instance.ip_range)
+        provisioner = self.lab_manager.get_current_instance_provisioner()
+        return LabSnapshots(instance, self.lab_manager.get_current_instance_provider(), instance.lab_name, instance.ip_range,
+                            after_restore=provisioner.run_sync_time)
 
     def _extension_service(self, ask=None):
         from goad.extension_service import ExtensionService

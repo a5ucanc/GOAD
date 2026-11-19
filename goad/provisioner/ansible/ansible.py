@@ -178,6 +178,14 @@ class Ansible(Provisioner):
         # abstract
         pass
 
+    def run_sync_time(self):
+        inventory = self._get_disable_vagrant_lab_inventory()
+        inventory += self._get_lab_inventory(self.lab_name, self.provider_name)
+        global_inventory = self._get_global_inventory()
+        if global_inventory is not None:
+            inventory.append(global_inventory)
+        return self.run_playbook('sync_time.yml', inventory)
+
     def get_disable_vagrant_inventory(self):
         Log.info('Loading inventory')
         inventory = self._get_disable_vagrant_lab_inventory()

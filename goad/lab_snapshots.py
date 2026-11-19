@@ -47,11 +47,13 @@ class RevertReport:
 class LabSnapshots:
     """Named whole-lab snapshots and the instance state they captured."""
 
-    def __init__(self, instance, provider, lab_name, ip_range):
+    def __init__(self, instance, provider, lab_name, ip_range, after_restore=None):
         self.instance = instance
         self.provider = provider
         self.lab_name = lab_name
         self.ip_range = ip_range
+        # after_restore() -> bool: resync guest clocks (restored VMs resume with the snapshot's clock)
+        self.after_restore = after_restore
 
     def supported(self):
         return bool(self.provider is not None and self.provider.supports_named_snapshots())
@@ -119,6 +121,8 @@ class LabSnapshots:
         if not self.provider.snapshot_restore(record.name, covered):
             Log.error(f'restore of {record.name} failed, instance unchanged')
             return False
+        if self.after_restore is not None and not self.after_restore():
+            Log.warning('clock sync after the revert failed: run sync_time.yml before attacking (Kerberos needs synced clocks)')
         index = self.instance.snapshots.index(record)
         dropped = [r.name for r in self.instance.snapshots[index:]]
         self.instance.apply_state(record)
