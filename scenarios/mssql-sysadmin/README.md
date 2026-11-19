@@ -1,5 +1,7 @@
 # mssql-sysadmin
 
+Needs the `mssql` extension (`install_extension mssql`).
+
 Creates domain user `scn-sql-admin` (password `Aa1234567890!`) with a sysadmin login on the target SQL Server. Commands run through `xp_cmdshell` as the SQL service account, which holds `SeImpersonatePrivilege` (potato to SYSTEM).
 
 Attack:

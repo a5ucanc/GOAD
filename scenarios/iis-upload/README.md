@@ -1,5 +1,7 @@
 # iis-upload
 
+Needs the `iis` extension (`install_extension iis`).
+
 Copies the GOAD upload application (`Default.aspx`, `Web.config`, `bin`, from `ad/GOAD/files/srv02/wwwroot`) to `C:\inetpub\wwwroot` on the IIS host and creates `C:\inetpub\wwwroot\upload` with `FullControl` for `IIS_IUSRS`. The Base `index.html` is not touched.
 
 Attack:

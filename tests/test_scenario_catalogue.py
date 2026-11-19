@@ -97,6 +97,17 @@ def lab(name):
     return json.load(open(ROOT / "ad" / name / "data" / "config.json"))["lab"]
 
 
+def caps_with_extensions(name):
+    """Lab capabilities plus every extension's capabilities for that lab (each extension may be installed)."""
+    caps = {k: list(v) for k, v in lab(name)["capabilities"].items()}
+    for info_file in sorted((ROOT / "extensions").glob("*/extension.json")):
+        granted = (json.loads(info_file.read_text()).get("capabilities") or {}).get(name) or {}
+        for key, hosts in granted.items():
+            caps.setdefault(key, [])
+            caps[key] += [h for h in hosts if h not in caps[key]]
+    return caps
+
+
 def leaves(node, top=None):
     if isinstance(node, dict):
         for k, v in node.items():
@@ -131,7 +142,7 @@ def test_setting_uninstall_restores_baseline(name):
 @pytest.mark.parametrize("lab_name", BASE_LABS)
 def test_setting_baseline_exists_for_every_candidate(lab_name):
     cfg = lab(lab_name)
-    caps = cfg["capabilities"]
+    caps = caps_with_extensions(lab_name)
     dcs = [h for h, v in cfg["hosts"].items() if v["type"] == "dc"]
     for name in PACKAGES:
         s = load(name)
@@ -204,7 +215,7 @@ def _non_dc_targets():
         dcs = {h for h, v in cfg["hosts"].items() if v["type"] == "dc"}
         for name in PACKAGES:
             s = load(name)
-            if s.type == "object" and s.target and set(cfg["capabilities"].get(s.target, [])) - dcs:
+            if s.type == "object" and s.target and set(caps_with_extensions(lab_name).get(s.target, [])) - dcs:
                 found.add(name)
     return sorted(found)
 
@@ -233,3 +244,12 @@ def test_readme_upn_requests_carry_sid():
         for line in readme.read_text().splitlines():
             if "certipy req" in line and "-upn administrator" in line:
                 assert "-sid" in line, f"{readme.parent.name}: {line.strip()}"
+
+
+@pytest.mark.parametrize("name", PACKAGES)
+def test_scenarios_do_not_read_lab_mssql_or_capabilities(name):
+    # mssql hosts come from extension inventories now, not from lab.capabilities / lab.hosts[*].mssql
+    for pb in ("install.yml", "uninstall.yml"):
+        text = (ROOT / "scenarios" / name / "ansible" / pb).read_text()
+        assert "lab.capabilities" not in text, pb
+        assert ".mssql." not in text, pb

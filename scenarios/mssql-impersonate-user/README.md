@@ -1,5 +1,7 @@
 # mssql-impersonate-user
 
+Needs the `mssql` extension (`install_extension mssql`).
+
 Creates domain user `scn-sql-dbo` (password `Aa1234567890!`), a login and a user for it in `msdb`, and `GRANT IMPERSONATE ON USER::[dbo]` in `msdb`. `msdb` is `TRUSTWORTHY` and owned by `sa`, so `dbo` there reaches sysadmin.
 
 Attack:

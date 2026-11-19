@@ -1,5 +1,7 @@
 # mssql-impersonate-login
 
+Needs the `mssql` extension (`install_extension mssql`).
+
 Creates domain user `scn-sql-imp` (password `Aa1234567890!`), a Windows login for it on the target SQL Server, and `GRANT IMPERSONATE ON LOGIN::[sa]`.
 
 Attack:

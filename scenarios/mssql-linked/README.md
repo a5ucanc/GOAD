@@ -1,6 +1,6 @@
 # mssql-linked
 
-On GOAD-Base srv02 (north), creates domain user `scn-sql-link` (password `Aa1234567890!`) with a login, and a linked server named after the other SQL host (`BRAAVOS`, essos forest) where that login is mapped to the remote `sa`. RPC and RPC out are enabled.
+Needs the `mssql` extension (`install_extension mssql`, GOAD-Base only: it puts SQL Server on srv02 and srv03). On srv02 (north), creates domain user `scn-sql-link` (password `Aa1234567890!`) with a login, and a linked server named after the other SQL host (`BRAAVOS`, essos forest) where that login is mapped to the remote `sa`. RPC and RPC out are enabled.
 
 Attack:
 
