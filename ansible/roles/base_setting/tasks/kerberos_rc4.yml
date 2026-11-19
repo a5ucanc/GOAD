@@ -15,7 +15,8 @@
 # Trust objects have no msDS-SupportedEncryptionTypes by default, so the KDC assumes RC4 for
 # inter-realm referrals. With RC4 disabled the referral would fail: declare the AES types on
 # every trustedDomain object of the DC's domain. hardening runs on every DC, so both sides of a
-# trust are set.
+# trust are set. AD refuses LDAP writes of this attribute on trustedDomain objects ("Illegal
+# modify operation"), so the value is read over LDAP and written through LSA with ksetup.
 - name: "Set Kerberos encryption types on trust objects"
   ansible.windows.win_powershell:
     script: |
@@ -23,11 +24,14 @@
       $Ansible.Changed = $false
       if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) { return }
       Import-Module ActiveDirectory
+      $names = @('AES128-CTS-HMAC-SHA1-96', 'AES256-CTS-HMAC-SHA1-96')
+      if ($Wanted -band 4) { $names = @('RC4-HMAC-MD5') + $names }
       $base = 'CN=System,' + (Get-ADDomain).DistinguishedName
-      $trusts = Get-ADObject -SearchBase $base -SearchScope OneLevel -LDAPFilter '(objectClass=trustedDomain)' -Properties 'msDS-SupportedEncryptionTypes'
+      $trusts = Get-ADObject -SearchBase $base -SearchScope OneLevel -LDAPFilter '(objectClass=trustedDomain)' -Properties 'msDS-SupportedEncryptionTypes', 'trustPartner'
       foreach ($trust in $trusts) {
         if ($trust.'msDS-SupportedEncryptionTypes' -ne $Wanted) {
-          Set-ADObject -Identity $trust.DistinguishedName -Replace @{ 'msDS-SupportedEncryptionTypes' = $Wanted }
+          $out = & ksetup /setenctypeattr $trust.trustPartner @names 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "ksetup /setenctypeattr $($trust.trustPartner) failed: $out" }
           $Ansible.Changed = $true
         }
       }
