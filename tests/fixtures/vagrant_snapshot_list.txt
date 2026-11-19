@@ -1,0 +1,16 @@
+1795075465,GOAD-Base-DC01,metadata,provider,vmware_desktop
+1795075467,GOAD-Base-DC02,metadata,provider,vmware_desktop
+1795075470,GOAD-Base-DC03,metadata,provider,vmware_desktop
+1795075472,GOAD-Base-SRV02,metadata,provider,vmware_desktop
+1795075474,GOAD-Base-SRV03,metadata,provider,vmware_desktop
+1795075475,GOAD-Base-DC01,ui,output,==> GOAD-Base-DC01: 
+1795075475,GOAD-Base-DC01,ui,detail,probe-a
+1795075475,GOAD-Base-DC01,ui,detail,probe-a/probe-b
+1795075477,GOAD-Base-DC02,ui,output,==> GOAD-Base-DC02: No snapshots have been taken yet!
+1795075477,GOAD-Base-DC02,ui,detail,    GOAD-Base-DC02: You can take a snapshot using `vagrant snapshot save`. Note that\n    GOAD-Base-DC02: not all providers support this yet. Once a snapshot is taken%!(VAGRANT_COMMA) you\n    GOAD-Base-DC02: can list them using this command%!(VAGRANT_COMMA) and use commands such as\n    GOAD-Base-DC02: `vagrant snapshot restore` to go back to a certain snapshot.
+1795075478,GOAD-Base-DC03,ui,output,==> GOAD-Base-DC03: No snapshots have been taken yet!
+1795075478,GOAD-Base-DC03,ui,detail,    GOAD-Base-DC03: You can take a snapshot using `vagrant snapshot save`. Note that\n    GOAD-Base-DC03: not all providers support this yet. Once a snapshot is taken%!(VAGRANT_COMMA) you\n    GOAD-Base-DC03: can list them using this command%!(VAGRANT_COMMA) and use commands such as\n    GOAD-Base-DC03: `vagrant snapshot restore` to go back to a certain snapshot.
+1795075480,GOAD-Base-SRV02,ui,output,==> GOAD-Base-SRV02: No snapshots have been taken yet!
+1795075480,GOAD-Base-SRV02,ui,detail,    GOAD-Base-SRV02: You can take a snapshot using `vagrant snapshot save`. Note that\n    GOAD-Base-SRV02: not all providers support this yet. Once a snapshot is taken%!(VAGRANT_COMMA) you\n    GOAD-Base-SRV02: can list them using this command%!(VAGRANT_COMMA) and use commands such as\n    GOAD-Base-SRV02: `vagrant snapshot restore` to go back to a certain snapshot.
+1795075481,GOAD-Base-SRV03,ui,output,==> GOAD-Base-SRV03: No snapshots have been taken yet!
+1795075481,GOAD-Base-SRV03,ui,detail,    GOAD-Base-SRV03: You can take a snapshot using `vagrant snapshot save`. Note that\n    GOAD-Base-SRV03: not all providers support this yet. Once a snapshot is taken%!(VAGRANT_COMMA) you\n    GOAD-Base-SRV03: can list them using this command%!(VAGRANT_COMMA) and use commands such as\n    GOAD-Base-SRV03: `vagrant snapshot restore` to go back to a certain snapshot.

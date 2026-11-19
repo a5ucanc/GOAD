@@ -147,6 +147,16 @@ class Command:
             Log.error(f"An error occurred while running the command: {e}")
         return result.returncode == 0
 
+    def run_vagrant_output(self, args, path):
+        command = [self.vagrant_bin] + args
+        Log.cmd(' '.join(command))
+        try:
+            result = subprocess.run(command, cwd=path, capture_output=True, text=True)
+        except OSError as e:
+            Log.error(f"An error occurred while running the command: {e}")
+            return False, ''
+        return result.returncode == 0, result.stdout
+
     def run_terraform(self, args, path):
         result = None
         try:

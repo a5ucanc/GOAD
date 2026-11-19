@@ -7,6 +7,9 @@ class VmwareProvider(VagrantProvider):
     default_provisioner = PROVISIONING_LOCAL
     allowed_provisioners = [PROVISIONING_LOCAL, PROVISIONING_RUNNER, PROVISIONING_DOCKER, PROVISIONING_VM]
 
+    def supports_named_snapshots(self):
+        return True
+
     def check(self):
         checks = [
             super().check(),

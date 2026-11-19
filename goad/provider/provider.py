@@ -51,3 +51,28 @@ class Provider(ABC):
     def restart_vm(self, vm_name):
         self.stop_vm(vm_name)
         self.start_vm(vm_name)
+
+    # named whole-lab snapshots: only providers that return True implement the methods below
+    def supports_named_snapshots(self):
+        return False
+
+    def vm_names(self):
+        raise NotImplementedError
+
+    def snapshot_save(self, name):
+        raise NotImplementedError
+
+    def snapshot_list(self):
+        raise NotImplementedError
+
+    def snapshot_restore(self, name, vms):
+        raise NotImplementedError
+
+    def snapshot_delete(self, name, vms):
+        raise NotImplementedError
+
+    def destroy_vms(self, vms):
+        raise NotImplementedError
+
+    def extension_vm_names(self, extension_name, lab_name, ip_range):
+        raise NotImplementedError

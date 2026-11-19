@@ -1,4 +1,8 @@
+import os
+from jinja2 import Environment, FileSystemLoader
+from goad.goadpath import GoadPath
 from goad.provider.provider import Provider
+from goad.vagrant_names import vm_names_in
 
 
 class VagrantProvider(Provider):
@@ -53,3 +57,42 @@ class VagrantProvider(Provider):
 
     def get_jumpbox_ip(self, ip_range=''):
         return ip_range + '.3'
+
+    def vm_names(self):
+        with open(os.path.join(self.path, 'Vagrantfile')) as vagrantfile:
+            return vm_names_in(vagrantfile.read())
+
+    def snapshot_save(self, name):
+        return self.command.run_vagrant(['snapshot', 'save', name], self.path)
+
+    def snapshot_list(self):
+        # machine-readable rows: <ts>,<vm>,ui,detail,<tree path>; a VM without snapshots has a
+        # detail row of indented help text. The tree path is "parent/child": keep the last part.
+        ok, output = self.command.run_vagrant_output(['snapshot', 'list', '--machine-readable'], self.path)
+        snapshots = {}
+        for line in output.splitlines():
+            parts = line.split(',', 4)
+            if len(parts) < 5:
+                continue
+            vm, kind, detail = parts[1], parts[2:4], parts[4]
+            if kind == ['metadata', 'provider']:
+                snapshots.setdefault(vm, [])
+            elif kind == ['ui', 'detail'] and detail and not detail[0].isspace():
+                snapshots.setdefault(vm, []).append(detail.split('/')[-1])
+        return snapshots
+
+    def snapshot_restore(self, name, vms):
+        return all(self.command.run_vagrant(['snapshot', 'restore', '--no-provision', vm, name], self.path) for vm in vms)
+
+    def snapshot_delete(self, name, vms):
+        return all(self.command.run_vagrant(['snapshot', 'delete', vm, name], self.path) for vm in vms)
+
+    def destroy_vms(self, vms):
+        return all(self.command.run_vagrant(['destroy', '-f', vm], self.path) for vm in vms)
+
+    def extension_vm_names(self, extension_name, lab_name, ip_range):
+        folder = GoadPath.get_extension_providers_provider_path(extension_name, self.provider_name)
+        if not os.path.isfile(os.path.join(folder, 'Vagrantfile')):
+            return []
+        template = Environment(loader=FileSystemLoader(folder)).get_template('Vagrantfile')
+        return vm_names_in(template.render(lab_name=lab_name, ip_range=ip_range))
