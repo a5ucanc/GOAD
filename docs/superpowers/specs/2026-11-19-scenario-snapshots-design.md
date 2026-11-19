@@ -165,6 +165,7 @@ ordered `snapshots` list, so a revert to either kind loses everything after it.
   its removal confirmation unless `--yes` is given).
 - When stdin is not a TTY, behave as `--no-snapshot` (the live harness and `goad.py -t` keep working
   unchanged).
+  `remove_extension` without a TTY refuses unless `--yes` is given (it destroys VMs).
 
 ### Behaviour on other providers
 
