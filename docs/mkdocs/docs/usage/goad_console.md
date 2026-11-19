@@ -171,7 +171,8 @@ destroy_vm <vm_name> .................... destroy selected virtual machine
 
 *** Extensions ***
 list_extensions ......................... list extensions
-install_extension <extension> ........... install extension (providing + provisioning)
+install_extension <extension> ........... install extension (offers a lab snapshot first)
+remove_extension <extension> ............ remove extension (offers a revert to its snapshot)
 provision_extension <extension> ......... provision extension (provisioning only)
 
 *** JumpBox ***
@@ -278,13 +279,31 @@ list_extensions
 
 ### install_extension
 
-Add an extension to the lab (providing + provisioning)
-
-!!! warning
-    An installed extension can't be deleted
+Add an extension to the lab (providing + provisioning). On a VMware lab, goad first asks
+`Take a lab snapshot before installing extension <name>? (y/N)` and snapshots every VM as `ext-<seq>-<name>`
+(see Snapshots in the scenarios page). `--no-snapshot` skips the question.
 
 ```
-install_extension <extension_name>
+install_extension <extension_name> [--no-snapshot]
+```
+
+### remove_extension
+
+Remove an extension.
+
+- With a snapshot taken by `install_extension`, goad prints what a revert changes (scenarios and extensions
+  added after it are lost) and asks `Revert the lab to <snapshot> instead of removing? (y/N)`.
+- Without a snapshot, or on `n`, goad destroys only the extension's VMs and removes it from the instance,
+  after `Remove extension <name> without revert? (y/N)`.
+
+!!! warning
+    Without a revert, what the extension pushed to the lab stays: computer accounts, DNS records, agents on
+    the other hosts.
+
+Without a terminal (piped commands) the removal needs `--yes`, because it destroys VMs.
+
+```
+remove_extension <extension_name> [--no-snapshot] [--yes]
 ```
 
 ### provision_extension

@@ -50,15 +50,16 @@ def print_menu(lab_manager, advanced=True, debug=False):
 
         print_menu_title('Extensions')
         print_menu_entry('list_extensions', 'list extensions')
-        print_menu_entry('install_extension <extension>', 'install extension (providing + provisioning)')
+        print_menu_entry('install_extension <extension> [--no-snapshot]', 'install extension (offers a lab snapshot first)')
+        print_menu_entry('remove_extension <extension> [--no-snapshot] [--yes]', 'remove extension (offers a revert to its snapshot)')
 
         if advanced:
             print_menu_entry('provision_extension <extension>', 'provision extension (provisioning only)')
 
         print_menu_title('Scenarios')
         print_menu_entry('list_scenarios [all]', 'list scenarios (all: include unavailable)')
-        print_menu_entry('enable_scenario <name> [host]', 'enable a vulnerability scenario')
-        print_menu_entry('disable_scenario <name> [host] [--cascade]', 'disable a scenario (cascade: and its dependents)')
+        print_menu_entry('enable_scenario <name> [host] [--no-snapshot]', 'enable a scenario (offers a lab snapshot first)')
+        print_menu_entry('disable_scenario <name> [host] [--cascade] [--no-snapshot]', 'disable a scenario (offers a revert to its snapshot)')
         print_menu_entry('reset_scenarios', 'disable all scenarios')
 
         if use_jumpbox:

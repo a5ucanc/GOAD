@@ -59,3 +59,87 @@ def test_provision_extension_inventory_choice(is_base, vagrant_disabled, expecte
     cli, _, provisioner = make_cli(is_base=is_base, vagrant_disabled=vagrant_disabled)
     cli.do_provision_extension("elk")
     assert provisioner.calls == [("run_extension", "elk", expected)]
+
+
+class Recorder:
+    def __init__(self):
+        self.calls = []
+
+    def __getattr__(self, name):
+        def method(*args, **kwargs):
+            self.calls.append((name, args, kwargs))
+            return True
+        return method
+
+
+def services_cli(monkeypatch, tty):
+    cli, _, _ = make_cli()
+    monkeypatch.setattr(goad_cli.sys.stdin, "isatty", lambda: tty)
+    monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("input() reached"))
+    seen = {}
+
+    def scenario_service(ask=None):
+        seen["ask"] = ask
+        seen["svc"] = Recorder()
+        return seen["svc"]
+
+    def extension_service(ask=None):
+        seen["ask"] = ask
+        seen["svc"] = Recorder()
+        return seen["svc"]
+
+    cli._scenario_service = scenario_service
+    cli._extension_service = extension_service
+    return cli, seen
+
+
+@pytest.mark.parametrize("command,arg", [
+    ("do_enable_scenario", "esc8"), ("do_disable_scenario", "esc8 dc01"),
+    ("do_install_extension", "elk"), ("do_remove_extension", "elk"),
+])
+def test_no_tty_never_prompts(monkeypatch, command, arg):
+    cli, seen = services_cli(monkeypatch, tty=False)
+    getattr(cli, command)(arg)
+    assert seen["ask"] is None
+
+
+@pytest.mark.parametrize("command,arg", [
+    ("do_enable_scenario", "esc8 --no-snapshot"), ("do_disable_scenario", "--no-snapshot esc8"),
+    ("do_install_extension", "elk --no-snapshot"),
+])
+def test_no_snapshot_flag_disables_ask(monkeypatch, command, arg):
+    cli, seen = services_cli(monkeypatch, tty=True)
+    getattr(cli, command)(arg)
+    assert seen["ask"] is None
+
+
+def test_tty_gives_an_ask(monkeypatch):
+    cli, seen = services_cli(monkeypatch, tty=True)
+    cli.do_enable_scenario("esc8")
+    assert seen["ask"] is not None
+    monkeypatch.setattr("builtins.input", lambda *a: "y")
+    assert seen["ask"]("Q? (y/N)") is True
+
+
+def test_remove_extension_flags(monkeypatch):
+    cli, seen = services_cli(monkeypatch, tty=False)
+    cli.do_remove_extension("--yes elk")
+    assert seen["svc"].calls == [("remove", ("elk",), {"yes": True})]
+    cli.do_remove_extension("elk")
+    assert seen["svc"].calls == [("remove", ("elk",), {"yes": False})]
+
+
+def test_flags_are_stripped_from_positional_args(monkeypatch):
+    cli, seen = services_cli(monkeypatch, tty=True)
+    cli.do_disable_scenario("esc8 dc01 --cascade --no-snapshot")
+    assert seen["svc"].calls == [("disable", ("esc8", "dc01"), {"cascade": True})]
+    cli.do_enable_scenario("--no-snapshot esc8 dc01")
+    assert seen["svc"].calls == [("enable", ("esc8", "dc01"), {})]
+    cli.do_install_extension("--no-snapshot elk")
+    assert seen["svc"].calls == [("install", ("elk",), {})]
+
+
+def test_lab_install_installs_extensions_without_prompt():
+    source = (ROOT / "goad.py").read_text()
+    calls = [line.strip() for line in source.splitlines() if "self.do_install_extension(" in line]
+    assert calls and all("--no-snapshot" in call for call in calls)

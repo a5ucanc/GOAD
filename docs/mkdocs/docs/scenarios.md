@@ -35,8 +35,8 @@ Run these in the GOAD console with an instance selected.
 
 ```
 instance_id> list_scenarios [all]
-instance_id> enable_scenario <name> [host]
-instance_id> disable_scenario <name> [host] [--cascade]
+instance_id> enable_scenario <name> [host] [--no-snapshot]
+instance_id> disable_scenario <name> [host] [--cascade] [--no-snapshot]
 instance_id> reset_scenarios
 ```
 
@@ -73,6 +73,48 @@ A scenario's identity is `name@target`, for example `esc8@dc01`.
 ### Reset
 
 `reset_scenarios` uninstalls all enabled scenarios in reverse dependency order and stops at the first failure (the failed one is marked `dirty`).
+
+### Snapshots
+
+On a VMware lab, goad can take a whole-lab snapshot before a scenario is applied and revert to it instead of
+running the uninstall. A revert gives a lab that is clean after an attack, including the leftovers
+`disable_scenario` does not clean.
+
+- `enable_scenario` asks `Take a lab snapshot before enabling <scenario>@<host>? (y/N)`. On `y`, every VM is
+  snapshotted as `scn-<seq>-<scenario>@<host>` (for example `scn-03-esc4@dc01`) before the install. If the
+  snapshot fails, the scenario is not enabled.
+- `disable_scenario` looks for that snapshot. When every VM has it, goad prints the snapshot order and what
+  the revert changes, then asks `Revert the lab to <snapshot> instead of disabling? (y/N)`:
+
+  ```
+  lab snapshots (oldest first):
+    scn-01-maq@dc02     for maq@dc02
+    scn-02-rbcd@srv02   for rbcd@srv02  <- revert point
+    scn-04-esc4@dc01    for esc4@dc01  deleted
+  revert to scn-02-rbcd@srv02:
+    removed:  rbcd@srv02
+    lost:     esc1@dc01, esc4@dc01
+    restored: smb-signing-off@srv02
+  ```
+
+  - `lost`: scenarios enabled after the snapshot. The revert removes them too, dependents included
+    (`--cascade` only applies to the uninstall path).
+  - `restored`: scenarios disabled after the snapshot. They are back in the lab and in `list_scenarios`.
+  - Extensions installed after the snapshot are listed with their VMs: the revert destroys those VMs.
+  - A change of the vagrant account (`vagrant account: enabled again`) is printed when the snapshot was taken
+    before `disable_vagrant`.
+- After a revert, `instance.json` holds the scenarios, extensions and vagrant state recorded with the
+  snapshot. The revert-point snapshot and every later snapshot are deleted: they belong to a timeline that no
+  longer exists.
+- Answer `n` to keep the uninstall path. A scenario removed by uninstall (also by `reset_scenarios`) loses its
+  snapshot.
+- If an install fails and its cleanup fails too, the `dirty` scenario keeps its snapshot, so you can revert
+  out of it.
+- `list_scenarios` shows the snapshot of each enabled scenario.
+- No question is asked with `--no-snapshot`, or when the console does not run in a terminal (piped commands,
+  `goad.py -t ...`): enable and disable then behave as without a snapshot.
+- Only the VMware provider supports these snapshots. They are independent from the `snapshot` / `reset`
+  commands.
 
 ### Re-provisioning
 

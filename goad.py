@@ -308,26 +308,61 @@ class Goad(cmd.Cmd):
         else:
             self.lab_manager.get_lab(self.lab_manager.get_current_lab_name()).show_extensions()
 
+    @staticmethod
+    def _split_flags(arg, flags):
+        """(positional args, set of the given flags present)."""
+        parts = arg.split()
+        return [p for p in parts if p not in flags], {p for p in parts if p in flags}
+
+    @staticmethod
+    def _ask(no_snapshot):
+        # prompts only for a person at a terminal: scripted runs (piped console, -t tasks) never block
+        if no_snapshot or not sys.stdin.isatty():
+            return None
+        return lambda prompt: Utils.confirm(prompt + ' ')
+
+    def _lab_snapshots(self):
+        instance = self.lab_manager.get_current_instance()
+        from goad.lab_snapshots import LabSnapshots
+        return LabSnapshots(instance, self.lab_manager.get_current_instance_provider(), instance.lab_name, instance.ip_range)
+
+    def _extension_service(self, ask=None):
+        from goad.extension_service import ExtensionService
+        return ExtensionService(self.lab_manager.get_current_instance(),
+                                self.lab_manager.get_current_instance_provider(),
+                                self.do_provision_extension,
+                                snapshots=self._lab_snapshots(), ask=ask)
+
     def do_install_extension(self, arg):
-        if arg == '':
-            Log.error('missing extension argument')
-            Log.info(f'provision_extension <extension>')
-        else:
-            Log.info('start install extension')
-            if self.lab_manager.current_instance is not None:
-                extension_name = arg
-                extension = self.lab_manager.get_current_instance_lab().get_extension(extension_name)
-                if extension is not None:
-                    # enable and create files
-                    self.lab_manager.get_current_instance().enable_extension(extension_name)
-                    # # start lab with extensions files (vagrant up / terraform plan)
-                    self.lab_manager.get_current_instance_provider().install()
-                    # # provision extension
-                    self.do_provision_extension(extension_name)
-                else:
-                    Log.error(f'extension {extension_name} not found abort')
-            else:
-                Log.error('Install extension can only be run from an instance')
+        parts, flags = self._split_flags(arg, {'--no-snapshot'})
+        if len(parts) != 1:
+            Log.error('usage: install_extension <extension> [--no-snapshot]')
+            return
+        if self.lab_manager.get_current_instance() is None:
+            Log.error('Install extension can only be run from an instance')
+            return
+        extension_name = parts[0]
+        if self.lab_manager.get_current_instance_lab().get_extension(extension_name) is None:
+            Log.error(f'extension {extension_name} not found abort')
+            return
+        Log.info('start install extension')
+        self._extension_service(self._ask('--no-snapshot' in flags)).install(extension_name)
+
+    def do_remove_extension(self, arg):
+        parts, flags = self._split_flags(arg, {'--no-snapshot', '--yes'})
+        if len(parts) != 1:
+            Log.error('usage: remove_extension <extension> [--no-snapshot] [--yes]')
+            return
+        if self.lab_manager.get_current_instance() is None:
+            Log.error('Remove extension can only be run from an instance')
+            return
+        self._extension_service(self._ask('--no-snapshot' in flags)).remove(parts[0], yes='--yes' in flags)
+
+    def complete_remove_extension(self, text, line, begidx, endidx):
+        instance = self.lab_manager.get_current_instance()
+        if instance is None:
+            return []
+        return [name for name in instance.extensions if name.startswith(text)]
 
     def do_provision_extension(self, arg):
         if arg == '':
@@ -348,17 +383,20 @@ class Goad(cmd.Cmd):
                 if provision_result:
                     time_provision = time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
                     Log.info(f'Provision extension done in {time_provision}')
+                return provision_result
             else:
                 Log.error(f'extension {extension_name} not enabled in instance abort')
+                return False
 
-    def _scenario_service(self):
+    def _scenario_service(self, ask=None):
         if self.lab_manager.get_current_instance() is None:
             Log.error('Scenarios can only be used from an instance')
             return None
         from goad.scenario_service import ScenarioService
         return ScenarioService(self.lab_manager.get_current_instance(),
                                self.lab_manager.get_current_instance_lab(),
-                               self.lab_manager.get_current_instance_provisioner())
+                               self.lab_manager.get_current_instance_provisioner(),
+                               snapshots=self._lab_snapshots(), ask=ask)
 
     def do_show_credentials(self, arg=''):
         """Print every user and password of the current lab (instance lab, or the selected lab)."""
@@ -405,26 +443,24 @@ class Goad(cmd.Cmd):
         rich_print(table)
 
     def do_enable_scenario(self, arg):
-        service = self._scenario_service()
-        if service is None:
-            return
-        parts = arg.split()
+        parts, flags = self._split_flags(arg, {'--no-snapshot'})
         if not parts or len(parts) > 2:
-            Log.error('usage: enable_scenario <name> [host]')
+            Log.error('usage: enable_scenario <name> [host] [--no-snapshot]')
+            return
+        service = self._scenario_service(self._ask('--no-snapshot' in flags))
+        if service is None:
             return
         service.enable(parts[0], parts[1] if len(parts) > 1 else None)
 
     def do_disable_scenario(self, arg):
-        service = self._scenario_service()
+        parts, flags = self._split_flags(arg, {'--no-snapshot', '--cascade'})
+        if not parts or len(parts) > 2:
+            Log.error('usage: disable_scenario <name> [host] [--cascade] [--no-snapshot]')
+            return
+        service = self._scenario_service(self._ask('--no-snapshot' in flags))
         if service is None:
             return
-        parts = arg.split()
-        cascade = '--cascade' in parts
-        parts = [part for part in parts if part != '--cascade']
-        if not parts or len(parts) > 2:
-            Log.error('usage: disable_scenario <name> [host] [--cascade]')
-            return
-        service.disable(parts[0], parts[1] if len(parts) > 1 else None, cascade=cascade)
+        service.disable(parts[0], parts[1] if len(parts) > 1 else None, cascade='--cascade' in flags)
 
     def do_reset_scenarios(self, arg):
         service = self._scenario_service()
@@ -475,7 +511,7 @@ class Goad(cmd.Cmd):
                     if provision_result:
                         for extension_name in self.lab_manager.current_settings.extensions_name:
                             Log.info(f'Start installation of extension : {extension_name}')
-                            self.do_install_extension(extension_name)
+                            self.do_install_extension(f'{extension_name} --no-snapshot')
                     self.refresh_prompt()
                 else:
                     Log.error('Providing error stop')
@@ -491,7 +527,7 @@ class Goad(cmd.Cmd):
             if provision_result:
                 for extension_name in self.lab_manager.current_settings.extensions_name:
                     Log.info(f'Start installation of extension : {extension_name}')
-                    self.do_install_extension(extension_name)
+                    self.do_install_extension(f'{extension_name} --no-snapshot')
             self.refresh_prompt()
         else:
             Log.error('Providing error stop')
