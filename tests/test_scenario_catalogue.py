@@ -224,3 +224,12 @@ def test_docs_list_every_scenario():
     section = text.split("## Provided scenarios", 1)[1].split("\n## ", 1)[0]
     missing = [n for n in PACKAGES if f"| `{n}` |" not in section]
     assert not missing, missing
+
+
+def test_readme_upn_requests_carry_sid():
+    # -Base labs enforce strong certificate binding: a forged -upn request without -sid
+    # fails at certipy auth, so every README that forges a UPN must also pass -sid.
+    for readme in sorted((ROOT / "scenarios").glob("*/README.md")):
+        for line in readme.read_text().splitlines():
+            if "certipy req" in line and "-upn administrator" in line:
+                assert "-sid" in line, f"{readme.parent.name}: {line.strip()}"
