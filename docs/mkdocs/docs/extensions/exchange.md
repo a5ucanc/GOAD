@@ -4,7 +4,7 @@
     Credits and huge thanks to [aleemladha](https://github.com/aleemladha) for his exchange role and his help to test the extension.
 
 - Extension name : `exchange`
-- Compatibility  : GOAD, GOAD-Light
+- Compatibility  : GOAD, GOAD-Light, GOAD-Mini, GOAD-Base
 - Providers : virtualbox/azure/vmware/aws/ludus/proxmox
 - Add a machine  : srv01 (the-eyrie.sevenkingdoms.local)  (ip_range.21)
 
