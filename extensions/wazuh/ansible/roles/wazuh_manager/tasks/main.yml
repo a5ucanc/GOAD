@@ -1,3 +1,15 @@
+# bento ubuntu boxes leave half of the disk unallocated in the LVM volume group.
+# The vulnerability detection feed (about 20G while it unpacks) needs the space: grow the root logical volume to the whole volume group.
+- name: Grow the root logical volume to the whole disk
+  ansible.builtin.shell: |
+    lv=$(findmnt -n -o SOURCE /)
+    vg=$(lvs --noheadings -o vg_name "$lv" 2>/dev/null | tr -d ' ')
+    [ -n "$vg" ] || exit 0
+    free=$(vgs --noheadings --units b --nosuffix -o vg_free "$vg" | tr -d ' ')
+    if [ "${free:-0}" -gt 1073741824 ]; then lvextend -r -l +100%FREE "$lv" && echo grown; fi
+  register: grow_root
+  changed_when: "'grown' in grow_root.stdout"
+
 # use /opt/wazuh instead of /tmp to keep track
 - name: Create /opt/wazuh directory if it does not exist
   ansible.builtin.file:
