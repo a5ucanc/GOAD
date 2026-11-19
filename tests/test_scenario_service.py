@@ -36,8 +36,10 @@ class FakeInstance:
 class FakeLab:
     def __init__(self, resolver):
         self.resolver = resolver
+        self.resolver_calls = []
 
-    def get_scenario_resolver(self):
+    def get_scenario_resolver(self, extensions=()):
+        self.resolver_calls.append(list(extensions))
         return self.resolver
 
     def get_scenario(self, name):
@@ -323,3 +325,11 @@ def test_listing_shows_snapshot_column(snap_svc):
     rows = snap_svc.listing(False)
     assert rows[0] == ("esc8", "enabled", "dc01", "scn-01-esc8@dc01")
     assert all(len(row) == 4 for row in rows)
+
+
+def test_service_passes_instance_extensions(svc):
+    svc.instance.extensions = ["mssql"]
+    svc.listing(False)
+    svc.enable("esc8", None)
+    assert svc.lab.resolver_calls
+    assert all(call == ["mssql"] for call in svc.lab.resolver_calls)

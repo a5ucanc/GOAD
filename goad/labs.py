@@ -40,7 +40,8 @@ class Lab:
         self.dcs = []
         self.host_domains = {}
         self.root_dc = ''
-        self._scenario_resolver = None
+        self._scenario_resolvers = {}
+        self._scenarios = None
         self._load_lab_config(lab_name)
         try:
             self._load_providers(lab_name, config)
@@ -89,12 +90,29 @@ class Lab:
     def is_base(self):
         return self.capabilities is not None
 
-    def get_scenario_resolver(self):
-        if self._scenario_resolver is None:
-            scenarios = Scenarios(GoadPath.get_scenarios_path())
-            self._scenario_resolver = ScenarioResolver(scenarios, self.lab_name, self.capabilities, self.root_dc, self.dcs,
-                                                       self.host_domains)
-        return self._scenario_resolver
+    def effective_capabilities(self, extensions=()):
+        """Lab capabilities plus those granted by the installed extensions; None when the lab has none."""
+        if self.capabilities is None:
+            return None
+        merged = {key: list(hosts) for key, hosts in self.capabilities.items()}
+        for extension_name in extensions:
+            extension = self.extensions.get(extension_name)
+            if extension is None:
+                continue
+            for key, hosts in extension.capabilities_for(self.lab_name).items():
+                current = merged.setdefault(key, [])
+                current.extend(h for h in hosts if h not in current)
+        return merged
+
+    def get_scenario_resolver(self, extensions=()):
+        key = tuple(sorted(set(extensions)))
+        if key not in self._scenario_resolvers:
+            if self._scenarios is None:
+                self._scenarios = Scenarios(GoadPath.get_scenarios_path())
+            self._scenario_resolvers[key] = ScenarioResolver(self._scenarios, self.lab_name,
+                                                             self.effective_capabilities(key), self.root_dc,
+                                                             self.dcs, self.host_domains)
+        return self._scenario_resolvers[key]
 
     def get_scenario(self, name):
         return self.get_scenario_resolver().scenarios.get(name)

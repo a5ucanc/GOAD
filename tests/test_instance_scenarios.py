@@ -151,3 +151,62 @@ def test_scenario_registry(build_lab, scenario_dir, monkeypatch):
     assert resolver.root_dc == "dc01"
     assert lab.get_scenario("kerberoast").name == "kerberoast"
     assert lab.get_scenario("nope") is None
+
+
+class StubExtension:
+    def __init__(self, capabilities):
+        self.capabilities = capabilities
+
+    def capabilities_for(self, lab_name):
+        return {k: list(v) for k, v in self.capabilities.get(lab_name, {}).items()}
+
+
+def _with_extension(lab, name, capabilities):
+    lab.extensions[name] = StubExtension({lab.lab_name: capabilities})
+    return lab
+
+
+def test_extension_capabilities_merged(build_lab):
+    lab = _with_extension(build_lab("GOAD-Base", GOAD_CONFIG), "mssql", {"mssql": ["srv02"]})
+    assert lab.effective_capabilities(["mssql"]) == {"adcs": ["dc01"], "mssql": ["srv02"]}
+    assert lab.capabilities == {"adcs": ["dc01"]}
+
+
+def test_extension_capabilities_only_when_installed(build_lab):
+    lab = _with_extension(build_lab("GOAD-Base", GOAD_CONFIG), "mssql", {"mssql": ["srv02"]})
+    assert lab.effective_capabilities([]) == {"adcs": ["dc01"]}
+    assert lab.effective_capabilities() == {"adcs": ["dc01"]}
+
+
+def test_extension_capabilities_union(build_lab):
+    cfg = json.loads(json.dumps(GOAD_CONFIG))
+    cfg["lab"]["capabilities"] = {"mssql": ["srv02"]}
+    lab = build_lab("GOAD-Base", cfg)
+    _with_extension(lab, "a", {"mssql": ["srv03", "srv02"]})
+    _with_extension(lab, "b", {"mssql": ["srv04", "srv03"]})
+    assert lab.effective_capabilities(["a", "b"]) == {"mssql": ["srv02", "srv03", "srv04"]}
+
+
+def test_non_base_lab_stays_non_base(build_lab):
+    cfg = {"lab": {"hosts": GOAD_CONFIG["lab"]["hosts"], "domains": GOAD_CONFIG["lab"]["domains"]}}
+    lab = _with_extension(build_lab("GOAD", cfg), "mssql", {"mssql": ["srv02"]})
+    assert lab.effective_capabilities(["mssql"]) is None
+
+
+def test_unknown_installed_extension_ignored(build_lab):
+    lab = build_lab("GOAD-Base", GOAD_CONFIG)
+    assert lab.effective_capabilities(["nope"]) == {"adcs": ["dc01"]}
+
+
+def test_resolver_cache_per_extension_set(build_lab, scenario_dir, monkeypatch):
+    path = scenario_dir.make("kerberoast")
+    monkeypatch.setattr(GoadPath, 'get_scenarios_path',
+                        staticmethod(lambda: os.path.dirname(os.path.dirname(path))))
+    lab = _with_extension(build_lab("GOAD-Base", GOAD_CONFIG), "mssql", {"mssql": ["srv02"]})
+    plain = lab.get_scenario_resolver([])
+    with_ext = lab.get_scenario_resolver(["mssql"])
+    assert plain is not with_ext
+    assert with_ext is lab.get_scenario_resolver(["mssql"])
+    assert plain is lab.get_scenario_resolver()
+    assert "mssql" in with_ext.capabilities
+    assert "mssql" not in plain.capabilities

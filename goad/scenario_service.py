@@ -27,7 +27,7 @@ class ScenarioService:
         return bool(self.provisioner.run_scenario(scenario, target, self.instance.extensions, install=install))
 
     def enable(self, name, host):
-        resolver = self.lab.get_scenario_resolver()
+        resolver = self.lab.get_scenario_resolver(self.instance.extensions)
         try:
             target = resolver.check_enable(name, host, self.instance.scenarios)
         except ScenarioRefused as refused:
@@ -62,7 +62,7 @@ class ScenarioService:
         return False
 
     def disable(self, name, host, cascade=False):
-        resolver = self.lab.get_scenario_resolver()
+        resolver = self.lab.get_scenario_resolver(self.instance.extensions)
         entries = [e for e in self.instance.scenarios if e.name == name]
         if host is not None:
             entries = [e for e in entries if e.target == host]
@@ -109,7 +109,7 @@ class ScenarioService:
         return record.name if record is not None else ''
 
     def _ordered_names(self):
-        resolver = self.lab.get_scenario_resolver()
+        resolver = self.lab.get_scenario_resolver(self.instance.extensions)
         names = []
         for entry in self.instance.scenarios:
             if entry.name not in names:
@@ -136,7 +136,7 @@ class ScenarioService:
         return True
 
     def listing(self, show_all):
-        resolver = self.lab.get_scenario_resolver()
+        resolver = self.lab.get_scenario_resolver(self.instance.extensions)
         enabled = list(self.instance.scenarios)
         rows = [(e.name, 'dirty' if e.status == 'dirty' else 'enabled', e.target, self._snapshot_name(e.key)) for e in enabled]
         enabled_names = {e.name for e in enabled}
