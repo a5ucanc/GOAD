@@ -1,3 +1,4 @@
+import os
 import subprocess
 import psutil
 import sys
@@ -219,7 +220,13 @@ class Command:
             command += args
             Log.info('CWD: ' + Utils.get_relative_path(str(path)))
             Log.cmd(command)
-            result = subprocess.run(command, cwd=path, stderr=sys.stderr, stdout=sys.stdout, shell=True)
+            # ansible ignores an ansible.cfg found in a world-writable cwd (every file on a WSL
+            # /mnt/c mount is 777), so the folder roles_path is lost. Pass the folder cfg explicitly.
+            env = None
+            folder_cfg = os.path.join(str(path), 'ansible.cfg')
+            if 'ANSIBLE_CONFIG' not in os.environ and os.path.isfile(folder_cfg):
+                env = dict(os.environ, ANSIBLE_CONFIG=folder_cfg)
+            result = subprocess.run(command, cwd=path, env=env, stderr=sys.stderr, stdout=sys.stdout, shell=True)
         except subprocess.CalledProcessError as e:
             Log.error(f"An error occurred while running the command: {e}")
             return False
