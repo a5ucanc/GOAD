@@ -30,7 +30,10 @@ class LabInstances:
                     is_default = instance_info['is_default']
                     scenarios = instance_info.get('scenarios', [])
                     vagrant_disabled = instance_info.get('vagrant_disabled', False)
-                    self.instances[instance] = LabInstance(instance, lab_name, config, provider_name, provisioning_method, ip_range, extensions, status, is_default, scenarios, vagrant_disabled)
+                    snapshots = instance_info.get('snapshots', [])
+                    snapshot_seq = instance_info.get('snapshot_seq', 1)
+                    self.instances[instance] = LabInstance(instance, lab_name, config, provider_name, provisioning_method, ip_range, extensions, status, is_default, scenarios, vagrant_disabled,
+                                                           snapshots, snapshot_seq)
 
     def nb_instances(self):
         return len(self.instances)

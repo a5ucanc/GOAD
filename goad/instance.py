@@ -9,12 +9,14 @@ from goad.exceptions import ProviderPathNotFound, JumpBoxInitFailed
 from goad.provisioner.provisioner_factory import ProvisionerFactory
 from goad.utils import *
 from goad.scenario_resolver import EnabledScenario
+from goad.lab_snapshot_record import SnapshotRecord
+import copy
 from datetime import datetime, timezone
 
 
 class LabInstance:
 
-    def __init__(self, instance_id, lab_name, config, provider_name, provisioner_name, ip_range, extensions=None, status='', default=False, scenarios=None, vagrant_disabled=False):
+    def __init__(self, instance_id, lab_name, config, provider_name, provisioner_name, ip_range, extensions=None, status='', default=False, scenarios=None, vagrant_disabled=False, snapshots=None, snapshot_seq=1):
         if instance_id is None:
             random_id = ''.join(random.choices(string.hexdigits, k=6))
             self.instance_id = f'{random_id}-{lab_name}-{provider_name}'.lower()
@@ -34,6 +36,9 @@ class LabInstance:
         # ignore unknown keys so a newer or hand-edited instance.json still loads
         known = {f.name for f in fields(EnabledScenario)}
         self.scenarios = [EnabledScenario(**{k: v for k, v in scenario.items() if k in known}) for scenario in (scenarios or [])]
+        # named whole-lab snapshots, oldest first, and the never-reused name counter
+        self.snapshots = [SnapshotRecord.from_dict(record) for record in (snapshots or [])]
+        self.snapshot_seq = snapshot_seq
 
         # paths
         self.instance_path = GoadPath.get_instance_path(self.instance_id)
@@ -117,7 +122,9 @@ class LabInstance:
             "status": self.status,
             "is_default": self.is_default,
             "vagrant_disabled": self.vagrant_disabled,
-            "scenarios": [asdict(scenario) for scenario in self.scenarios]
+            "scenarios": [asdict(scenario) for scenario in self.scenarios],
+            "snapshots": [asdict(record) for record in self.snapshots],
+            "snapshot_seq": self.snapshot_seq
         }
         json_object = json.dumps(instance_info, indent=4)
         with open(self.instance_path + sep + "instance.json", "w") as outfile:
@@ -139,6 +146,39 @@ class LabInstance:
             if scenario.key == key:
                 scenario.status = 'dirty'
         self.save_json_instance()
+
+    def next_snapshot_name(self, prefix, label):
+        name = f'{prefix}-{self.snapshot_seq:02d}-{label}'
+        self.snapshot_seq += 1
+        self.save_json_instance()
+        return name
+
+    def add_snapshot_record(self, record):
+        self.snapshots.append(record)
+        self.save_json_instance()
+
+    def remove_snapshot_records(self, names):
+        names = set(names)
+        self.snapshots = [record for record in self.snapshots if record.name not in names]
+        self.save_json_instance()
+
+    def find_snapshot_record(self, taken_for):
+        matches = [record for record in self.snapshots if record.taken_for == taken_for]
+        return matches[-1] if matches else None
+
+    def capture_state(self, name, taken_for):
+        return SnapshotRecord(name, taken_for,
+                              [asdict(scenario) for scenario in self.scenarios],
+                              self.vagrant_disabled,
+                              copy.deepcopy(self.extensions))
+
+    def apply_state(self, record):
+        known = {f.name for f in fields(EnabledScenario)}
+        self.scenarios = [EnabledScenario(**{k: v for k, v in s.items() if k in known}) for s in record.scenarios]
+        self.vagrant_disabled = record.vagrant_disabled
+        self.extensions = list(record.extensions)
+        self.save_json_instance()
+        self.update_instance_folder()
 
     def _create_vagrantfile(self):
         # load lab vagrantfile
