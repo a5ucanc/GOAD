@@ -4,10 +4,20 @@ from goad.scenario_resolver import ScenarioRefused
 
 class ScenarioService:
 
-    def __init__(self, instance, lab, provisioner):
+    def __init__(self, instance, lab, provisioner, snapshots=None, ask=None):
         self.instance = instance
         self.lab = lab
         self.provisioner = provisioner
+        # snapshots: LabSnapshots; ask(prompt) -> bool. Without both, nothing is ever asked.
+        self.snapshots = snapshots
+        self.ask = ask
+
+    def _prompts(self):
+        return self.snapshots is not None and self.ask is not None and self.snapshots.supported()
+
+    def _forget(self, key):
+        if self.snapshots is not None:
+            self.snapshots.forget(key)
 
     def _run(self, scenario_name, target, install):
         scenario = self.lab.get_scenario(scenario_name)
@@ -24,11 +34,18 @@ class ScenarioService:
             for reason in refused.reasons:
                 Log.error(reason)
             return False
+        key = f'{name}@{target}'
+        if self._prompts() and self.ask(f'Take a lab snapshot before enabling {key}? (y/N)'):
+            if self.snapshots.take('scn', key, key) is None:
+                Log.error(f'{name} not enabled: the lab snapshot failed')
+                return False
         if self._run(name, target, True):
             self.instance.add_scenario(name, target)
             return True
         Log.error(f'scenario {name} failed on {target}, cleaning up')
-        if not self._run(name, target, False):
+        if self._run(name, target, False):
+            self._forget(key)
+        else:
             # keep the residue visible: a dirty entry can be retried with disable_scenario
             self.instance.add_scenario(name, target)
             self.instance.mark_scenario_dirty(name, target)
@@ -38,6 +55,7 @@ class ScenarioService:
     def _disable_entry(self, entry):
         if self._run(entry.name, entry.target, False):
             self.instance.remove_scenario(entry.name, entry.target)
+            self._forget(entry.key)
             return True
         self.instance.mark_scenario_dirty(entry.name, entry.target)
         Log.error(f'uninstall of {entry.key} failed, marked dirty')
@@ -56,6 +74,9 @@ class ScenarioService:
             Log.error(f'{name} is enabled on {targets}: name the host')
             return False
         entry = entries[0]
+        reverted = self._offer_revert(entry)
+        if reverted is not None:
+            return reverted
         dependents = resolver.dependents(name, self.instance.scenarios, entry.target)
         if dependents and not cascade:
             keys = ', '.join(d.key for d in dependents)
@@ -65,6 +86,27 @@ class ScenarioService:
             if not self._disable_entry(victim):
                 return False
         return True
+
+    def _offer_revert(self, entry):
+        """Revert result when the user chose the revert, None to go on with the uninstall."""
+        if not self._prompts():
+            return None
+        record = self.snapshots.find(entry.key)
+        if record is None:
+            return None
+        reason = self.snapshots.revertable(record)
+        if reason is not None:
+            Log.warning(f'no revert offered: {reason}')
+            return None
+        for line in self.snapshots.report(record).lines():
+            Log.info(line)
+        if not self.ask(f'Revert the lab to {record.name} instead of disabling? (y/N)'):
+            return None
+        return self.snapshots.revert(record)
+
+    def _snapshot_name(self, key):
+        record = self.snapshots.find(key) if self.snapshots is not None else None
+        return record.name if record is not None else ''
 
     def _ordered_names(self):
         resolver = self.lab.get_scenario_resolver()
@@ -96,13 +138,13 @@ class ScenarioService:
     def listing(self, show_all):
         resolver = self.lab.get_scenario_resolver()
         enabled = list(self.instance.scenarios)
-        rows = [(e.name, 'dirty' if e.status == 'dirty' else 'enabled', e.target) for e in enabled]
+        rows = [(e.name, 'dirty' if e.status == 'dirty' else 'enabled', e.target, self._snapshot_name(e.key)) for e in enabled]
         enabled_names = {e.name for e in enabled}
         for scenario, reasons in resolver.available(enabled):
             if scenario.name in enabled_names:
                 continue
             if not reasons:
-                rows.append((scenario.name, 'available', ''))
+                rows.append((scenario.name, 'available', '', ''))
             elif show_all:
-                rows.append((scenario.name, 'unavailable', '; '.join(reasons)))
+                rows.append((scenario.name, 'unavailable', '; '.join(reasons), ''))
         return rows

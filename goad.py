@@ -399,8 +399,9 @@ class Goad(cmd.Cmd):
         table.add_column('Scenario')
         table.add_column('State')
         table.add_column('Target / reason')
-        for name, state, detail in service.listing(arg.strip() == 'all'):
-            table.add_row(name, state, detail)
+        table.add_column('Snapshot')
+        for name, state, detail, snapshot in service.listing(arg.strip() == 'all'):
+            table.add_row(name, state, detail, snapshot)
         rich_print(table)
 
     def do_enable_scenario(self, arg):
