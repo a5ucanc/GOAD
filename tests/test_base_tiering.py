@@ -11,9 +11,10 @@ ADMIN_GROUPS = TIERS | {"Domain Admins"}
 T0 = {"sevenkingdoms.local": {"cersei.lannister", "robert.baratheon"},
       "north.sevenkingdoms.local": {"eddard.stark"}, "essos.local": {"daenerys.targaryen"}}
 T1 = {"north.sevenkingdoms.local": {"jeor.mormont"}, "essos.local": {"khal.drogo"}}
+# services come from the mssql / iis extensions: no Base lab grants these capabilities itself
 CAPABILITIES = {
-    "GOAD-Base": {"iis": ["srv02"], "mssql_link": ["srv02"]},
-    "GOAD-Light-Base": {"iis": ["srv02"]},
+    "GOAD-Base": {},
+    "GOAD-Light-Base": {},
     "GOAD-Mini-Base": {},
 }
 

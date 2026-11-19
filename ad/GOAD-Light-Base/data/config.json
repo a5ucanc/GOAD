@@ -59,13 +59,6 @@
                         "north\\Stark"
                     ]
                 },
-                "mssql": {
-                    "sa_password": "Aa1234567890!",
-                    "svcaccount": "sql_svc",
-                    "sysadmins": [
-                        "NORTH\\Administrator"
-                    ]
-                },
                 "security": [
                     "enable_run_as_ppl",
                     "asr"
@@ -245,15 +238,6 @@
                             "Mormont",
                             "T1-ServerAdmins"
                         ],
-                        "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
-                    },
-                    "sql_svc": {
-                        "firstname": "sql",
-                        "surname": "service",
-                        "password": "Aa1234567890!",
-                        "city": "-",
-                        "description": "sql service",
-                        "groups": [],
                         "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
                     }
                 },
@@ -473,16 +457,10 @@
             "adcs": [
                 "dc01"
             ],
-            "mssql": [
-                "srv02"
-            ],
             "child_domain": [
                 "dc02"
             ],
             "member_server": [
-                "srv02"
-            ],
-            "iis": [
                 "srv02"
             ]
         },

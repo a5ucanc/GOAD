@@ -35,6 +35,8 @@ nav:
     - elk: extensions/elk.md
     - wazuh: extensions/wazuh.md
     - kali: extensions/kali.md
+    - mssql: extensions/mssql.md
+    - iis: extensions/iis.md
   - 🎯 Scenarios: scenarios.md
   - 💻 Usage: 
     - index : usage/index.md

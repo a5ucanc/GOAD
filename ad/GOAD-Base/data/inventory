@@ -100,19 +100,18 @@ srv03
 
 ; install iis with default website asp upload on 80
 ; usage : servers.yml
+; Base labs: stays empty, the iis extension fills it
 [iis]
-srv02
 
 ; install mssql
 ; usage : servers.yml
+; Base labs: stays empty, the mssql extension fills it
 [mssql]
-srv02
-srv03
 
 ; install mssql gui
 ; usage : servers.yml
+; Base labs: stays empty, the mssql extension fills it
 [mssql_ssms]
-srv02
 
 ; install webdav 
 [webdav]

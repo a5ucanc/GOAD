@@ -123,3 +123,16 @@ def test_new_keys_baseline(lab):
             assert settings["net.webclient"] == "absent", host
         if host in caps.get("forest_trust", []):
             assert settings["trust.sid_history"] == "disabled", host
+
+
+@pytest.mark.parametrize("lab", BASE_LABS)
+def test_base_lab_has_no_services(lab):
+    # MSSQL and IIS come from the mssql / iis extensions, never from the Base lab itself
+    cfg = json.load(open(f"ad/{lab}/data/config.json"))["lab"]
+    for host, v in cfg["hosts"].items():
+        assert "mssql" not in v, host
+    for name, d in cfg["domains"].items():
+        assert "sql_svc" not in d["users"], name
+    assert not {"iis", "mssql", "mssql_link"} & set(cfg["capabilities"])
+    for group in ("iis", "mssql", "mssql_ssms", "mssql_link"):
+        assert _inventory_group(lab, group) == [], group

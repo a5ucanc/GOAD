@@ -23,9 +23,18 @@ Each `-Base` lab declares `lab.capabilities` in its `config.json`: a map from a 
 
 | Lab | Capabilities |
 |-----|--------------|
-| `GOAD-Base` | `adcs`: dc01, srv03; `mssql`: srv02, srv03; `child_domain`: dc02; `forest_trust`: dc01, dc03; `member_server`: srv02, srv03; `laps`: srv03; `iis`: srv02; `mssql_link`: srv02 |
-| `GOAD-Light-Base` | `adcs`: dc01; `mssql`: srv02; `child_domain`: dc02; `member_server`: srv02; `iis`: srv02 |
+| `GOAD-Base` | `adcs`: dc01, srv03; `child_domain`: dc02; `forest_trust`: dc01, dc03; `member_server`: srv02, srv03; `laps`: srv03 |
+| `GOAD-Light-Base` | `adcs`: dc01; `child_domain`: dc02; `member_server`: srv02 |
 | `GOAD-Mini-Base` | `adcs`: dc01 |
+
+The `-Base` labs ship no services. Extensions without a VM add them on the existing member servers and grant the matching capabilities while they are installed (`capabilities` in their `extension.json`):
+
+| Extension | `GOAD-Base` | `GOAD-Light-Base` |
+|-----------|-------------|-------------------|
+| `mssql` | `mssql`: srv02, srv03; `mssql_link`: srv02 | `mssql`: srv02 |
+| `iis` | `iis`: srv02 | `iis`: srv02 |
+
+`remove_extension` undoes the install. It lists the enabled scenarios that need a capability of the extension (and their dependents) and asks before it disables them (`--yes` answers yes), then runs the extension `uninstall.yml`. If a scenario or the uninstall fails, the extension stays installed.
 
 Existing labs (`GOAD`, `GOAD-Light`, `GOAD-Mini`, ...) are unchanged and have no scenarios.
 
@@ -267,6 +276,8 @@ Scenarios never merge into the lab data. They read their own `data/vars.yml`. Fo
 | `sid-history` | setting | `forest_trust` | SID history accepted on the forest trust. |
 
 ### MSSQL and web
+
+These need the `mssql` or `iis` extension (`install_extension mssql`, `install_extension iis`).
 
 | Scenario | Type | Target | Description |
 |----------|------|--------|-------------|

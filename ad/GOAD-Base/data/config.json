@@ -59,13 +59,6 @@
                         "north\\Stark"
                     ]
                 },
-                "mssql": {
-                    "sa_password": "Aa1234567890!",
-                    "svcaccount": "sql_svc",
-                    "sysadmins": [
-                        "NORTH\\Administrator"
-                    ]
-                },
                 "security": [
                     "enable_run_as_ppl",
                     "asr"
@@ -112,13 +105,6 @@
                 "Remote Desktop Users": [
                     "essos\\Dothraki"
                 ],
-                "mssql": {
-                    "sa_password": "Aa1234567890!",
-                    "svcaccount": "sql_svc",
-                    "sysadmins": [
-                        "ESSOS\\Administrator"
-                    ]
-                },
                 "security": [
                     "enable_run_as_ppl",
                     "asr"
@@ -270,15 +256,6 @@
                         "groups": [
                             "Dragons"
                         ],
-                        "path": "CN=Users,DC=essos,DC=local"
-                    },
-                    "sql_svc": {
-                        "firstname": "sql",
-                        "surname": "service",
-                        "password": "Aa1234567890!",
-                        "city": "-",
-                        "description": "sql service",
-                        "groups": [],
                         "path": "CN=Users,DC=essos,DC=local"
                     }
                 },
@@ -449,15 +426,6 @@
                             "Mormont",
                             "T1-ServerAdmins"
                         ],
-                        "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
-                    },
-                    "sql_svc": {
-                        "firstname": "sql",
-                        "surname": "service",
-                        "password": "Aa1234567890!",
-                        "city": "-",
-                        "description": "sql service",
-                        "groups": [],
                         "path": "CN=Users,DC=North,DC=sevenkingdoms,DC=local"
                     }
                 },
@@ -682,10 +650,6 @@
                 "dc01",
                 "srv03"
             ],
-            "mssql": [
-                "srv02",
-                "srv03"
-            ],
             "child_domain": [
                 "dc02"
             ],
@@ -699,12 +663,6 @@
             ],
             "laps": [
                 "srv03"
-            ],
-            "iis": [
-                "srv02"
-            ],
-            "mssql_link": [
-                "srv02"
             ]
         },
         "base_settings": {
