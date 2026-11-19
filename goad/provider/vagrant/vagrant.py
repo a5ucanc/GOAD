@@ -10,6 +10,40 @@ class VagrantProvider(Provider):
     def __init__(self, lab_name):
         super().__init__(lab_name)
         self.jumpbox_setup_script = 'setup_local_jumpbox.sh'
+        # VagrantGate set by the instance: runs the vagrant commands that log in to the guests
+        # with the vagrant account enabled when a base lab disabled it
+        self.vagrant_gate = None
+
+    def set_vagrant_gate(self, gate):
+        self.vagrant_gate = gate
+
+    def _guest_login(self, args, redisable=True):
+        def command():
+            return self.command.run_vagrant(args, self.path)
+        if self.vagrant_gate is None:
+            return command()
+        return self.vagrant_gate.run(command, redisable=redisable)
+
+    def _halt(self, vms, args):
+        if self.vagrant_gate is not None and self.vagrant_gate.disabled():
+            # halting through vagrant would leave the account enabled on VMs that are off
+            halted = self.vagrant_gate.halt(vms)
+            if halted is not None:
+                return halted
+        return self._guest_login(args, redisable=False)
+
+    def running_vms(self):
+        """Lab VMs running now, read without vagrant; None when the provider cannot tell."""
+        return None
+
+    def wait_halted(self, vms, timeout=600, interval=10):
+        """Wait for the VMs to power off after a guest shutdown, force the rest off."""
+        raise NotImplementedError
+
+    def boot_vms(self):
+        """Start the lab VMs without vagrant (no guest login). The base class cannot: it returns
+        True and the enable playbook fails on the VMs that are off."""
+        return True
 
     def check(self):
         checks = [
@@ -22,16 +56,16 @@ class VagrantProvider(Provider):
         return all(checks)
 
     def install(self):
-        return self.command.run_vagrant(['up'], self.path)
+        return self._guest_login(['up'])
 
     def destroy(self):
         return self.command.run_vagrant(['destroy'], self.path)
 
     def start(self):
-        return self.command.run_vagrant(['up'], self.path)
+        return self._guest_login(['up'])
 
     def stop(self):
-        return self.command.run_vagrant(['halt'], self.path)
+        return self._halt(self.vm_names(), ['halt'])
 
     def status(self):
         return self.command.run_vagrant(['status'], self.path)
@@ -40,16 +74,16 @@ class VagrantProvider(Provider):
         return self.command.run_vagrant(['snapshot', 'push'], self.path)
 
     def reset(self):
-        return self.command.run_vagrant(['snapshot', 'pop', '--no-delete'], self.path)
+        return self._guest_login(['snapshot', 'pop', '--no-delete'])
 
     def destroy_vm(self, vm_name):
         return self.command.run_vagrant(['destroy', vm_name], self.path)
 
     def start_vm(self, vm_name):
-        return self.command.run_vagrant(['up', vm_name], self.path)
+        return self._guest_login(['up', vm_name])
 
     def stop_vm(self, vm_name):
-        return self.command.run_vagrant(['halt', vm_name], self.path)
+        return self._halt([vm_name], ['halt', vm_name])
 
     def remove_extension(self, extension_name):
         # TODO one day if possible
