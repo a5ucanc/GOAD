@@ -47,7 +47,17 @@ if ($isDc) {
         add "user $($_.SamAccountName)" "uac=$($_.userAccountControl) spn=$(@($_.servicePrincipalName) -join ',') a2d=$(@($_.'msDS-AllowedToDelegateTo') -join ',')" }
     add 'groups' ((Get-ADGroup -Filter * | ForEach-Object SamAccountName | Sort-Object))
     add 'ous' ((Get-ADOrganizationalUnit -Filter * | ForEach-Object DistinguishedName | Sort-Object))
-    function sddl($dn) { try { (Get-Acl "AD:$dn").Sddl } catch { '<missing>' } }
+    # ACE order is normalized: removing an ACE re-canonicalizes the DACL, which reorders
+    # the remaining entries without changing them.
+    function sddl($dn) {
+        try { $s = (Get-Acl "AD:$dn").Sddl } catch { return '<missing>' }
+        $parts = $s -split '(?=S:)', 2
+        $out = foreach ($p in $parts) {
+            $head = ($p -split '\(', 2)[0]
+            $head + ((([regex]::Matches($p, '\([^)]*\)') | ForEach-Object Value) | Sort-Object) -join '')
+        }
+        $out -join ''
+    }
     add 'sddl domain root' (sddl $d)
     add 'sddl AdminSDHolder' (sddl "CN=AdminSDHolder,CN=System,$d")
     add 'sddl Domain Admins' (sddl (Get-ADGroup 'Domain Admins').DistinguishedName)
@@ -68,7 +78,13 @@ if ($isDc) {
 if (Get-Service certsvc -ErrorAction SilentlyContinue) {
     add 'ca editflags' ((certutil -getreg policy\EditFlags | Select-String 'EditFlags REG_DWORD') -join '')
     add 'ca interfaceflags' ((certutil -getreg CA\InterfaceFlags | Select-String 'InterfaceFlags REG_DWORD') -join '')
-    add 'ca security' ((certutil -getreg CA\Security | Select-String 'Allow') | ForEach-Object { $_.Line.Trim() } | Sort-Object)
+    # one line per principal and right: PSPKI rewrites the CA ACL with the rights of a
+    # principal merged into one entry, certutil lists the original one per right.
+    $caRights = 'CA Administrator', 'Certificate Manager', 'Enroll', 'Read'
+    add 'ca security' ((certutil -getreg CA\Security | Select-String 'Allow') | ForEach-Object {
+        $kind, $who = $_.Line.Trim() -split "`t", 2
+        foreach ($r in $caRights) { if ($kind -match [regex]::Escape($r)) { "$($kind.Split(' ')[0]) $r`t$who" } }
+    } | Sort-Object -Unique)
     add 'ca web enrollment' (Get-WindowsFeature ADCS-Web-Enrollment).InstallState
 }
 
