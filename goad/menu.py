@@ -39,8 +39,8 @@ def print_menu(lab_manager, advanced=True, debug=False):
         print_menu_entry('stop', 'stop lab')
         print_menu_entry('destroy', 'destroy lab')
         if lab_manager.get_current_instance().is_vagrant():
-            print_menu_entry('snapshot', 'snapshot lab')
-            print_menu_entry('reset', 'revert lab to last snapshot')
+            print_menu_entry('snapshot [label]', 'snapshot lab (VMware: named snapshot, kept with the others)')
+            print_menu_entry('reset [snapshot]', 'revert lab to a snapshot (default: the last one)')
 
         print_menu_title('Manage one vm commands')
         print_menu_entry('start_vm <vm_name>', 'start selected virtual machine')

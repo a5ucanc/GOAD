@@ -121,13 +121,28 @@ running the uninstall. A revert gives a lab that is clean after an attack, inclu
   out of it.
 - `list_scenarios` shows the snapshot of each enabled scenario.
 - `list_snapshots` lists every snapshot goad recorded, oldest first: what it was taken for, the scenarios and
-  extensions it captured, and whether every VM has it (`5/5` or `missing on <vm>`). `scn-` / `ext-` snapshots
-  that VMware holds without a goad record are listed as `(no record)`; delete those by hand
-  (`vagrant snapshot delete <vm> <name>`).
+  extensions it captured, and whether every VM has it (`5/5` or `missing on <vm>`). Snapshots that VMware
+  holds without a goad record are listed as `(no record)`; delete those by hand
+  (`vagrant snapshot delete <vm> <name>`). The `push_*` snapshots of the old `snapshot` command are grouped in
+  one `(old snapshot command)` row.
 - No question is asked with `--no-snapshot`, or when the console does not run in a terminal (piped commands,
   `goad.py -t ...`): enable and disable then behave as without a snapshot.
-- Only the VMware provider supports these snapshots. They are independent from the `snapshot` / `reset`
-  commands.
+- Only the VMware provider supports these snapshots.
+
+#### snapshot / reset
+
+On VMware, `snapshot [label]` takes a named, recorded lab snapshot `snap-<seq>-<label>` (`snap-<seq>-manual`
+without a label) while the lab runs. You can take as many as you want; `list_snapshots` lists them with the
+scenario and extension snapshots, and the state they captured.
+
+`reset [snapshot]` first prints every snapshot, however it was taken. It then reverts to the snapshot named, or
+to the latest one, after showing what the revert changes and asking `Reset the lab to <snapshot>? (y/N)` (no
+question outside a terminal). Unlike a scenario revert, `reset` keeps the revert point and every later
+snapshot, so you can reset to the same snapshot again. Restored instance state (scenarios, extensions, vagrant
+account) and the clock resync work as for a scenario revert. With no named snapshot, `reset` falls back to the
+last `push_*` snapshot of the old `snapshot` command.
+
+Other providers keep the single `vagrant snapshot push` / `pop` snapshot.
 
 ### Re-provisioning
 

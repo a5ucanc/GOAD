@@ -1,8 +1,14 @@
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from goad.lab_snapshot_record import SnapshotRecord
 from goad.log import Log
+
+# taken_for of a snapshot taken by the snapshot command
+MANUAL = 'manual'
+# vagrant snapshot push names its snapshots push_<timestamp>_<random>, a different name per VM
+PUSH_PREFIX = 'push_'
 
 
 def _key(scenario):
@@ -13,7 +19,8 @@ def _key(scenario):
 class RevertReport:
     record: SnapshotRecord
     stack: List[SnapshotRecord]
-    removed: str
+    # what the revert undoes; None for a manual snapshot
+    removed: Optional[str]
     lost_scenarios: List[str] = field(default_factory=list)
     # every extension the record does not list (the removed one included) -> its VMs, destroyed
     lost_extensions: Dict[str, List[str]] = field(default_factory=dict)
@@ -32,7 +39,8 @@ class RevertReport:
                 mark = '  deleted'
             lines.append(f'  {record.name:<{width}}  for {record.taken_for}{mark}')
         lines.append(f'revert to {self.record.name}:')
-        lines.append(f'  removed:  {self.removed}')
+        if self.removed:
+            lines.append(f'  removed:  {self.removed}')
         if self.lost_scenarios:
             lines.append(f'  lost:     {", ".join(self.lost_scenarios)}')
         if self.restored_scenarios:
@@ -75,8 +83,24 @@ class LabSnapshots:
         self.instance.add_snapshot_record(record)
         return record
 
+    def take_manual(self, label=''):
+        label = re.sub(r'[^A-Za-z0-9._@-]+', '-', label.strip()).strip('-') or MANUAL
+        return self.take('snap', label, MANUAL)
+
     def find(self, taken_for):
         return self.instance.find_snapshot_record(taken_for)
+
+    def find_by_name(self, name):
+        return next((record for record in self.instance.snapshots if record.name == name), None)
+
+    def latest(self):
+        return self.instance.snapshots[-1] if self.instance.snapshots else None
+
+    def push_snapshots(self, listing=None):
+        """vm -> push_* snapshots left by the snapshot command before it took named snapshots."""
+        listing = self.provider.snapshot_list() if listing is None else listing
+        return {vm: [name for name in names if name.startswith(PUSH_PREFIX)] for vm, names in listing.items()
+                if any(name.startswith(PUSH_PREFIX) for name in names)}
 
     def _later_extensions(self, record):
         return {extension: self.provider.extension_vm_names(extension, self.lab_name, self.ip_range)
@@ -97,7 +121,7 @@ class LabSnapshots:
                 return f'snapshot {record.name} missing on {vm}'
         return None
 
-    def report(self, record):
+    def report(self, record, keep_later=False):
         current = [scenario.key for scenario in self.instance.scenarios]
         captured = [_key(scenario) for scenario in record.scenarios]
         index = self.instance.snapshots.index(record)
@@ -107,14 +131,15 @@ class LabSnapshots:
         return RevertReport(
             record=record,
             stack=list(self.instance.snapshots),
-            removed=record.taken_for,
+            removed=None if record.taken_for == MANUAL else record.taken_for,
             lost_scenarios=[key for key in current if key not in captured and key != record.taken_for],
             lost_extensions=self._later_extensions(record),
             restored_scenarios=[key for key in captured if key not in current],
-            deleted_snapshots=[later.name for later in self.instance.snapshots[index + 1:]],
+            deleted_snapshots=[] if keep_later else [later.name for later in self.instance.snapshots[index + 1:]],
             vagrant_change=vagrant_change)
 
-    def revert(self, record):
+    def revert(self, record, keep_later=False):
+        """keep_later keeps the revert point and every later snapshot (reset); otherwise they are deleted."""
         later = self._later_extensions(record)
         existing = self.provider.vm_names()
         to_destroy = [vm for vms in later.values() for vm in vms if vm in existing]
@@ -130,7 +155,7 @@ class LabSnapshots:
                       f'(instance.json still lists the scenarios of the current state)')
             return False
         index = self.instance.snapshots.index(record)
-        dropped = [r.name for r in self.instance.snapshots[index:]]
+        dropped = [] if keep_later else [r.name for r in self.instance.snapshots[index:]]
         self.instance.apply_state(record)
         # after apply_state: the inventories no longer list the destroyed extension hosts
         if self.after_restore is not None and not self.after_restore():
@@ -146,7 +171,7 @@ class LabSnapshots:
 
     def rows(self):
         """(snapshot, taken for, scenarios captured, extensions, VM presence) oldest first, then the
-        scn-/ext- snapshots VMware holds without a goad record."""
+        snapshots VMware holds without a goad record (push_* ones grouped in one row)."""
         listing = self.provider.snapshot_list()
         rows = []
         for record in self.instance.snapshots:
@@ -159,11 +184,16 @@ class LabSnapshots:
         orphans = []
         for names in listing.values():
             for name in names:
-                if name.startswith(('scn-', 'ext-')) and name not in known and name not in orphans:
+                if not name.startswith(PUSH_PREFIX) and name not in known and name not in orphans:
                     orphans.append(name)
         for name in orphans:
             holders = [vm for vm, names in listing.items() if name in names]
             rows.append((name, '(no record)', '', '', f'{len(holders)}/{len(listing)}'))
+        pushed = self.push_snapshots(listing)
+        if pushed:
+            count = max(len(names) for names in pushed.values())
+            rows.append((f'{PUSH_PREFIX}* ({count} per VM)', '(old snapshot command)', '', '',
+                         f'{len(pushed)}/{len(listing)}'))
         return rows
 
     def forget(self, taken_for):

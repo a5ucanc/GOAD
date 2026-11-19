@@ -100,16 +100,57 @@ class Goad(cmd.Cmd):
             self.lab_manager.get_current_instance_provider().destroy_vm(arg)
 
     def do_snapshot(self, arg=''):
+        if self.lab_manager.get_current_instance() is not None:
+            snapshots = self._lab_snapshots()
+            if snapshots.supported():
+                # named, recorded snapshot: several can coexist and list_snapshots shows them
+                record = snapshots.take_manual(arg)
+                if record is not None:
+                    Log.success(f'lab snapshot {record.name} taken')
+                return
         self.do_stop()
         if self.lab_manager.get_current_instance_provider():
             self.lab_manager.get_current_instance_provider().snapshot()
         self.do_start()
-    
+
     def do_reset(self, arg=''):
+        if self.lab_manager.get_current_instance() is not None:
+            snapshots = self._lab_snapshots()
+            if snapshots.supported():
+                self._reset_named(snapshots, arg.strip())
+                return
+        self._reset_push()
+
+    def _reset_push(self):
         self.do_stop()
         if self.lab_manager.get_current_instance_provider():
             self.lab_manager.get_current_instance_provider().reset()
         self.do_start()
+
+    def _reset_named(self, snapshots, name):
+        # show every snapshot first, whatever took it (snapshot command, scenario, extension, old push)
+        self._print_snapshots(snapshots)
+        record = snapshots.find_by_name(name) if name else snapshots.latest()
+        if record is None:
+            if name:
+                Log.error(f'no lab snapshot named {name}: pick one from the Snapshot column')
+            elif snapshots.push_snapshots():
+                Log.info('no named lab snapshot: reverting to the last push_ snapshot of the old snapshot command')
+                self._reset_push()
+            else:
+                Log.error('no lab snapshot to reset to: take one with snapshot [label]')
+            return
+        reason = snapshots.revertable(record)
+        if reason is not None:
+            Log.error(f'cannot reset to {record.name}: {reason}')
+            return
+        for line in snapshots.report(record, keep_later=True).lines():
+            Log.info(line)
+        ask = self._ask(False)
+        if ask is not None and not ask(f'Reset the lab to {record.name}? (y/N)'):
+            Log.info('reset cancelled')
+            return
+        snapshots.revert(record, keep_later=True)
 
     def do_provide(self, arg=''):
         result = self.lab_manager.get_current_instance_provider().install()
@@ -472,6 +513,10 @@ class Goad(cmd.Cmd):
         if not snapshots.supported():
             Log.error('named lab snapshots need the VMware provider')
             return
+        self._print_snapshots(snapshots)
+
+    @staticmethod
+    def _print_snapshots(snapshots):
         from rich.table import Table
         from rich import print as rich_print
         table = Table(title='Lab snapshots (oldest first)')

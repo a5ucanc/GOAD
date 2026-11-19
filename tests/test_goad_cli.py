@@ -160,3 +160,98 @@ def test_list_snapshots_unsupported_provider(monkeypatch, capsys):
     cli._lab_snapshots = lambda: SimpleNamespace(supported=lambda: False)
     cli.do_list_snapshots("")
     assert "scn-" not in capsys.readouterr().out
+
+
+class FakeSnapshots:
+    def __init__(self, records=(), push=None, reason=None):
+        self.records = list(records)
+        self.push = push or {}
+        self.reason = reason
+        self.reverted = []
+
+    def supported(self):
+        return True
+
+    def rows(self):
+        return [(r.name, r.taken_for, "", "", "5/5") for r in self.records]
+
+    def find_by_name(self, name):
+        return next((r for r in self.records if r.name == name), None)
+
+    def latest(self):
+        return self.records[-1] if self.records else None
+
+    def push_snapshots(self):
+        return self.push
+
+    def revertable(self, record):
+        return self.reason
+
+    def report(self, record, keep_later=False):
+        assert keep_later
+        return SimpleNamespace(lines=lambda: [f"revert to {record.name}:"])
+
+    def revert(self, record, keep_later=False):
+        self.reverted.append((record.name, keep_later))
+        return True
+
+
+def snapshot_cli(fake):
+    cli, _, _ = make_cli()
+    cli._lab_snapshots = lambda: fake
+    cli._ask = staticmethod(lambda no_snapshot: None)
+    cli._reset_push = lambda: fake.reverted.append(("push", None))
+    return cli
+
+
+RECORDS = [SimpleNamespace(name="snap-01-a", taken_for="manual"), SimpleNamespace(name="scn-02-maq@dc02", taken_for="maq@dc02")]
+
+
+def test_reset_lists_snapshots_and_reverts_to_the_latest(capsys):
+    fake = FakeSnapshots(RECORDS)
+    snapshot_cli(fake).do_reset("")
+    assert fake.reverted == [("scn-02-maq@dc02", True)]
+    out = capsys.readouterr().out
+    assert "snap-01-a" in out and "scn-02-maq@dc02" in out
+
+
+def test_reset_to_a_named_snapshot():
+    fake = FakeSnapshots(RECORDS)
+    snapshot_cli(fake).do_reset("snap-01-a")
+    assert fake.reverted == [("snap-01-a", True)]
+
+
+def test_reset_unknown_name_does_nothing():
+    fake = FakeSnapshots(RECORDS)
+    snapshot_cli(fake).do_reset("nope")
+    assert fake.reverted == []
+
+
+def test_reset_not_revertable_does_nothing():
+    fake = FakeSnapshots(RECORDS, reason="snapshot missing on DC01")
+    snapshot_cli(fake).do_reset("")
+    assert fake.reverted == []
+
+
+def test_reset_falls_back_to_push_snapshots():
+    fake = FakeSnapshots(push={"DC01": ["push_1_1"]})
+    snapshot_cli(fake).do_reset("")
+    assert fake.reverted == [("push", None)]
+
+
+def test_reset_declined():
+    fake = FakeSnapshots(RECORDS)
+    cli = snapshot_cli(fake)
+    cli._ask = staticmethod(lambda no_snapshot: (lambda prompt: False))
+    cli.do_reset("")
+    assert fake.reverted == []
+
+
+def test_snapshot_takes_a_named_snapshot():
+    labels = []
+    fake = SimpleNamespace(supported=lambda: True,
+                           take_manual=lambda label: labels.append(label) or SimpleNamespace(name="snap-01-x"))
+    cli, _, _ = make_cli()
+    cli._lab_snapshots = lambda: fake
+    cli.do_snapshot("x")
+    assert labels == ["x"]

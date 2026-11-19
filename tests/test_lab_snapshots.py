@@ -266,7 +266,8 @@ def test_rows_show_orphan_goad_snapshots(inst, snaps, prov):
     for vm in prov.vms:
         prov.snaps[vm].append("scn-09-old@dc01")
     prov.snaps["L-DC01"].append("manual-backup")
-    assert snaps.rows() == [("scn-09-old@dc01", "(no record)", "", "", "3/3")]
+    assert snaps.rows() == [("scn-09-old@dc01", "(no record)", "", "", "3/3"),
+                            ("manual-backup", "(no record)", "", "", "1/3")]
 
 
 def test_rows_show_extensions_in_record(inst, snaps, prov):
@@ -274,3 +275,37 @@ def test_rows_show_extensions_in_record(inst, snaps, prov):
     prov.add_extension_vm("ws01")
     snaps.take("scn", "x@h", "x@h")
     assert snaps.rows()[0][3] == "ws01"
+
+
+def test_take_manual_names_and_records(inst, snaps, prov):
+    enable(inst, snaps, "maq", "dc02", snapshot=False)
+    first = snaps.take_manual("")
+    second = snaps.take_manual("before esc8!")
+    assert first.name == "snap-01-manual" and first.taken_for == "manual"
+    assert second.name == "snap-02-before-esc8"
+    assert [s["name"] for s in second.scenarios] == ["maq"]
+    assert all(prov.snaps[vm] == ["snap-01-manual", "snap-02-before-esc8"] for vm in BASE_VMS)
+
+
+def test_reset_revert_keeps_the_revert_point_and_later_snapshots(inst, snaps, prov):
+    first = snaps.take_manual("a")
+    enable(inst, snaps, "maq", "dc02")
+    snaps.take_manual("b")
+    report = snaps.report(first, keep_later=True)
+    assert report.deleted_snapshots == [] and report.removed is None
+    assert not any(line.startswith("  removed:") for line in report.lines())
+    assert snaps.revert(first, keep_later=True)
+    assert not [c for c in prov.calls if c[0] == "delete"]
+    assert [r.name for r in inst.snapshots] == ["snap-01-a", "scn-02-maq@dc02", "snap-03-b"]
+    assert inst.scenarios == []
+    assert snaps.revert(first, keep_later=True)
+
+
+def test_rows_show_unrecorded_and_grouped_push_snapshots(inst, snaps, prov):
+    snaps.take_manual("")
+    prov.snaps["L-DC01"] += ["push_1_1", "push_2_2", "by-hand"]
+    prov.snaps["L-DC02"] += ["push_3_3"]
+    assert snaps.rows()[1:] == [
+        ("by-hand", "(no record)", "", "", "1/3"),
+        ("push_* (2 per VM)", "(old snapshot command)", "", "", "2/3"),
+    ]
