@@ -1,4 +1,4 @@
-# Scenario snapshots — design
+# Scenario and extension snapshots — design
 
 ## Intent
 
@@ -16,6 +16,8 @@ reverted instead of disabling, gives that guarantee.
   print the snapshot order, mark every scenario that the revert would lose, and ask the user to revert
   instead of disabling.
 - Keep goad's record (`instance.json`) consistent with the lab after a revert.
+- The same for extensions: snapshot before `install_extension`, and a new `remove_extension` command that
+  offers the revert (see Extensions).
 
 ## Non-goals
 
@@ -52,7 +54,8 @@ between (uninstalls, `reset_scenarios`, `--cascade`, dirty retries, `enable_vagr
 extensions):
 
 - `name`: the snapshot name.
-- `for`: the entry key the snapshot was taken for (`esc4@dc01`).
+- `for`: what the snapshot was taken for: a scenario entry key (`esc4@dc01`) or an extension
+  (`extension:ws01`).
 - `scenarios`: the enabled entries at snapshot time (name, target, status, their own snapshot name).
 - `vagrant_disabled`, `extensions`: the instance fields at snapshot time.
 
@@ -84,8 +87,9 @@ taken and never reused, so names stay unique after reverts.
 ### Disable
 
 1. Find the entry's snapshot record. If there is none, or `vagrant snapshot list` shows the snapshot
-   missing on any VM (for example an extension VM added after it), disable as today and log why no revert
-   is offered.
+   missing on a VM that existed when it was taken (VMs of extensions in the record), disable as today and
+   log why no revert is offered. VMs of extensions added after the snapshot do not have it; the revert
+   destroys them (step 4).
 2. Otherwise print what the revert does, from the record and the current state:
 
    ```
@@ -101,10 +105,14 @@ taken and never reused, so names stay unique after reverts.
 
    `lost` = current entries not in the record (the chosen entry shown as `removed`); `restored` = record
    entries no longer enabled. Snapshot records after the revert point are listed as `deleted`.
-   A change of `vagrant_disabled` is printed too (`vagrant account: enabled again`).
+   A change of `vagrant_disabled` is printed too (`vagrant account: enabled again`), and extensions
+   added after the snapshot are listed as `lost` with their VMs (`ws01: GOAD-Base-WS01 destroyed`).
 3. Ask: `Revert the lab to <name> instead of disabling? (y/N)`.
-4. On `y`: `vagrant snapshot restore --no-provision <name>` on all VMs. On success: set the instance
-   `scenarios`, `vagrant_disabled` and `extensions` to the record's values; delete the revert-point
+4. On `y`: destroy the VMs of extensions not in the record (`vagrant destroy -f <vm>`, while the
+   Vagrantfile still defines them), then `vagrant snapshot restore --no-provision <name>` on the other VMs.
+   On success: set the instance
+   `scenarios`, `vagrant_disabled` and `extensions` to the record's values (regenerating the instance
+   folder, so the Vagrantfile and inventories match); delete the revert-point
    snapshot and every snapshot after it, with their records (they belong to a timeline that no longer
    exists, and the lab is now in the revert point's state). On restore failure: log, leave `instance.json`
    unchanged, and stop.
@@ -116,6 +124,32 @@ When an entry leaves through the uninstall path, its own snapshot and record are
 is keyed on the entry, so nothing would offer it again). Other records are untouched: they still describe
 their own moment correctly.
 
+### Extensions
+
+Extensions add VMs (ws01, elk, wazuh, kali, lx01, guacamole, exchange) and some push agents or domain
+objects to the existing hosts. Today they have no removal path. Scenario and extension snapshots share one
+ordered `snapshots` list, so a revert to either kind loses everything after it.
+
+- **`install_extension <name>`**: before `vagrant up`, ask
+  `Take a lab snapshot before installing extension <name>? (y/N)`. On `y`, snapshot all existing VMs as
+  `ext-<seq>-<name>` (same counter as scenarios) and append the record (`for: extension:<name>`). Failure
+  rules as for enable: a failed snapshot stops the install; a failed install keeps the snapshot so the user
+  can revert out with `remove_extension`.
+- **`remove_extension <name>`** (new command):
+  1. With a snapshot record whose snapshot exists on every VM it covers: print the same report as a
+     scenario revert (revert point, `lost` scenarios and extensions, `restored`, `deleted` snapshots) and
+     ask `Revert the lab to <name> instead of removing? (y/N)`. On `y`, revert exactly as a scenario
+     revert (the extension's VMs are destroyed because the record does not list it).
+  2. Without a snapshot, or on `n`: *user's choice:* destroy only the extension's VMs
+     (`vagrant destroy -f <vm>` before the Vagrantfile is regenerated), then `disable_extension`. Warn
+     before acting: `agents and domain objects the extension pushed to the lab stay (computer accounts,
+     DNS records, agents)`. Ask `Remove extension <name> without revert? (y/N)`.
+  3. An extension that other enabled extensions need (none declare this today) is not special-cased.
+- **`provision_extension`**: unchanged (re-runs the playbook on an installed extension, no prompt).
+- An uninstall-path removal deletes the extension's own snapshot and record, like a scenario disable.
+- The extension's VM names come from its provider Vagrantfile (`:name => "{{lab_name}}-WS01"`); the
+  builder resolves them against the instance's generated Vagrantfile.
+
 ### Other scenario commands
 
 - Re-provisioning (`reapply`): unchanged; entries keep their snapshot names.
@@ -126,7 +160,9 @@ their own moment correctly.
 
 ### Non-interactive runs
 
-- `--no-snapshot` on `enable_scenario` and `disable_scenario` skips both prompts and behaves as today.
+- `--no-snapshot` on `enable_scenario`, `disable_scenario`, `install_extension` and `remove_extension`
+  skips the snapshot and revert prompts and behaves as without a snapshot (`remove_extension` still asks
+  its removal confirmation unless `--yes` is given).
 - When stdin is not a TTY, behave as `--no-snapshot` (the live harness and `goad.py -t` keep working
   unchanged).
 
