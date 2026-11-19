@@ -7,5 +7,13 @@
     "compatibility": [
         "*"
     ],
-    "impact": "add a linux machine and add a logbeat agent on all windows machine"
+    "impact": "add a linux machine and add a logbeat agent on all windows machine",
+    "credentials": [
+        {
+            "scope": "elk (http://{{ip_range}}.50:5601)",
+            "account": "elastic",
+            "password": "Aa1234567890!",
+            "kind": "kibana"
+        }
+    ]
 }

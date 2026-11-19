@@ -1,4 +1,7 @@
+import json
 import os
+
+import yaml
 
 from goad.credentials import collect_credentials
 
@@ -47,3 +50,51 @@ def test_scenario_without_account_or_unknown_is_ignored():
 
 def test_missing_sections_do_not_crash():
     assert collect_credentials({}, [], None) == []
+
+
+EXTENSIONS = os.path.join(ROOT, "extensions")
+
+
+def test_enabled_extension_data_accounts_listed():
+    rows = collect_credentials(LAB, [], None, extensions_path=EXTENSIONS, enabled_extensions=["lx01", "exchange"])
+    assert not any(r[0] == "lx01 (dragonstone)" for r in rows)  # linux: no Administrator account
+    assert ("srv01 (the-eyrie)", ".\\Administrator", "Aa1234567890!", "local admin") in rows
+    assert ("sevenkingdoms.local", "SEVENKINGDOMS\\lysa.arryn", "Aa1234567890!", "user") in rows
+    # the lab users stay listed next to the extension ones
+    assert ("sevenkingdoms.local", "SEVENKINGDOMS\\arya.stark", "Needle", "user") in rows
+
+
+def test_extension_data_does_not_change_the_given_lab():
+    collect_credentials(LAB, [], None, extensions_path=EXTENSIONS, enabled_extensions=["lx01"])
+    assert "lx01" not in LAB["hosts"]
+
+
+def test_enabled_extension_service_accounts_listed():
+    rows = collect_credentials(LAB, [], None, extensions_path=EXTENSIONS,
+                               enabled_extensions=["elk", "wazuh"], ip_range="192.168.56")
+    assert ("elk (http://192.168.56.50:5601)", "elastic", "Aa1234567890!", "kibana") in rows
+    assert ("wazuh (https://192.168.56.51)", "admin", "Aa1234567890!", "wazuh dashboard") in rows
+
+
+def test_disabled_or_unknown_extensions_add_nothing():
+    base = collect_credentials(LAB, [], None)
+    assert collect_credentials(LAB, [], None, extensions_path=EXTENSIONS, enabled_extensions=["nope"]) == base
+    assert collect_credentials(LAB, [], None, extensions_path=EXTENSIONS, enabled_extensions=[]) == base
+
+
+def _role_default(path, key):
+    with open(os.path.join(EXTENSIONS, path)) as f:
+        return yaml.safe_load(f)[key]
+
+
+def _declared_password(extension, account):
+    with open(os.path.join(EXTENSIONS, extension, "extension.json")) as f:
+        creds = json.load(f)["credentials"]
+    return next(c["password"] for c in creds if c["account"] == account)
+
+
+def test_extension_declared_passwords_match_the_role_defaults():
+    # show_credentials reads extension.json, the playbooks read the role defaults: keep them equal
+    assert _declared_password("elk", "elastic") == _role_default("elk/ansible/roles/elk/defaults/main.yml", "elk_elastic_password")
+    assert _declared_password("elk", "elastic") == _role_default("elk/ansible/roles/logs_windows/defaults/main.yml", "elk_elastic_password")
+    assert _declared_password("wazuh", "admin") == _role_default("wazuh/ansible/roles/wazuh_manager/defaults/main.yml", "wazuh_admin_password")

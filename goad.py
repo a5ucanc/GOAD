@@ -459,7 +459,10 @@ class Goad(cmd.Cmd):
             Log.error(f'cannot read {config_file}: {e}')
             return
         enabled = [(s.name, s.target) for s in instance.scenarios] if instance is not None else []
-        rows = collect_credentials(lab, enabled, GoadPath.get_scenarios_path())
+        rows = collect_credentials(lab, enabled, GoadPath.get_scenarios_path(),
+                                   extensions_path=GoadPath.get_extensions_path(),
+                                   enabled_extensions=instance.extensions if instance is not None else [],
+                                   ip_range=instance.ip_range if instance is not None else None)
 
         table = Table(title=f'{lab_name} credentials')
         table.add_column('Domain / host', overflow='fold')
