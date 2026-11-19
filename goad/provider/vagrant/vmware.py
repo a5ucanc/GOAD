@@ -1,4 +1,5 @@
 import os
+import time
 from goad.log import Log
 from goad.provider.vagrant.vagrant import VagrantProvider
 from goad.utils import *
@@ -18,6 +19,53 @@ class VmwareProvider(VagrantProvider):
             return None
         with open(id_file) as f:
             return f.read().strip()
+
+    @staticmethod
+    def _norm(vmx):
+        return vmx.strip().replace('\\', '/').lower()
+
+    def running_vms(self):
+        ok, output = self.command.run_vmrun_output(['-T', 'ws', 'list'], self.path)
+        if not ok:
+            return None
+        running = {self._norm(line) for line in output.splitlines()[1:] if line.strip()}
+        return [vm for vm in self.vm_names() if self._vmx(vm) and self._norm(self._vmx(vm)) in running]
+
+    def boot_vms(self):
+        # vmrun start does not log in to the guest, unlike vagrant up
+        running = self.running_vms()
+        if running is None:
+            Log.error('vmrun list failed')
+            return False
+        failed = []
+        for vm in self.vm_names():
+            if vm in running:
+                continue
+            vmx = self._vmx(vm)
+            if vmx is None or not self.command.run_vmrun(['-T', 'ws', 'start', vmx, 'nogui'], self.path):
+                failed.append(vm)
+        if failed:
+            Log.error(f'vmrun start failed on {", ".join(failed)}')
+        return not failed
+
+    def wait_halted(self, vms, timeout=600, interval=10):
+        # the guests shut themselves down: wait until VMware reports them off, then force the rest
+        deadline = time.monotonic() + timeout
+        left = list(vms)
+        while True:
+            running = self.running_vms()
+            if running is not None:
+                left = [vm for vm in vms if vm in running]
+            if not left or time.monotonic() >= deadline:
+                break
+            time.sleep(interval)
+        if not left:
+            return True
+        Log.warning(f'{", ".join(left)} still running after {timeout}s: forcing them off')
+        failed = [vm for vm in left if not self.command.run_vmrun(['-T', 'ws', 'stop', self._vmx(vm), 'hard'], self.path)]
+        if failed:
+            Log.error(f'vmrun stop failed on {", ".join(failed)}')
+        return not failed
 
     def snapshot_restore(self, name, vms):
         # `vagrant snapshot restore` waits for WinRM as the vagrant user (even with --no-start it

@@ -159,6 +159,15 @@ class Command:
             return False
         return result.returncode == 0
 
+    def run_vmrun_output(self, args, path):
+        command = [self.vmrun_bin] + args
+        try:
+            result = subprocess.run(command, cwd=path, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        except OSError as e:
+            Log.error(f"An error occurred while running the command: {e}")
+            return False, ''
+        return result.returncode == 0, result.stdout
+
     def run_vagrant_output(self, args, path):
         command = [self.vagrant_bin] + args
         Log.cmd(' '.join(command))

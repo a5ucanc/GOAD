@@ -150,6 +150,26 @@ class Ansible(Provisioner):
             return False
         return provision_result
 
+    def run_shutdown(self, hosts, current_instance_extensions_name):
+        """Shut the hosts down from inside (administrator inventory first, as for scenarios)."""
+        inventory = self._get_disable_vagrant_lab_inventory()
+        inventory += self._get_lab_inventory(self.lab_name, self.provider_name)
+        for extension_name in current_instance_extensions_name:
+            extension_inventory = self.instance_path + os.path.sep + extension_name + '_inventory'
+            if os.path.isfile(extension_inventory):
+                inventory.append(extension_inventory)
+        shutdown_inventory = self.instance_path + os.path.sep + 'shutdown_inventory'
+        with open(shutdown_inventory, 'w') as f:
+            f.write('[shutdown_target]\n' + '\n'.join(hosts) + '\n')
+        inventory.append(shutdown_inventory)
+        global_inventory = self._get_global_inventory()
+        if global_inventory is not None:
+            inventory.append(global_inventory)
+        if self.use_jumpbox:
+            self.sync_source_jumpbox()
+        # one try: a second run would find hosts already going down
+        return self.run_playbook('shutdown.yml', inventory, tries=0)
+
     def run_from(self, task):
         inventory = self.get_inventory(self.lab_name, self.provider_name)
         playbooks = self.get_playbook_list(self.lab_name)

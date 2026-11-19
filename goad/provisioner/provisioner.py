@@ -32,5 +32,8 @@ class Provisioner(ABC):
     def run_from(self, arg):
         pass
 
+    def run_shutdown(self, hosts, current_instance_extensions):
+        return False
+
     def update_jumpbox_ip(self, ip):
         pass

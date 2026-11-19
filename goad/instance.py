@@ -87,6 +87,9 @@ class LabInstance:
             return False
 
         self.provisioner.set_instance_path(instance_path)
+        if self.is_vagrant() and hasattr(self.provider, 'set_vagrant_gate'):
+            from goad.vagrant_gate import VagrantGate
+            self.provider.set_vagrant_gate(VagrantGate(self, self.provider, self.provisioner))
         return True
 
     def is_terraform(self):
