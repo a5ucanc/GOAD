@@ -65,12 +65,44 @@
   shell: sudo bash /opt/wazuh/wazuh_socfortress_rules.sh
   when: not ossec_folder.stat.exists
 
-- name: Extract username and password
-  shell: "grep -E 'User:|Password:' /opt/wazuh/wazuh-install-output.txt | awk '{print $NF}'"
-  register: access_info
+- name: Check if the indexer admin user already has the configured password
+  ansible.builtin.uri:
+    url: https://127.0.0.1:9200
+    user: admin
+    password: "{{ wazuh_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: [200, 401]
+  register: wazuh_admin_check
+  no_log: true
+
+# Same steps as wazuh-passwords-tool.sh for the admin user, without its symbol check.
+- name: Set the indexer admin user password
+  ansible.builtin.shell: |
+    set -e
+    tools=/usr/share/wazuh-indexer/plugins/opensearch-security/tools
+    certs=/etc/wazuh-indexer/certs
+    export JAVA_HOME=/usr/share/wazuh-indexer/jdk OPENSEARCH_CONF_DIR=/etc/wazuh-indexer
+    hash=$(bash $tools/hash.sh -p "$WAZUH_ADMIN_PASSWORD" 2>/dev/null | tail -1)
+    mkdir -p /etc/wazuh-indexer/backup
+    bash $tools/securityadmin.sh -backup /etc/wazuh-indexer/backup -icl -p 9200 -nhnv \
+      -cacert $certs/root-ca.pem -cert $certs/admin.pem -key $certs/admin-key.pem -h 127.0.0.1
+    sed -i "/^admin:/{n;s|hash: .*|hash: \"$hash\"|}" /etc/wazuh-indexer/backup/internal_users.yml
+    bash $tools/securityadmin.sh -f /etc/wazuh-indexer/backup/internal_users.yml -t internalusers -icl -p 9200 -nhnv \
+      -cacert $certs/root-ca.pem -cert $certs/admin.pem -key $certs/admin-key.pem -h 127.0.0.1
+    # filebeat and the manager indexer connector log in as admin
+    echo "$WAZUH_ADMIN_PASSWORD" | filebeat keystore add password --force --stdin
+    /var/ossec/bin/wazuh-keystore -f indexer -k password -v "$WAZUH_ADMIN_PASSWORD"
+    systemctl restart filebeat wazuh-manager
+  args:
+    executable: /bin/bash
+  environment:
+    WAZUH_ADMIN_PASSWORD: "{{ wazuh_admin_password }}"
+  when: wazuh_admin_check.status != 200
+  no_log: true
 
 - name: Display username and password
   debug:
     msg:
-      - "Username: {{ access_info.stdout_lines[0] }}"
-      - "Password: {{ access_info.stdout_lines[1] }}"
+      - "Username: admin"
+      - "Password: {{ wazuh_admin_password }}"

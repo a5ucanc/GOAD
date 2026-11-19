@@ -5,6 +5,6 @@
   windows_sku        = "win10-22h2-avd-m365"
   windows_version    = "latest"
   private_ip_address = "{{ip_range}}.31"
-  password           = "EP+xh7Rk6j90"
+  password           = "Aa1234567890!"
   size               = "Standard_B2s"
 }

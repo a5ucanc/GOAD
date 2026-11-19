@@ -109,6 +109,16 @@
   when: es_file_users.stdout is not search('^' ~ elk_bootstrap_user ~ '\\s', multiline=True)
   no_log: true
 
+# The file realm is read from disk, no restart needed. Keeps an existing install in
+# sync when elk_bootstrap_password changes.
+- name: set the bootstrap file-realm superuser password
+  command: >-
+    /usr/share/elasticsearch/bin/elasticsearch-users passwd {{ elk_bootstrap_user }}
+    -p {{ elk_bootstrap_password }}
+  when: es_file_users.stdout is search('^' ~ elk_bootstrap_user ~ '\\s', multiline=True)
+  changed_when: false
+  no_log: true
+
 - name: enable logstash
   service:
     name: logstash

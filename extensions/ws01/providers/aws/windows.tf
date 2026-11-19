@@ -6,5 +6,5 @@
   ami                = "ami-03440f0d88fea1060"
   instance_type      = "t2.medium"
   private_ip_address = "{{ip_range}}.31"
-  password           = "EP+xh7Rk6j90"
+  password           = "Aa1234567890!"
 }

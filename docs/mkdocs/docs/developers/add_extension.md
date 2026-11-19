@@ -267,7 +267,7 @@ or for a windows machine associated to a domain:
 ```ini
 [default]
 {% if provider_name == 'aws' or provider_name == 'azure' %}
-ws01 ansible_host={{ip_range}}.31 dns_domain=dc01 dict_key=ws01 ansible_user=ansible ansible_password=EP+xh7Rk6j90
+ws01 ansible_host={{ip_range}}.31 dns_domain=dc01 dict_key=ws01 ansible_user=ansible ansible_password=Aa1234567890!
 {% else %}
 ws01 ansible_host={{ip_range}}.31 dns_domain=dc01 dict_key=ws01
 {% endif %}

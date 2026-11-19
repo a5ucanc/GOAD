@@ -4,7 +4,7 @@
           "ws01" : {
               "hostname" : "casterlyrock",
               "type" : "workstation",
-              "local_admin_password": "EP+xh7Rk6j90",
+              "local_admin_password": "Aa1234567890!",
               "domain" : "sevenkingdoms.local",
               "path" : "DC=sevenkingdoms,DC=local",
               "local_groups" : {

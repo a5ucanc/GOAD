@@ -11,4 +11,4 @@ winlogbeat_service:
   version: "9.5.6"
   download: true
 # Password of the elasticsearch elastic user (must match the elk role).
-elk_elastic_password: changeme
+elk_elastic_password: "Aa1234567890!"

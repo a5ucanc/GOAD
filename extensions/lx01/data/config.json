@@ -5,7 +5,7 @@
               "hostname" : "dragonstone", 
               "type" : "server",
               "os": "linux",
-              "local_admin_password": "HGLXP@ssw_rd$",
+              "local_admin_password": "Aa1234567890!",
               "domain" : "sevenkingdoms.local", 
               "path" : "DC=sevenkingdoms,DC=local",
               "local_groups" : {

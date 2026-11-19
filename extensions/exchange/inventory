@@ -1,6 +1,6 @@
 [default]
 {% if provider_name == 'aws' or provider_name == 'azure' %}
-srv01 ansible_host={{ip_range}}.21 dns_domain=dc01 dict_key=srv01 ansible_user=ansible ansible_password=FP.xh5Fk9Z1c
+srv01 ansible_host={{ip_range}}.21 dns_domain=dc01 dict_key=srv01 ansible_user=ansible ansible_password=Aa1234567890!
 {% else %}
 srv01 ansible_host={{ip_range}}.21 dns_domain=dc01 dict_key=srv01
 {% endif %}

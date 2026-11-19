@@ -4,7 +4,7 @@
             "srv01": {
                 "hostname": "the-eyrie",
                 "type": "server",
-                "local_admin_password": "FP.xh5Fk9Z1c",
+                "local_admin_password": "Aa1234567890!",
                 "domain": "sevenkingdoms.local",
                 "path": "DC=sevenkingdoms,DC=local",
                 "local_groups": {
@@ -34,7 +34,7 @@
                     "lysa.arryn": {
                         "firstname": "Lysa",
                         "surname": "Arryn",
-                        "password": "rob1nIsMyHeart",
+                        "password": "Aa1234567890!",
                         "city": "The Eyries",
                         "description": "Lysa Arryn",
                         "groups": [
@@ -45,7 +45,7 @@
                     "robin.arryn": {
                         "firstname": "Robin",
                         "surname": "Arryn",
-                        "password": "mommy",
+                        "password": "Aa1234567890!",
                         "city": "The Eyries",
                         "description": "Robin Arryn",
                         "groups": [

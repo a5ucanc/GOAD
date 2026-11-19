@@ -60,7 +60,7 @@
                     ]
                 },
                 "mssql": {
-                    "sa_password": "Sup1_sa_P@ssw0rd!",
+                    "sa_password": "Aa1234567890!",
                     "svcaccount": "sql_svc",
                     "sysadmins": [
                         "NORTH\\Administrator"

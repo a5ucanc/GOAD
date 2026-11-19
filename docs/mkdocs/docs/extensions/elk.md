@@ -6,7 +6,7 @@
 - Add a machine  : elk  (ip_range.50)
 
 - Kibana (Elastic 9.x) is configured on http://{{ip_range}}.50:5601 to follow the lab events
-- Kibana login : `elastic` / `changeme` (change it with `elk_elastic_password` in the elk role defaults)
+- Kibana login : `elastic` / `Aa1234567890!` (change it with `elk_elastic_password` in the elk role defaults)
 - Infos : log encyclopedia : https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/
 - Install winlogbeat and sysmon on domain computer machines
 
