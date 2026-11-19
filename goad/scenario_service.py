@@ -87,6 +87,38 @@ class ScenarioService:
                 return False
         return True
 
+    def affected_by_extension_removal(self, extension):
+        """Enabled scenarios that lose a capability once extension is removed, plus their dependents.
+
+        Ordered for uninstall: dependents first.
+        """
+        remaining = [e for e in self.instance.extensions if e != extension]
+        capabilities = self.lab.effective_capabilities(remaining) or {}
+        resolver = self.lab.get_scenario_resolver(self.instance.extensions)
+        affected = []
+        for entry in self.instance.scenarios:
+            scenario = resolver.scenarios.get(entry.name)
+            if scenario is None:
+                continue
+            missing = any(cap not in capabilities for cap in scenario.requires)
+            if scenario.target and entry.target not in (capabilities.get(scenario.target) or []):
+                missing = True
+            if missing:
+                affected.append(entry)
+        for entry in list(affected):
+            for dependent in resolver.dependents(entry.name, self.instance.scenarios, entry.target):
+                if dependent not in affected:
+                    affected.append(dependent)
+        rank = {name: i for i, name in enumerate(resolver.install_order(list(dict.fromkeys(e.name for e in affected))))}
+        return sorted(affected, key=lambda e: -rank[e.name])
+
+    def disable_entries(self, entries):
+        """Uninstall entries in the given order, without revert prompts; stop at the first failure."""
+        for entry in entries:
+            if not self._disable_entry(entry):
+                return False
+        return True
+
     def _offer_revert(self, entry):
         """Revert result when the user chose the revert, None to go on with the uninstall."""
         if not self._prompts():

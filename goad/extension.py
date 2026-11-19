@@ -52,6 +52,9 @@ class Extension:
         else:
             return 'uninstall.yml'
 
+    def has_uninstall(self):
+        return os.path.isfile(os.path.join(self.get_ansible_path(), self.get_playbook(install=False)))
+
     def get_ansible_path(self):
         return GoadPath.get_extension_ansible_path(self.name)
 

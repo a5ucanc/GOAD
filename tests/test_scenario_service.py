@@ -333,3 +333,95 @@ def test_service_passes_instance_extensions(svc):
     svc.enable("esc8", None)
     assert svc.lab.resolver_calls
     assert all(call == ["mssql"] for call in svc.lab.resolver_calls)
+
+
+class ExtLab(FakeLab):
+    """Lab whose mssql capabilities come from the mssql extension unless base_caps already grants them."""
+
+    def __init__(self, scenarios, base_caps, ext_caps):
+        self.scenarios = scenarios
+        self.base_caps = base_caps
+        self.ext_caps = ext_caps
+        self.resolver_calls = []
+
+    def effective_capabilities(self, extensions=()):
+        caps = {k: list(v) for k, v in self.base_caps.items()}
+        if "mssql" in extensions:
+            for k, hosts in self.ext_caps.items():
+                caps.setdefault(k, [])
+                caps[k] += [h for h in hosts if h not in caps[k]]
+        return caps
+
+    def get_scenario_resolver(self, extensions=()):
+        self.resolver_calls.append(list(extensions))
+        return ScenarioResolver(self.scenarios, "GOAD-Base", self.effective_capabilities(extensions), "dc01",
+                                ["dc01", "dc02"])
+
+    def get_scenario(self, name):
+        return self.scenarios.get(name)
+
+
+@pytest.fixture
+def ext_svc(scenario_dir, tmp_path, prov):
+    scenario_dir.make("esc8", type="setting", requires=["adcs"], target="adcs", touches=["adcs.web_enrollment"])
+    scenario_dir.make("mssql-sysadmin", requires=["mssql"], target="mssql")
+    scenario_dir.make("mssql-linked", requires=["mssql_link"], target="mssql_link")
+    scenario_dir.make("relay", depends=["mssql-sysadmin"])
+    inst = FakeInstance()
+    inst.extensions = ["mssql"]
+
+    def build(base_caps=None):
+        lab = ExtLab(Scenarios(str(tmp_path)), base_caps or {"adcs": ["dc01"]},
+                     {"mssql": ["srv02", "srv03"], "mssql_link": ["srv02"]})
+        return ScenarioService(inst, lab, prov)
+    return build
+
+
+def _keys(entries):
+    return [e.key for e in entries]
+
+
+def test_affected_by_removal_target(ext_svc):
+    svc = ext_svc()
+    svc.instance.scenarios = [EnabledScenario("mssql-sysadmin", "srv02", "t")]
+    assert _keys(svc.affected_by_extension_removal("mssql")) == ["mssql-sysadmin@srv02"]
+
+
+def test_affected_by_removal_includes_dependents_first(ext_svc):
+    svc = ext_svc()
+    svc.instance.scenarios = [EnabledScenario("mssql-sysadmin", "srv02", "t"),
+                              EnabledScenario("relay", "dc01", "t"),
+                              EnabledScenario("mssql-linked", "srv02", "t")]
+    keys = _keys(svc.affected_by_extension_removal("mssql"))
+    assert sorted(keys) == ["mssql-linked@srv02", "mssql-sysadmin@srv02", "relay@dc01"]
+    assert keys.index("relay@dc01") < keys.index("mssql-sysadmin@srv02")
+
+
+def test_affected_ignores_unrelated(ext_svc):
+    svc = ext_svc()
+    svc.instance.scenarios = [EnabledScenario("esc8", "dc01", "t")]
+    assert svc.affected_by_extension_removal("mssql") == []
+
+
+def test_affected_kept_when_lab_grants(ext_svc):
+    svc = ext_svc({"adcs": ["dc01"], "mssql": ["srv02"]})
+    svc.instance.scenarios = [EnabledScenario("mssql-sysadmin", "srv02", "t"),
+                              EnabledScenario("mssql-sysadmin", "srv03", "t")]
+    assert _keys(svc.affected_by_extension_removal("mssql")) == ["mssql-sysadmin@srv03"]
+
+
+def test_disable_entries_stops_on_failure(ext_svc, prov):
+    svc = ext_svc()
+    svc.instance.scenarios = [EnabledScenario("relay", "dc01", "t"), EnabledScenario("mssql-sysadmin", "srv02", "t")]
+    prov.fail_on = {("relay", False)}
+    assert not svc.disable_entries(list(svc.instance.scenarios))
+    assert prov.calls == [("relay", "dc01", False)]
+    assert [(e.key, e.status) for e in svc.instance.scenarios] == [("relay@dc01", "dirty"),
+                                                                   ("mssql-sysadmin@srv02", "enabled")]
+
+
+def test_disable_entries_all(ext_svc, prov):
+    svc = ext_svc()
+    svc.instance.scenarios = [EnabledScenario("relay", "dc01", "t"), EnabledScenario("mssql-sysadmin", "srv02", "t")]
+    assert svc.disable_entries(list(svc.instance.scenarios))
+    assert svc.instance.scenarios == []

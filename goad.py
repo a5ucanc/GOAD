@@ -371,10 +371,12 @@ class Goad(cmd.Cmd):
 
     def _extension_service(self, ask=None):
         from goad.extension_service import ExtensionService
+        scenarios = self._scenario_service(ask) if self._is_base_lab() else None
         return ExtensionService(self.lab_manager.get_current_instance(),
                                 self.lab_manager.get_current_instance_provider(),
-                                self.do_provision_extension,
-                                snapshots=self._lab_snapshots(), ask=ask)
+                                self._provision_extension,
+                                snapshots=self._lab_snapshots(), ask=ask,
+                                scenarios=scenarios, lab=self.lab_manager.get_current_instance_lab())
 
     def do_install_extension(self, arg):
         parts, flags = self._split_flags(arg, {'--no-snapshot'})
@@ -412,24 +414,26 @@ class Goad(cmd.Cmd):
             Log.error('missing extension argument')
             Log.info(f'provision_extension <extension>')
         else:
-            extension_name = arg
-            start = time.time()
-            current_instance_extensions_name = self.lab_manager.get_current_instance().extensions
-            if extension_name in current_instance_extensions_name:
-                self.do_sync_source_jumpbox()
-                extension = self.lab_manager.get_current_instance_lab().get_extension(extension_name)
-                instance = self.lab_manager.get_current_instance()
-                use_disable_vagrant_inventory = self._is_base_lab() and instance.vagrant_disabled
-                provision_result = self.lab_manager.get_current_instance_provisioner().run_extension(
-                    extension, current_instance_extensions_name,
-                    use_disable_vagrant_inventory=use_disable_vagrant_inventory)
-                if provision_result:
-                    time_provision = time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
-                    Log.info(f'Provision extension done in {time_provision}')
-                return provision_result
-            else:
-                Log.error(f'extension {extension_name} not enabled in instance abort')
-                return False
+            return self._provision_extension(arg)
+
+    def _provision_extension(self, extension_name, install=True):
+        start = time.time()
+        current_instance_extensions_name = self.lab_manager.get_current_instance().extensions
+        if extension_name in current_instance_extensions_name:
+            self.do_sync_source_jumpbox()
+            extension = self.lab_manager.get_current_instance_lab().get_extension(extension_name)
+            instance = self.lab_manager.get_current_instance()
+            use_disable_vagrant_inventory = self._is_base_lab() and instance.vagrant_disabled
+            provision_result = self.lab_manager.get_current_instance_provisioner().run_extension(
+                extension, current_instance_extensions_name, install=install,
+                use_disable_vagrant_inventory=use_disable_vagrant_inventory)
+            if provision_result:
+                time_provision = time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
+                Log.info(f'Provision extension done in {time_provision}')
+            return provision_result
+        else:
+            Log.error(f'extension {extension_name} not enabled in instance abort')
+            return False
 
     def _scenario_service(self, ask=None):
         if self.lab_manager.get_current_instance() is None:
