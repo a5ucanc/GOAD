@@ -109,7 +109,9 @@ taken and never reused, so names stay unique after reverts.
    added after the snapshot are listed as `lost` with their VMs (`ws01: GOAD-Base-WS01 destroyed`).
 3. Ask: `Revert the lab to <name> instead of disabling? (y/N)`.
 4. On `y`: destroy the VMs of extensions not in the record (`vagrant destroy -f <vm>`, while the
-   Vagrantfile still defines them), then `vagrant snapshot restore --no-provision <name>` on the other VMs.
+   Vagrantfile still defines them), then restore the other VMs (*implementation:* `vmrun revertToSnapshot`
+   + `vmrun start`, because `vagrant snapshot restore` waits for the disabled vagrant account; guest
+   clocks are then reset by `ansible/sync_time.yml`).
    On success: set the instance
    `scenarios`, `vagrant_disabled` and `extensions` to the record's values (regenerating the instance
    folder, so the Vagrantfile and inventories match); delete the revert-point

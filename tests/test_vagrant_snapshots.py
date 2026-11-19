@@ -152,12 +152,14 @@ def test_vmware_restore_uses_vmrun_without_communicator_wait(provider, tmp_path)
     assert not any(c[:2] == ["snapshot", "restore"] for c in provider.command.calls)
 
 
-def test_vmware_restore_stops_at_first_failure(provider, tmp_path):
+def test_vmware_restore_attempts_every_vm_after_a_failure(provider, tmp_path):
+    # a VM left behind while others are reverted is a mixed lab: try them all, report failure
     provider.path = str(tmp_path)
     provider.command = VmrunCommand(output=NESTED, vmrun_results=[False])
     _machine(tmp_path, "GOAD-Base-DC01", "C:/x/dc01.vmx")
+    _machine(tmp_path, "GOAD-Base-DC02", "C:/x/dc02.vmx")
     assert not provider.snapshot_restore("scn-03-rbcd@srv02", ["GOAD-Base-DC01", "GOAD-Base-DC02"])
-    assert len(provider.command.vmrun_calls) == 1
+    assert [c[2] for c in provider.command.vmrun_calls] == ["revertToSnapshot", "revertToSnapshot", "start"]
 
 
 def test_vmware_restore_missing_machine_id_fails(provider, tmp_path):

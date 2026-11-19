@@ -219,3 +219,33 @@ def test_no_clock_sync_when_restore_fails(inst, prov):
     prov.fail_restore = True
     assert not snaps.revert(record)
     assert calls == []
+
+
+def test_destroyed_extension_is_dropped_even_when_restore_fails(inst, snaps, prov):
+    record = enable(inst, snaps, "maq", "dc02")
+    inst.extensions.append("ws01")
+    prov.add_extension_vm("ws01")
+    prov.fail_restore = True
+    assert not snaps.revert(record)
+    assert "ws01" not in inst.extensions
+    assert [s.key for s in inst.scenarios] == ["maq@dc02"]
+
+
+def test_no_revert_to_a_snapshot_listing_a_removed_extension(inst, snaps, prov):
+    inst.extensions.append("ws01")
+    prov.add_extension_vm("ws01")
+    record = enable(inst, snaps, "maq", "dc02")
+    prov.destroy_vms(["L-WS01"])
+    inst.extensions.remove("ws01")
+    assert snaps.revertable(record) == f"extension ws01 in {record.name} is no longer installed"
+
+
+def test_clock_sync_runs_after_the_state_is_applied(inst, prov):
+    seen = []
+    snaps = LabSnapshots(inst, prov, 'GOAD-Base', '192.168.56',
+                         after_restore=lambda: seen.append(list(inst.extensions)) or True)
+    record = enable(inst, snaps, "maq", "dc02")
+    inst.extensions.append("ws01")
+    prov.add_extension_vm("ws01")
+    assert snaps.revert(record)
+    assert seen == [[]]

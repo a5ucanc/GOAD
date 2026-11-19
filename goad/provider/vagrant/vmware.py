@@ -22,18 +22,22 @@ class VmwareProvider(VagrantProvider):
     def snapshot_restore(self, name, vms):
         # `vagrant snapshot restore` waits for WinRM as the vagrant user (even with --no-start it
         # halts the VM through the guest), which hangs once disable_vagrant ran: use vmrun.
+        # every VM is attempted: stopping at the first failure would leave a mixed lab silently
         paths = self._snapshot_paths()
+        failed = []
         for vm in vms:
             vmx = self._vmx(vm)
+            snapshot = paths.get(vm, {}).get(name, name)
             if vmx is None:
                 Log.error(f'no VMware machine id for {vm}')
-                return False
-            snapshot = paths.get(vm, {}).get(name, name)
-            if not self.command.run_vmrun(['-T', 'ws', 'revertToSnapshot', vmx, snapshot], self.path):
-                return False
-            if not self.command.run_vmrun(['-T', 'ws', 'start', vmx, 'nogui'], self.path):
-                return False
-        return True
+                failed.append(vm)
+            elif not (self.command.run_vmrun(['-T', 'ws', 'revertToSnapshot', vmx, snapshot], self.path)
+                      and self.command.run_vmrun(['-T', 'ws', 'start', vmx, 'nogui'], self.path)):
+                failed.append(vm)
+        if failed:
+            reverted = [vm for vm in vms if vm not in failed]
+            Log.error(f'restore of {name} failed on {", ".join(failed)}; reverted: {", ".join(reverted) or "none"}')
+        return not failed
 
     def check(self):
         checks = [

@@ -103,6 +103,14 @@ running the uninstall. A revert gives a lab that is clean after an attack, inclu
   - Extensions installed after the snapshot are listed with their VMs: the revert destroys those VMs.
   - A change of the vagrant account (`vagrant account: enabled again`) is printed when the snapshot was taken
     before `disable_vagrant`.
+- The revert restores every VM with `vmrun revertToSnapshot` and starts it again with `vmrun start`
+  (`vagrant snapshot restore` would wait for the vagrant account, which is disabled on a provisioned `-Base`
+  lab). Restored VMs resume with the clock of the snapshot, so goad then runs `ansible/sync_time.yml`, which
+  sets every Windows clock from the controller's UTC time. If that fails goad warns: run the playbook by
+  hand before attacking, Kerberos needs synced clocks.
+- If the restore fails on some VMs, goad names the VMs it reverted and the ones it did not, and prints
+  `lab partially reverted`. Run the same command again: the revert is offered again and finishes the job.
+- A revert is not offered when the snapshot lists an extension you removed since (its VMs no longer exist).
 - After a revert, `instance.json` holds the scenarios, extensions and vagrant state recorded with the
   snapshot. The revert-point snapshot and every later snapshot are deleted: they belong to a timeline that no
   longer exists.

@@ -87,6 +87,10 @@ class LabSnapshots:
         return [vm for vm in self.provider.vm_names() if vm not in later]
 
     def revertable(self, record):
+        # an extension removed without a revert would come back in instance.json without its VMs
+        for extension in record.extensions:
+            if extension not in self.instance.extensions:
+                return f'extension {extension} in {record.name} is no longer installed'
         listing = self.provider.snapshot_list()
         for vm in self._covered_vms(record):
             if record.name not in listing.get(vm, []):
@@ -111,21 +115,26 @@ class LabSnapshots:
             vagrant_change=vagrant_change)
 
     def revert(self, record):
-        later_vms = [vm for vms in self._later_extensions(record).values() for vm in vms]
+        later = self._later_extensions(record)
         existing = self.provider.vm_names()
-        to_destroy = [vm for vm in later_vms if vm in existing]
+        to_destroy = [vm for vms in later.values() for vm in vms if vm in existing]
         covered = self._covered_vms(record)
         if to_destroy and not self.provider.destroy_vms(to_destroy):
             Log.error('destroying the VMs of later extensions failed, revert stopped')
             return False
+        # the destroyed extensions are gone whatever the restore does
+        for extension in later:
+            self.instance.disable_extension(extension)
         if not self.provider.snapshot_restore(record.name, covered):
-            Log.error(f'restore of {record.name} failed, instance unchanged')
+            Log.error(f'lab partially reverted to {record.name}: run the same command again to finish '
+                      f'(instance.json still lists the scenarios of the current state)')
             return False
-        if self.after_restore is not None and not self.after_restore():
-            Log.warning('clock sync after the revert failed: run sync_time.yml before attacking (Kerberos needs synced clocks)')
         index = self.instance.snapshots.index(record)
         dropped = [r.name for r in self.instance.snapshots[index:]]
         self.instance.apply_state(record)
+        # after apply_state: the inventories no longer list the destroyed extension hosts
+        if self.after_restore is not None and not self.after_restore():
+            Log.warning('clock sync after the revert failed: run sync_time.yml before attacking (Kerberos needs synced clocks)')
         listing = self.provider.snapshot_list()
         for name in dropped:
             vms = self._vms_listing(name, listing)

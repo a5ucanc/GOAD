@@ -24,3 +24,11 @@ def test_run_sync_time_uses_disable_vagrant_and_lab_inventories(monkeypatch):
     monkeypatch.setattr(prov, "run_playbook", lambda playbook, inventories, **kw: seen.update(p=playbook, i=inventories) or True)
     assert prov.run_sync_time()
     assert seen == {"p": "sync_time.yml", "i": ["dv", "lab", "global"]}
+
+
+def test_snapshot_docs_describe_restore_and_clock_sync():
+    text = (ROOT / "docs" / "mkdocs" / "docs" / "scenarios.md").read_text()
+    section = text[text.index("### Snapshots"):text.index("### Re-provisioning")]
+    assert "vmrun" in section
+    assert "sync_time.yml" in section
+    assert "partially reverted" in section
