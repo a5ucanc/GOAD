@@ -46,21 +46,40 @@ def test_snapshot_save_args(provider):
     assert provider.command.calls == [["snapshot", "save", "scn-01-x@h"]]
 
 
+LIST = ["snapshot", "list", "--machine-readable"]
+
+
 def test_snapshot_restore_per_vm_no_provision(provider):
     assert provider.snapshot_restore("s", ["A", "B"])
-    assert provider.command.calls == [["snapshot", "restore", "--no-provision", "A", "s"],
+    assert provider.command.calls == [LIST, ["snapshot", "restore", "--no-provision", "A", "s"],
                                       ["snapshot", "restore", "--no-provision", "B", "s"]]
+
+
+NESTED = ("1,GOAD-Base-DC01,ui,detail,scn-01-maq@dc02\n"
+          "1,GOAD-Base-DC01,ui,detail,scn-01-maq@dc02/scn-03-rbcd@srv02\n"
+          "1,GOAD-Base-DC02,ui,detail,scn-03-rbcd@srv02\n")
+
+
+def test_nested_snapshots_are_restored_and_deleted_by_tree_path(provider):
+    # vagrant-vmware-desktop only finds a nested snapshot by its full tree path
+    provider.command.output = NESTED
+    assert provider.snapshot_restore("scn-03-rbcd@srv02", ["GOAD-Base-DC01", "GOAD-Base-DC02"])
+    assert provider.snapshot_delete("scn-03-rbcd@srv02", ["GOAD-Base-DC01"])
+    assert [c for c in provider.command.calls if c != LIST] == [
+        ["snapshot", "restore", "--no-provision", "GOAD-Base-DC01", "scn-01-maq@dc02/scn-03-rbcd@srv02"],
+        ["snapshot", "restore", "--no-provision", "GOAD-Base-DC02", "scn-03-rbcd@srv02"],
+        ["snapshot", "delete", "GOAD-Base-DC01", "scn-01-maq@dc02/scn-03-rbcd@srv02"]]
 
 
 def test_snapshot_restore_stops_at_first_failure(provider):
     provider.command.results = [False]
     assert not provider.snapshot_restore("s", ["A", "B"])
-    assert len(provider.command.calls) == 1
+    assert len(provider.command.calls) == 2
 
 
 def test_snapshot_delete_per_vm(provider):
     assert provider.snapshot_delete("s", ["A", "B"])
-    assert provider.command.calls == [["snapshot", "delete", "A", "s"], ["snapshot", "delete", "B", "s"]]
+    assert provider.command.calls == [LIST, ["snapshot", "delete", "A", "s"], ["snapshot", "delete", "B", "s"]]
 
 
 def test_destroy_vms_force(provider):

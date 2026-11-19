@@ -65,27 +65,35 @@ class VagrantProvider(Provider):
     def snapshot_save(self, name):
         return self.command.run_vagrant(['snapshot', 'save', name], self.path)
 
-    def snapshot_list(self):
+    def _snapshot_paths(self):
         # machine-readable rows: <ts>,<vm>,ui,detail,<tree path>; a VM without snapshots has a
-        # detail row of indented help text. The tree path is "parent/child": keep the last part.
+        # detail row of indented help text. The tree path is "parent/child"; vagrant-vmware-desktop
+        # only finds a nested snapshot by that full path, so keep name -> path per VM.
         ok, output = self.command.run_vagrant_output(['snapshot', 'list', '--machine-readable'], self.path)
-        snapshots = {}
+        paths = {}
         for line in output.splitlines():
             parts = line.split(',', 4)
             if len(parts) < 5:
                 continue
             vm, kind, detail = parts[1], parts[2:4], parts[4]
             if kind == ['metadata', 'provider']:
-                snapshots.setdefault(vm, [])
+                paths.setdefault(vm, {})
             elif kind == ['ui', 'detail'] and detail and not detail[0].isspace():
-                snapshots.setdefault(vm, []).append(detail.split('/')[-1])
-        return snapshots
+                paths.setdefault(vm, {})[detail.split('/')[-1]] = detail
+        return paths
+
+    def snapshot_list(self):
+        return {vm: list(names) for vm, names in self._snapshot_paths().items()}
 
     def snapshot_restore(self, name, vms):
-        return all(self.command.run_vagrant(['snapshot', 'restore', '--no-provision', vm, name], self.path) for vm in vms)
+        paths = self._snapshot_paths()
+        return all(self.command.run_vagrant(['snapshot', 'restore', '--no-provision', vm, paths.get(vm, {}).get(name, name)], self.path)
+                   for vm in vms)
 
     def snapshot_delete(self, name, vms):
-        return all(self.command.run_vagrant(['snapshot', 'delete', vm, name], self.path) for vm in vms)
+        paths = self._snapshot_paths()
+        return all(self.command.run_vagrant(['snapshot', 'delete', vm, paths.get(vm, {}).get(name, name)], self.path)
+                   for vm in vms)
 
     def destroy_vms(self, vms):
         return all(self.command.run_vagrant(['destroy', '-f', vm], self.path) for vm in vms)
