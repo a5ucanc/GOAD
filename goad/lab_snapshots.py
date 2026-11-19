@@ -144,6 +144,28 @@ class LabSnapshots:
         Log.success(f'lab reverted to {record.name}')
         return True
 
+    def rows(self):
+        """(snapshot, taken for, scenarios captured, extensions, VM presence) oldest first, then the
+        scn-/ext- snapshots VMware holds without a goad record."""
+        listing = self.provider.snapshot_list()
+        rows = []
+        for record in self.instance.snapshots:
+            covered = self._covered_vms(record)
+            missing = [vm for vm in covered if record.name not in listing.get(vm, [])]
+            presence = f'missing on {", ".join(missing)}' if missing else f'{len(covered)}/{len(covered)}'
+            rows.append((record.name, record.taken_for, ', '.join(_key(s) for s in record.scenarios),
+                         ', '.join(record.extensions), presence))
+        known = {record.name for record in self.instance.snapshots}
+        orphans = []
+        for names in listing.values():
+            for name in names:
+                if name.startswith(('scn-', 'ext-')) and name not in known and name not in orphans:
+                    orphans.append(name)
+        for name in orphans:
+            holders = [vm for vm, names in listing.items() if name in names]
+            rows.append((name, '(no record)', '', '', f'{len(holders)}/{len(listing)}'))
+        return rows
+
     def forget(self, taken_for):
         record = self.find(taken_for)
         if record is None:

@@ -38,6 +38,7 @@ instance_id> list_scenarios [all]
 instance_id> enable_scenario <name> [host] [--no-snapshot]
 instance_id> disable_scenario <name> [host] [--cascade] [--no-snapshot]
 instance_id> reset_scenarios
+instance_id> list_snapshots
 ```
 
 - `list_scenarios` shows enabled, dirty and available scenarios. With `all` it also lists unavailable scenarios and the reason (missing capability, conflict, missing dependency, ...).
@@ -119,6 +120,10 @@ running the uninstall. A revert gives a lab that is clean after an attack, inclu
 - If an install fails and its cleanup fails too, the `dirty` scenario keeps its snapshot, so you can revert
   out of it.
 - `list_scenarios` shows the snapshot of each enabled scenario.
+- `list_snapshots` lists every snapshot goad recorded, oldest first: what it was taken for, the scenarios and
+  extensions it captured, and whether every VM has it (`5/5` or `missing on <vm>`). `scn-` / `ext-` snapshots
+  that VMware holds without a goad record are listed as `(no record)`; delete those by hand
+  (`vagrant snapshot delete <vm> <name>`).
 - No question is asked with `--no-snapshot`, or when the console does not run in a terminal (piped commands,
   `goad.py -t ...`): enable and disable then behave as without a snapshot.
 - Only the VMware provider supports these snapshots. They are independent from the `snapshot` / `reset`

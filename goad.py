@@ -464,6 +464,23 @@ class Goad(cmd.Cmd):
             return
         service.disable(parts[0], parts[1] if len(parts) > 1 else None, cascade='--cascade' in flags)
 
+    def do_list_snapshots(self, arg=''):
+        if self.lab_manager.get_current_instance() is None:
+            Log.error('Snapshots can only be listed from an instance')
+            return
+        snapshots = self._lab_snapshots()
+        if not snapshots.supported():
+            Log.error('named lab snapshots need the VMware provider')
+            return
+        from rich.table import Table
+        from rich import print as rich_print
+        table = Table(title='Lab snapshots (oldest first)')
+        for column in ('Snapshot', 'Taken for', 'Scenarios at snapshot', 'Extensions', 'VMs'):
+            table.add_column(column)
+        for row in snapshots.rows():
+            table.add_row(*row)
+        rich_print(table)
+
     def do_reset_scenarios(self, arg):
         service = self._scenario_service()
         if service is None:

@@ -61,6 +61,7 @@ def print_menu(lab_manager, advanced=True, debug=False):
         print_menu_entry('enable_scenario <name> [host] [--no-snapshot]', 'enable a scenario (offers a lab snapshot first)')
         print_menu_entry('disable_scenario <name> [host] [--cascade] [--no-snapshot]', 'disable a scenario (offers a revert to its snapshot)')
         print_menu_entry('reset_scenarios', 'disable all scenarios')
+        print_menu_entry('list_snapshots', 'list the lab snapshots taken for scenarios and extensions')
 
         if use_jumpbox:
             print_menu_title('JumpBox')

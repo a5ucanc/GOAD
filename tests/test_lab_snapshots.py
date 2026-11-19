@@ -249,3 +249,28 @@ def test_clock_sync_runs_after_the_state_is_applied(inst, prov):
     prov.add_extension_vm("ws01")
     assert snaps.revert(record)
     assert seen == [[]]
+
+
+def test_rows_list_records_oldest_first_with_vm_presence(inst, snaps, prov):
+    enable(inst, snaps, "maq", "dc02")
+    second = enable(inst, snaps, "rbcd", "srv02")
+    prov.snaps["L-DC01"].remove(second.name)
+    rows = snaps.rows()
+    assert rows == [
+        ("scn-01-maq@dc02", "maq@dc02", "", "", "3/3"),
+        ("scn-02-rbcd@srv02", "rbcd@srv02", "maq@dc02", "", "missing on L-DC01"),
+    ]
+
+
+def test_rows_show_orphan_goad_snapshots(inst, snaps, prov):
+    for vm in prov.vms:
+        prov.snaps[vm].append("scn-09-old@dc01")
+    prov.snaps["L-DC01"].append("manual-backup")
+    assert snaps.rows() == [("scn-09-old@dc01", "(no record)", "", "", "3/3")]
+
+
+def test_rows_show_extensions_in_record(inst, snaps, prov):
+    inst.extensions.append("ws01")
+    prov.add_extension_vm("ws01")
+    snaps.take("scn", "x@h", "x@h")
+    assert snaps.rows()[0][3] == "ws01"

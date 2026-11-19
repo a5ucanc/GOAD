@@ -143,3 +143,20 @@ def test_lab_install_installs_extensions_without_prompt():
     source = (ROOT / "goad.py").read_text()
     calls = [line.strip() for line in source.splitlines() if "self.do_install_extension(" in line]
     assert calls and all("--no-snapshot" in call for call in calls)
+
+
+def test_list_snapshots_prints_rows(monkeypatch, capsys):
+    cli, _, _ = make_cli()
+    fake = SimpleNamespace(supported=lambda: True,
+                           rows=lambda: [("scn-01-maq@dc02", "maq@dc02", "", "", "5/5")])
+    cli._lab_snapshots = lambda: fake
+    cli.do_list_snapshots("")
+    out = capsys.readouterr().out
+    assert "scn-01-maq@dc02" in out and "5/5" in out
+
+
+def test_list_snapshots_unsupported_provider(monkeypatch, capsys):
+    cli, _, _ = make_cli()
+    cli._lab_snapshots = lambda: SimpleNamespace(supported=lambda: False)
+    cli.do_list_snapshots("")
+    assert "scn-" not in capsys.readouterr().out
