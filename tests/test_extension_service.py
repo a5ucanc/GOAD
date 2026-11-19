@@ -283,3 +283,11 @@ def test_remove_runs_uninstall_before_destroy(env):
     svc.lab = FakeLab(uninstall=True)
     assert svc.remove("ws01", yes=True)
     assert calls.index(("unprovision", "ws01")) < calls.index(("destroy", ["GOAD-Base-WS01"]))
+
+
+def test_install_without_vms_skips_vagrant_up(mssql_env):
+    e = mssql_env
+    e.inst.extensions.clear()
+    assert e.svc.install("mssql")
+    assert ("up",) not in e.calls
+    assert e.calls == [("enable_extension", "mssql"), ("provision", "mssql")]

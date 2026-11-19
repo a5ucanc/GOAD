@@ -112,3 +112,24 @@ def test_failed_disable_aborts_before_reapply(fakes):
 def test_reapply_result_returned(fakes):
     fakes.fail = "reapply"
     assert not provision_base_lab(*fakes.args())
+
+
+def test_installed_extensions_provisioned_before_reapply(fakes):
+    # scenarios like mssql-sysadmin need the service the mssql extension installs
+    fakes.instance.extensions = ["mssql", "iis"]
+
+    def provision_extension(name):
+        fakes.log.append("ext:" + name)
+        return True
+    assert provision_base_lab(*fakes.args(), provision_extension=provision_extension)
+    assert fakes.log == ["run", "disable_vagrant", "flag=True", "ext:mssql", "ext:iis", "reapply"]
+
+
+def test_failed_extension_provision_stops_before_reapply(fakes):
+    fakes.instance.extensions = ["mssql", "iis"]
+
+    def provision_extension(name):
+        fakes.log.append("ext:" + name)
+        return False
+    assert not provision_base_lab(*fakes.args(), provision_extension=provision_extension)
+    assert fakes.log == ["run", "disable_vagrant", "flag=True", "ext:mssql"]

@@ -27,7 +27,9 @@ class ExtensionService:
                 Log.error(f'extension {name} not installed: the lab snapshot failed')
                 return False
         self.instance.enable_extension(name)
-        if not self.provider.install():
+        # an extension without VMs installs onto the lab hosts: no vagrant up
+        has_vms = bool(self.provider.extension_vm_names(name, self.instance.lab_name, self.instance.ip_range))
+        if has_vms and not self.provider.install():
             Log.error(f'starting the VMs of extension {name} failed')
             return False
         return bool(self.provision(name))

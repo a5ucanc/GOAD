@@ -192,7 +192,7 @@ class Goad(cmd.Cmd):
         return provision_base_lab(self.lab_manager.get_current_instance(),
                                   self.lab_manager.get_current_instance_lab(),
                                   self.lab_manager.get_current_instance_provisioner(),
-                                  service, from_task=from_task)
+                                  service, from_task=from_task, provision_extension=self._provision_extension)
 
     def do_provision_lab(self, arg=''):
         start = time.time()
@@ -581,6 +581,9 @@ class Goad(cmd.Cmd):
                     provision_result = self.do_provision_lab()
                     if provision_result:
                         for extension_name in self.lab_manager.current_settings.extensions_name:
+                            if self._is_base_lab() and extension_name in self.lab_manager.get_current_instance().extensions:
+                                # already provisioned by the base lab flow, before the scenarios were reapplied
+                                continue
                             Log.info(f'Start installation of extension : {extension_name}')
                             self.do_install_extension(f'{extension_name} --no-snapshot')
                     self.refresh_prompt()
@@ -597,6 +600,9 @@ class Goad(cmd.Cmd):
             provision_result = self.do_provision_lab()
             if provision_result:
                 for extension_name in self.lab_manager.current_settings.extensions_name:
+                    if self._is_base_lab() and extension_name in self.lab_manager.get_current_instance().extensions:
+                        # already provisioned by the base lab flow, before the scenarios were reapplied
+                        continue
                     Log.info(f'Start installation of extension : {extension_name}')
                     self.do_install_extension(f'{extension_name} --no-snapshot')
             self.refresh_prompt()
