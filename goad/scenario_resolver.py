@@ -74,17 +74,18 @@ class ScenarioResolver:
             target = self.resolve_target(scenario, host)
         except ScenarioRefused as e:
             reasons.extend(r for r in e.reasons if r not in reasons)
-        enabled_names = {e.name for e in enabled}
         if target is not None:
             if any(e.name == name and e.target == target for e in enabled):
                 reasons.append(f"already enabled on {target}")
+        # a dirty entry is half-applied residue: it never meets a dependency
+        healthy = [e for e in enabled if e.status != "dirty"]
         for dep in scenario.depends:
             if target is None or self.host_domains is None:
-                if dep not in enabled_names:
+                if dep not in {e.name for e in healthy}:
                     reasons.append(f"requires scenario {dep}")
                 continue
             domain = self.domain_of(target)
-            if not any(e.name == dep and self.domain_of(e.target) == domain for e in enabled):
+            if not any(e.name == dep and self.domain_of(e.target) == domain for e in healthy):
                 reasons.append(f"requires scenario {dep} in domain {domain}")
         for entry in enabled:
             other = self.scenarios.get(entry.name)

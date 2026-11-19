@@ -84,6 +84,10 @@ class ScenarioService:
     def reapply(self):
         for name in self._ordered_names():
             for entry in [e for e in self.instance.scenarios if e.name == name]:
+                if entry.status == 'dirty':
+                    # never re-install residue the user tried to remove
+                    Log.warning(f'{entry.key} is dirty, not reapplied: run disable_scenario {entry.name} {entry.target}')
+                    continue
                 if not self._run(entry.name, entry.target, True):
                     Log.error(f'reapply of {entry.key} failed')
                     return False

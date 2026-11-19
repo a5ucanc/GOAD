@@ -186,3 +186,16 @@ def test_available_when_a_non_default_target_meets_dependency(scenario_dir, tmp_
     on = [EnabledScenario("maq", "dc03", "t")]
     reasons = dict((s.name, why) for s, why in r.available(on))
     assert reasons["rbcd"] == []
+
+
+def test_dirty_dependency_does_not_meet_depends(domain_resolver):
+    on = [EnabledScenario("maq", "dc02", "t", "dirty")]
+    with pytest.raises(ScenarioRefused) as e:
+        domain_resolver.check_enable("rbcd", None, on)
+    assert "requires scenario maq in domain north.sevenkingdoms.local" in e.value.reasons
+
+
+def test_dirty_dependency_does_not_meet_depends_without_domains(resolver):
+    with pytest.raises(ScenarioRefused) as e:
+        resolver.check_enable("relay", None, [EnabledScenario("esc8", "dc01", "t", "dirty")])
+    assert "requires scenario esc8" in e.value.reasons

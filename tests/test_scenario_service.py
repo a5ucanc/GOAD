@@ -163,3 +163,12 @@ def test_failed_install_and_failed_cleanup_marks_dirty(svc, prov):
     prov.fail_on = {("esc8", True), ("esc8", False)}
     assert not svc.enable("esc8", None)
     assert [(e.key, e.status) for e in svc.instance.scenarios] == [("esc8@dc01", "dirty")]
+
+
+def test_reapply_skips_dirty_entries(svc, prov):
+    assert svc.enable("esc8", None)
+    svc.instance.mark_scenario_dirty("esc8", "dc01")
+    prov.calls = []
+    assert svc.reapply()
+    assert prov.calls == []
+    assert [(e.key, e.status) for e in svc.instance.scenarios] == [("esc8@dc01", "dirty")]
