@@ -7,7 +7,7 @@
 
 - name: Prepare Schema
   ansible.windows.win_shell: |
-    & {{ iso_mount.mount_paths[0] }}Setup.exe /IAcceptExchangeServerLicenseTerms /PrepareSchema
+    & {{ iso_mount.mount_paths[0] }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /PrepareSchema
   vars:
     ansible_become: true
     ansible_become_method: runas
@@ -16,7 +16,7 @@
 
 - name: Prepare Active Directory
   ansible.windows.win_shell: |
-    & {{ iso_mount.mount_paths[0] }}Setup.exe /IAcceptExchangeServerLicenseTerms /PrepareAD /OrganizationName:"{{ ludus_exchange_domain }}"
+    & {{ iso_mount.mount_paths[0] }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /PrepareAD /OrganizationName:"{{ ludus_exchange_domain }}"
   vars:
     ansible_become: true
     ansible_become_method: runas
@@ -25,7 +25,7 @@
 
 - name: Install Exchange
   ansible.windows.win_shell: |
-    & {{ iso_mount.mount_paths[0] }}Setup.exe /IAcceptExchangeServerLicenseTerms /Mode:Install /Role:Mailbox
+    & {{ iso_mount.mount_paths[0] }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /Mode:Install /Role:Mailbox
   vars:
     ansible_become: true
     ansible_become_method: runas

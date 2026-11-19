@@ -66,6 +66,17 @@
       wait_for_connection:
         timeout: 300
 
+    - name: Install Visual C++ Redistributable for Visual Studio 2012 (required by the Exchange SE mailbox role)
+      win_package:
+        path: "{{ vcredist2012_install_path }}"
+        arguments: /q /norestart
+        state: present
+      register: vcredist2012_install
+
+    - name: Reboot after installing Visual C++ Redistributable for Visual Studio 2012
+      win_reboot:
+      when: vcredist2012_install.reboot_required
+
     - name: Install Visual C++ Redistributable for Visual Studio 2013
       win_package:
         path: "{{ vcredist2013_install_path }}"
