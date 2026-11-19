@@ -1,0 +1,13 @@
+---
+# read global configuration file and set up adapters
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+# The Base labs ship without IIS: this extension installs it on the hosts of the
+# [iis] group of its inventory, as ansible/servers.yml does for the full labs.
+- name: "Install IIS"
+  hosts: iis
+  roles:
+    - { role: 'iis', tags: 'iis'}

@@ -1,0 +1,42 @@
+---
+# read global configuration file and set up adapters
+- import_playbook: "../../../ansible/data.yml"
+  vars:
+    data_path: "../ad/{{domain_name}}/data/"
+  tags: 'data'
+
+# Undo install.yml (role iis). Idempotent: a second run on a clean host changes nothing.
+- name: "Uninstall IIS"
+  hosts: iis
+  tasks:
+    - name: Remove IIS Web-Server with sub features and management tools
+      ansible.windows.win_feature:
+        name: Web-Server
+        state: absent
+        include_sub_features: yes
+        include_management_tools: yes
+      register: web_server_removed
+
+    - name: Remove IIS management and IIS 6 compatibility features
+      ansible.windows.win_feature:
+        name:
+          - Web-Mgmt-Tools
+          - Web-Mgmt-Console
+          - Web-Scripting-Tools
+          - Web-Mgmt-Service
+          - Web-Mgmt-Compat
+          - Web-Metabase
+          - Web-Lgcy-Mgmt-Console
+          - Web-Lgcy-Scripting
+          - Web-WMI
+        state: absent
+      register: web_tools_removed
+
+    - name: Reboot if removing the IIS features requires it
+      ansible.windows.win_reboot:
+      when: web_server_removed.reboot_required or web_tools_removed.reboot_required
+
+    - name: Delete the web content
+      ansible.windows.win_file:
+        path: C:\inetpub
+        state: absent

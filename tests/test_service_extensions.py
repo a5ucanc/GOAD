@@ -10,7 +10,7 @@ from goad.extension import Extension
 
 ROOT = Path(__file__).resolve().parent.parent
 LABS = ["GOAD-Base", "GOAD-Light-Base"]
-SERVICE_EXTENSIONS = {"mssql": {"mssql", "mssql_ssms"}}
+SERVICE_EXTENSIONS = {"mssql": {"mssql", "mssql_ssms"}, "iis": {"iis"}}
 
 
 def info(name):
@@ -108,3 +108,20 @@ def test_mssql_uninstall_undoes_install():
     assert 'ad_state: "absent"' in text
     assert "SeServiceLogonRight" in text
     assert "Access for MSSQL (TCP-In)" in text and "Access for MSSQL (UDP-In)" in text
+
+
+def test_iis_capabilities():
+    caps = info("iis")["capabilities"]
+    assert caps == {"GOAD-Base": {"iis": ["srv02"]}, "GOAD-Light-Base": {"iis": ["srv02"]}}
+
+
+def test_iis_uninstall_undoes_install():
+    install = (ROOT / "extensions" / "iis" / "ansible" / "install.yml").read_text()
+    assert "role: 'iis'" in install
+    text = (ROOT / "extensions" / "iis" / "ansible" / "uninstall.yml").read_text()
+    for feature in ("Web-Server", "Web-Mgmt-Tools", "Web-Mgmt-Console", "Web-Scripting-Tools", "Web-Mgmt-Service",
+                    "Web-Mgmt-Compat", "Web-Metabase", "Web-Lgcy-Mgmt-Console", "Web-Lgcy-Scripting", "Web-WMI"):
+        assert feature in text, feature
+    assert "state: absent" in text
+    assert "C:\\inetpub" in text
+    assert "reboot_required" in text
