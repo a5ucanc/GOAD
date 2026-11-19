@@ -11,6 +11,7 @@ class Extension:
         self.providers_name_list = self.load_extension_providers(extension_name)
         self.compatibility = []
         self.description = ''
+        self.capabilities = {}
         self.load_extension_config_file(extension_name)
 
     def load_extension_providers(self, extension_name):
@@ -28,9 +29,19 @@ class Extension:
                 extension_info = json.load(extension_json_openfile)
                 self.compatibility = extension_info['compatibility']
                 self.description = extension_info['description']
+                capabilities = extension_info.get('capabilities')
+                self.capabilities = capabilities if isinstance(capabilities, dict) else {}
 
     def is_available(self, lab_name):
         return '*' in self.compatibility or lab_name in self.compatibility
+
+    def capabilities_for(self, lab_name):
+        """Capabilities this extension grants on lab_name, as {capability: [host, ...]}."""
+        lab_capabilities = self.capabilities.get(lab_name)
+        if not isinstance(lab_capabilities, dict):
+            return {}
+        return {key: list(hosts) for key, hosts in lab_capabilities.items()
+                if isinstance(hosts, list) and all(isinstance(h, str) for h in hosts)}
 
     def list_providers_name(self):
         return self.providers_name_list
