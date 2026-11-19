@@ -20,7 +20,8 @@ instance_id> install_extension elk
 ```
 
 - machine: {{lab_name}}-ELK
-- filebeat agent domain computer machines
+- winlogbeat and sysmon on domain computer machines
+- Kibana login : `elastic` / `changeme`
 
 
 ## Uninstall

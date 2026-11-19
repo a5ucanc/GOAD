@@ -1,2 +1,11 @@
-elasticsearch_version: '7.x'
+elasticsearch_version: '9.x'
 es_cluster_name: elasticsearch
+# Elasticsearch heap. Keep it at most half of the VM memory (see the provider Vagrantfile).
+es_heap_size: 2g
+# Password of the built-in elastic superuser (Kibana login and winlogbeat output).
+elk_elastic_password: changeme
+# Password of the built-in kibana_system user (Kibana to Elasticsearch connection).
+elk_kibana_system_password: changeme
+# File-realm superuser used only by ansible to set the built-in users passwords.
+elk_bootstrap_user: goad_bootstrap
+elk_bootstrap_password: changeme

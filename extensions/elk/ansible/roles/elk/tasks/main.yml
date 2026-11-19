@@ -1,3 +1,15 @@
+# bento ubuntu boxes leave half of the disk unallocated in the LVM volume group.
+# Elasticsearch data needs the space: grow the root logical volume to the whole volume group.
+- name: Grow the root logical volume to the whole disk
+  ansible.builtin.shell: |
+    lv=$(findmnt -n -o SOURCE /)
+    vg=$(lvs --noheadings -o vg_name "$lv" 2>/dev/null | tr -d ' ')
+    [ -n "$vg" ] || exit 0
+    free=$(vgs --noheadings --units b --nosuffix -o vg_free "$vg" | tr -d ' ')
+    if [ "${free:-0}" -gt 1073741824 ]; then lvextend -r -l +100%FREE "$lv" && echo grown; fi
+  register: grow_root
+  changed_when: "'grown' in grow_root.stdout"
+
 - name: "Update cache"
   apt:
     update_cache: true
@@ -12,24 +24,21 @@
     update_cache: yes
 
 - name: Add Elasticsearch apt key.
-  apt_key:
+  get_url:
     url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
-    state: present
+    dest: /etc/apt/keyrings/elasticsearch.asc
+    mode: '0644'
 
 - name: Add Elasticsearch repository.
   apt_repository:
-    repo: 'deb https://artifacts.elastic.co/packages/{{ elasticsearch_version }}/apt stable main'
+    repo: 'deb [signed-by=/etc/apt/keyrings/elasticsearch.asc] https://artifacts.elastic.co/packages/{{ elasticsearch_version }}/apt stable main'
     state: present
     update_cache: true
 
+# Elasticsearch, Logstash and Kibana 8+ bundle their own JDK: no java package needed.
 - name: Install logstash
   apt:
     name: logstash
-    state: present
-
-- name: Install java
-  apt:
-    name: openjdk-11-jre
     state: present
 
 - name: Install elasticsearch
@@ -43,18 +52,13 @@
     state: present
 
 - name: copy kibana config
-  copy:
-    src: kibana.yml
+  template:
+    src: kibana.yml.j2
     dest: /etc/kibana/kibana.yml
     owner: "root"
     group: "kibana"
     mode: 0660
-
-- name: elasticsearch change start timeout to 3min
-  lineinfile:
-    destfile: /usr/lib/systemd/system/elasticsearch.service
-    regexp: 'TimeoutStartSec='
-    line: 'TimeoutStartSec=180'
+  notify: restart kibana
 
 - name: copy elasticsearch config
   copy:
@@ -63,6 +67,47 @@
     owner: "root"
     group: "elasticsearch"
     mode: 0660
+  notify: restart elasticsearch
+
+- name: set elasticsearch heap size
+  copy:
+    dest: /etc/elasticsearch/jvm.options.d/heap.options
+    content: |
+      -Xms{{ es_heap_size }}
+      -Xmx{{ es_heap_size }}
+    owner: "root"
+    group: "elasticsearch"
+    mode: 0660
+  notify: restart elasticsearch
+
+# The package auto-configuration stores TLS keystore passwords. TLS is disabled in
+# our elasticsearch.yml, so remove them or elasticsearch refuses the leftover ssl settings.
+- name: list elasticsearch keystore entries
+  command: /usr/share/elasticsearch/bin/elasticsearch-keystore list
+  register: es_keystore
+  changed_when: false
+
+- name: remove auto-configured TLS entries from the elasticsearch keystore
+  command: "/usr/share/elasticsearch/bin/elasticsearch-keystore remove {{ item }}"
+  loop:
+    - xpack.security.http.ssl.keystore.secure_password
+    - xpack.security.transport.ssl.keystore.secure_password
+    - xpack.security.transport.ssl.truststore.secure_password
+  when: item in es_keystore.stdout_lines
+  notify: restart elasticsearch
+
+# File-realm superuser, used below to set the built-in users passwords through the API.
+- name: list elasticsearch file-realm users
+  command: /usr/share/elasticsearch/bin/elasticsearch-users list
+  register: es_file_users
+  changed_when: false
+
+- name: create the bootstrap file-realm superuser
+  command: >-
+    /usr/share/elasticsearch/bin/elasticsearch-users useradd {{ elk_bootstrap_user }}
+    -p {{ elk_bootstrap_password }} -r superuser
+  when: es_file_users.stdout is not search('^' ~ elk_bootstrap_user ~ '\\s', multiline=True)
+  no_log: true
 
 - name: enable logstash
   service:
@@ -88,6 +133,35 @@
   service:
     name: elasticsearch
     state: started
+
+- name: apply pending elasticsearch restart
+  meta: flush_handlers
+
+- name: wait for elasticsearch to answer
+  uri:
+    url: http://localhost:9200/_cluster/health
+    user: "{{ elk_bootstrap_user }}"
+    password: "{{ elk_bootstrap_password }}"
+    force_basic_auth: true
+  register: es_health
+  until: es_health.status == 200
+  retries: 30
+  delay: 10
+
+- name: set the built-in users passwords
+  uri:
+    url: "http://localhost:9200/_security/user/{{ item.user }}/_password"
+    method: POST
+    user: "{{ elk_bootstrap_user }}"
+    password: "{{ elk_bootstrap_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      password: "{{ item.password }}"
+  loop:
+    - { user: elastic, password: "{{ elk_elastic_password }}" }
+    - { user: kibana_system, password: "{{ elk_kibana_system_password }}" }
+  no_log: true
 
 - name: start kibana
   service:

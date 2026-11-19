@@ -57,9 +57,12 @@
   when: resultwlb.state is defined and resultwlb.state != 'running'
 
 - name: Run winlogbeat setup
-  win_command: "winlogbeat setup -e"
+  win_command: '"{{ winlogbeat_service.install_path_64 }}\winlogbeat-{{ winlogbeat_service.version }}-windows-x86_64\winlogbeat.exe" setup -e --index-management --dashboards --pipelines'
   args:
     chdir: "{{ winlogbeat_service.install_path_64 }}\\winlogbeat-{{ winlogbeat_service.version }}-windows-x86_64\\"
+  # setup writes cluster-wide objects (template, data stream, pipelines, dashboards):
+  # parallel runs race on creating the data stream and one fails with a 400.
+  throttle: 1
   when: resultwlb.state is defined and resultwlb.state != 'running'
 
 # RUN winlogbeat

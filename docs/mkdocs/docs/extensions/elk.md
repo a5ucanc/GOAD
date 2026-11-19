@@ -5,9 +5,10 @@
 - Providers : virtualbox/azure/vmware/aws/ludus
 - Add a machine  : elk  (ip_range.50)
 
-- Kibana is configured on http://{{ip_range}}.50:5601 to follow the lab events
+- Kibana (Elastic 9.x) is configured on http://{{ip_range}}.50:5601 to follow the lab events
+- Kibana login : `elastic` / `changeme` (change it with `elk_elastic_password` in the elk role defaults)
 - Infos : log encyclopedia : https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/
-- Install filebeat agent on domain computer machines
+- Install winlogbeat and sysmon on domain computer machines
 
 ## prerequisites
 
