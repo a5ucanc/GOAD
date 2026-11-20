@@ -1,4 +1,5 @@
 import datetime
+import os
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -14,6 +15,14 @@ from goad.templates.store import BUILD_DIR, OS_FAMILY, Template, TemplateStore
 REPO = Path(__file__).resolve().parents[2]
 PASSWORD = 'Aa1234567890!'
 console = Console()
+
+
+def packer_env(settings: Settings) -> dict:
+    """Packer's ISO/plugin download cache sits beside the templates, not in the repo.
+    WSLENV forwards the variable to the Windows process (/w: no path translation)."""
+    cache = settings.template_root.rsplit('\\', 1)[0] + '\\cache'
+    forwarded = [v for v in os.environ.get('WSLENV', '').split(':') if v and not v.startswith('PACKER_CACHE_DIR')]
+    return {'PACKER_CACHE_DIR': cache, 'WSLENV': ':'.join(forwarded + ['PACKER_CACHE_DIR/w'])}
 
 
 def packer_dir(os_name: str) -> Path:
@@ -51,13 +60,14 @@ def build_template(os_name: str, settings: Settings, runner: Runner, store: Temp
     }
 
     console.print(f'building template {name} (log: {log})')
-    if runner.stream([packer, 'init', to_windows(source)], log) != 0:
+    env = packer_env(settings)
+    if runner.stream([packer, 'init', to_windows(source)], log, env) != 0:
         raise GoadError(f'packer init failed: see {log}')
     argv = [packer, 'build', '-force', f'-var-file={to_windows(source / f"{os_name}.pkrvars.hcl")}']
     for key, value in variables.items():
         argv += ['-var', f'{key}={value}']
     argv.append(to_windows(source))
-    if runner.stream(argv, log) != 0:
+    if runner.stream(argv, log, env) != 0:
         raise GoadError(f'packer build of {name} failed: see {log} (unfinished VM kept in {out_dir})')
 
     built = store.root / BUILD_DIR / name

@@ -85,3 +85,17 @@ def test_linux_uses_ubuntu_dir(store, settings, fake):
     build = [c for c in fake.calls if c[0] == PACKER][1]
     assert build[-1].endswith(r'packer\ubuntu')
     assert any(a.endswith(r'packer\ubuntu\ubuntu2404.pkrvars.hcl') for a in build)
+
+
+def test_packer_cache_outside_repo(store, settings, fake, monkeypatch):
+    seen = {}
+    real_stream = fake.stream
+
+    def stream(argv, log_path, env=None):
+        seen.setdefault('env', env)
+        return real_stream(argv, log_path)
+    monkeypatch.setattr(fake, 'stream', stream)
+    _packer_build_writes_vmx(store, fake)
+    _build(store, settings, fake)
+    assert seen['env']['PACKER_CACHE_DIR'] == r'C:\goad\cache'
+    assert 'PACKER_CACHE_DIR/w' in seen['env']['WSLENV']
