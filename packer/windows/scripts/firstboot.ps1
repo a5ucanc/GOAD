@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 $rpc = 'C:\Program Files\VMware\VMware Tools\rpctool.exe'
 function Get-GuestInfo([string]$key) { $v = & $rpc "info-get guestinfo.goad.$key" 2>$null; if ($LASTEXITCODE -ne 0) { return '' } return "$v".Trim() }
 
+try { Unregister-ScheduledTask -TaskName 'goad-sysprep' -Confirm:$false -ErrorAction Stop } catch { }
+
 $ip = Get-GuestInfo 'ip'
 if (-not $ip) { Write-Host 'no guestinfo.goad.ip: nothing to do'; exit 0 }
 $hostname = Get-GuestInfo 'hostname'

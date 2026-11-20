@@ -52,7 +52,7 @@ source "vmware-iso" "windows" {
 
   # sysprep runs detached: generalize resets the network, so a WinRM call that waits for it never returns.
   # Packer then waits for the VM to power itself off.
-  shutdown_command = "cmd /c start \"\" C:\\Windows\\System32\\Sysprep\\sysprep.exe /generalize /oobe /shutdown /quiet /unattend:C:\\goad\\unattend.xml"
+  shutdown_command = "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\goad\\run-sysprep.ps1"
   shutdown_timeout = "1h"
 }
 
@@ -98,6 +98,10 @@ build {
   provisioner "file" {
     content     = templatefile("${path.root}/sysprep/unattend.pkrtpl.xml", { password = var.password })
     destination = "C:/goad/unattend.xml"
+  }
+  provisioner "file" {
+    source      = "${path.root}/sysprep/run-sysprep.ps1"
+    destination = "C:/goad/run-sysprep.ps1"
   }
   provisioner "file" {
     source      = "${path.root}/scripts/firstboot.ps1"
