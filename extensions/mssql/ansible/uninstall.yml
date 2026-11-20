@@ -53,7 +53,7 @@
       register: sql_service
 
     - name: Uninstall SQL Server
-      ansible.windows.win_command: '"{{ sql_setup }}" /ACTION=Uninstall /FEATURES=SQLENGINE,FULLTEXT /INSTANCENAME={{ sql_instance_name }} /QUIET /HIDEPROGRESSBAR'
+      ansible.windows.win_command: '"{{ sql_setup }}" /ACTION=Uninstall /FEATURES=SQLENGINE,FULLTEXT /INSTANCENAME={{ sql_instance_name }} /QUIET'
       register: sql_uninstall
       # 3010: success, reboot required
       failed_when: sql_uninstall.rc not in [0, 3010]
