@@ -44,7 +44,9 @@ class Runner:
                 return 127
             for line in process.stdout:
                 sys.stdout.write(line)
+                sys.stdout.flush()
                 log.write(line)
+                log.flush()  # the log is followed live while a build runs
             return process.wait()
 
 
