@@ -50,7 +50,9 @@ source "vmware-iso" "windows" {
   winrm_password = var.password
   winrm_timeout  = "2h"
 
-  shutdown_command = "C:\\Windows\\System32\\Sysprep\\sysprep.exe /generalize /oobe /shutdown /quiet /unattend:C:\\goad\\unattend.xml"
+  # sysprep runs detached: generalize resets the network, so a WinRM call that waits for it never returns.
+  # Packer then waits for the VM to power itself off.
+  shutdown_command = "cmd /c start \"\" C:\\Windows\\System32\\Sysprep\\sysprep.exe /generalize /oobe /shutdown /quiet /unattend:C:\\goad\\unattend.xml"
   shutdown_timeout = "1h"
 }
 
