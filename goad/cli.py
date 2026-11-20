@@ -82,13 +82,19 @@ def _template_build(args, ctx) -> int:
     return 0
 
 
+def _template_test(args, ctx) -> int:
+    from goad.templates.smoke import smoke_test
+    smoke_test(args.os, ctx.settings, ctx.runner, _store(ctx))
+    return 0
+
+
 # command path -> handler(args, ctx) -> exit code
 HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = {
     ('check',): _check,
     ('template', 'build'): _template_build,
     ('template', 'list'): _template_list,
     ('template', 'delete'): _template_delete,
-    ('template', 'test'): _not_implemented,
+    ('template', 'test'): _template_test,
 }
 
 OS_CHOICES = ('win2022', 'win2025', 'win11', 'ubuntu2404')
