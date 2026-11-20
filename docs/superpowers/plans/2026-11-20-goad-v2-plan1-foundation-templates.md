@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-20-vmware-core-rewrite-design.md`
 
-This is plan 1 of 4. Plan 2: lab lifecycle (lab.yml, state, deploy, snapshot/reset). Plan 3: Ansible provisioning for the `-Base` labs. Plan 4: release gate.
+This is plan 1 of 4. Plan 2: lab lifecycle (lab.yml, state, deploy, snapshot/reset). Plan 3: Ansible provisioning for the `1domain`, `2domains`, `2forests` labs. Plan 4: release gate.
 
 ## Global Constraints
 
@@ -75,14 +75,14 @@ tests/live/...                  marked `live`, run by hand on the host
 ### Task 1: Clean slate and skeleton
 
 **Files:**
-- Delete: `goad/` (all old modules), `template/`, `vagrant/`, `packer/proxmox/`, `packer/vagrant/`, `extensions/`, `scenarios/`, `ansible/`, `scripts/`, `workspace/`, `tests/` (old), `Dockerfile`, `goad_docker.sh`, `goad.sh`, `guacamole.yml`, `playbooks.yml`, `globalsettings.ini`, `noansible_requirements.yml`, `requirements*.yml`, `poetry.lock`, `ad/` except `ad/GOAD-Base`, `ad/GOAD-Light-Base`, `ad/GOAD-Mini-Base` (and inside those, delete `providers/`; keep `data/` as reference for Plans 2–3)
-- Keep: `LICENSE`, `README.md`, `docs/`
+- Delete: `goad/` (all old modules), `template/`, `vagrant/`, `packer/proxmox/`, `packer/vagrant/`, `extensions/`, `scenarios/`, `ansible/`, `scripts/`, `workspace/`, `tests/` (old), `Dockerfile`, `goad_docker.sh`, `goad.sh`, `guacamole.yml`, `playbooks.yml`, `globalsettings.ini`, `noansible_requirements.yml`, `requirements*.yml`, `poetry.lock`, `ad/` (first move the reference data: `git mv ad/GOAD-Mini-Base/data labs/1domain/reference`, `git mv ad/GOAD-Light-Base/data labs/2domains/reference`, `git mv ad/GOAD-Base/data labs/2forests/reference`; Plans 2–3 turn each into `labs/<lab>/lab.yml` and then delete `reference/`)
+- Keep: `LICENSE`, `README.md`, `docs/`, `labs/*/reference/`
 - Create: `goad.py`, `goad/__init__.py`, `goad/cli.py`, `pyproject.toml`, `requirements-dev.txt`, `tests/__init__.py`, `tests/unit/test_cli.py`, `pytest.ini`
 
 **Interfaces:**
 - Produces: `goad.cli.main(argv: list[str] | None = None) -> int`; `goad.cli.confirm(question: str, yes: bool) -> bool` (raises `goad.cli.NeedsConfirmation` when stdin is not a TTY and `yes` is False); `goad.cli.build_parser() -> argparse.ArgumentParser` with subcommand groups `check`, `template` (`build`, `list`, `delete`, `test`). Each handler has signature `(args, ctx) -> int`; `ctx` is `goad.cli.Context(settings, runner)`.
 
-- [ ] **Step 1: Delete old code** with `git rm -r` on the paths above. Verify: `git status --short | grep -v '^D' ` lists nothing outside `docs/` and the kept `ad/*-Base/data`.
+- [ ] **Step 1: Delete old code** with `git rm -r` on the paths above. Verify: `git status --short | grep -v '^D' ` lists only the new `labs/*/reference/` renames and nothing else.
 - [ ] **Step 2: Write `pyproject.toml`**: PEP 621 `[project]`, name `goad`, version `2.0.0.dev0`, `requires-python = ">=3.11"`, deps `rich>=13`, `PyYAML>=6`, `pypsrp>=0.8`; `[project.scripts] goad = "goad.cli:main"`; setuptools backend. `requirements-dev.txt`: `pytest>=8`. `pytest.ini`: `testpaths = tests`, marker `live: needs VMware host`, `addopts = -m "not live"`.
 - [ ] **Step 3: Write failing tests** in `tests/unit/test_cli.py`:
 

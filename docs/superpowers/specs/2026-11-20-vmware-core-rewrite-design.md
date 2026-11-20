@@ -28,8 +28,14 @@ branch all further work starts from.
 - A command-line interface where every capability is one shell command, scriptable, no piped answers.
 - Versioned, reproducible VM templates: Windows Server 2022, Windows Server 2025, Windows 11,
   Ubuntu 24.04.
-- The three `-Base` lab topologies (`GOAD-Base`, `GOAD-Light-Base`, `GOAD-Mini-Base`) as the shipped
-  labs: hardened, uniform password, no intentional weakness.
+- The three `-Base` lab topologies as the shipped labs, renamed by what they contain *(user decision)*:
+  - `1domain` (was `GOAD-Mini-Base`): one forest, one domain (`sevenkingdoms.local`), DC01;
+  - `2domains` (was `GOAD-Light-Base`): one forest, parent + child (`north.sevenkingdoms.local`), DC01,
+    DC02, SRV02;
+  - `2forests` (was `GOAD-Base`): `2domains` plus the `essos.local` forest with a forest trust, DC03,
+    SRV03.
+
+  All hardened, uniform password, no intentional weakness.
 
 ## Non-goals
 
@@ -215,7 +221,7 @@ goad template test win2025|win2022|win11|ubuntu2404
 goad template list
 goad template delete <name>
 
-goad lab deploy <lab> [--range 192.168.56]
+goad lab deploy 1domain|2domains|2forests [--range 192.168.56]
 goad lab status                    # per-VM power, IP, template, current snapshot
 goad lab start | stop
 goad lab provision [--tags ...]
@@ -239,7 +245,7 @@ goad check
 ### Release gate
 
 The core is done, and scenario/extension porting may start, when on the user's machine with
-`GOAD-Light-Base` *(user decision)*:
+`2domains` *(user decision)*:
 
 - a whole-lab snapshot takes under 2 minutes;
 - a reset to `base` takes under 5 minutes until every host answers;
