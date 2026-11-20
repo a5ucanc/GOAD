@@ -51,12 +51,36 @@ def _not_implemented(args, ctx) -> int:
     return 1
 
 
+def _store(ctx):
+    from goad.templates.store import TemplateStore
+    from goad.vmware.vmrun import Vmrun
+    return TemplateStore(ctx.settings, Vmrun(ctx.runner, ctx.settings))
+
+
+def _template_list(args, ctx) -> int:
+    from rich.table import Table
+
+    from goad.state import templates_in_use
+    in_use = templates_in_use(ctx.settings)
+    table = Table('Name', 'OS', 'Built', 'In use')
+    for template in _store(ctx).list():
+        table.add_row(template.name, template.os, template.built_at, 'yes' if template.name in in_use else '')
+    Console().print(table)
+    return 0
+
+
+def _template_delete(args, ctx) -> int:
+    _store(ctx).delete(args.name, args.yes)
+    Console().print(f'template {args.name} deleted')
+    return 0
+
+
 # command path -> handler(args, ctx) -> exit code
 HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = {
     ('check',): _check,
     ('template', 'build'): _not_implemented,
-    ('template', 'list'): _not_implemented,
-    ('template', 'delete'): _not_implemented,
+    ('template', 'list'): _template_list,
+    ('template', 'delete'): _template_delete,
     ('template', 'test'): _not_implemented,
 }
 
