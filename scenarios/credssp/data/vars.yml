@@ -1,3 +1,0 @@
-touched_settings:
-- key: winrm.credssp
-  vulnerable_value: server

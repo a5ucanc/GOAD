@@ -1,3 +1,0 @@
-touched_settings:
-- key: dc.cert_mapping
-  vulnerable_value: '0x4'

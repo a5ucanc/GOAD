@@ -1,8 +1,0 @@
-{
-  "description": "Certificate template with the Any Purpose EKU, enrollable by Domain Users (ESC2)",
-  "type": "object",
-  "requires": [
-    "adcs"
-  ],
-  "target": "adcs"
-}

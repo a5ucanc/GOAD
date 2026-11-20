@@ -1,8 +1,0 @@
-{
-  "description": "SQL login that can impersonate dbo in msdb (TRUSTWORTHY)",
-  "type": "object",
-  "requires": [
-    "mssql"
-  ],
-  "target": "mssql"
-}

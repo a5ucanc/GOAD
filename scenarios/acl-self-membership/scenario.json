@@ -1,5 +1,0 @@
-{
-  "description": "User that can add itself to a group (Self-Membership)",
-  "type": "object",
-  "target": ""
-}

@@ -1,8 +1,0 @@
-{
-  "description": "Machine account quota 10: any domain user can create computer accounts",
-  "type": "setting",
-  "target": "",
-  "touches": [
-    "dc.maq"
-  ]
-}

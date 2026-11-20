@@ -1,8 +1,0 @@
-{
-  "description": "Print Spooler running on the DC (PrinterBug coercion)",
-  "type": "setting",
-  "target": "",
-  "touches": [
-    "dc.spooler"
-  ]
-}

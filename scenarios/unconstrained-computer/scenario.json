@@ -1,8 +1,0 @@
-{
-  "description": "Member server trusted for unconstrained delegation",
-  "type": "object",
-  "requires": [
-    "member_server"
-  ],
-  "target": "member_server"
-}

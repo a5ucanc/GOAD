@@ -1,7 +1,0 @@
-{
-  "description": "LLMNR and NBT-NS enabled on a host",
-  "type": "setting",
-  "target": "member_server",
-  "requires": ["member_server"],
-  "touches": ["net.llmnr", "net.nbtns"]
-}

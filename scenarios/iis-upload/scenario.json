@@ -1,8 +1,0 @@
-{
-  "description": "IIS site with an unrestricted file upload page (webshell)",
-  "type": "object",
-  "requires": [
-    "iis"
-  ],
-  "target": "iis"
-}

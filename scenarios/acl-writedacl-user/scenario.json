@@ -1,5 +1,0 @@
-{
-  "description": "User with WriteDacl on another user",
-  "type": "object",
-  "target": ""
-}

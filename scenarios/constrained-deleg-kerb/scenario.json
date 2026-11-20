@@ -1,8 +1,0 @@
-{
-  "description": "Member server computer account with Kerberos-only constrained delegation to HTTP on the DC",
-  "type": "object",
-  "requires": [
-    "member_server"
-  ],
-  "target": "member_server"
-}

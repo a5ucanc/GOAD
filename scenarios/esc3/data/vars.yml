@@ -1,5 +1,0 @@
-templates:
-- name: ESC3-CRA
-  json: ESC3-CRA.json
-- name: ESC3
-  json: ESC3.json

@@ -1,8 +1,0 @@
-{
-  "description": "DC does not require LDAP signing",
-  "type": "setting",
-  "target": "",
-  "touches": [
-    "ldap.signing"
-  ]
-}

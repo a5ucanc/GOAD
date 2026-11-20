@@ -1,8 +1,0 @@
-{
-  "description": "Domain user that is sysadmin on SQL Server (xp_cmdshell as the service account)",
-  "type": "object",
-  "requires": [
-    "mssql"
-  ],
-  "target": "mssql"
-}

@@ -1,5 +1,0 @@
-{
-  "description": "User with GenericAll on AdminSDHolder (persistence on every protected object)",
-  "type": "object",
-  "target": ""
-}

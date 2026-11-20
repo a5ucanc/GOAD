@@ -1,3 +1,0 @@
-user: svc_kerb
-spn: "MSSQLSvc/svc-kerb.{{domain}}:1433"
-password: "Aa1234567890!"

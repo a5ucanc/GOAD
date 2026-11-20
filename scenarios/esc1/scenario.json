@@ -1,6 +1,0 @@
-{
-  "description": "Certificate template where the enrollee supplies the subject, enrollable by Domain Users",
-  "type": "object",
-  "requires": ["adcs"],
-  "target": "adcs"
-}

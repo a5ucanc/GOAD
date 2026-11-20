@@ -1,8 +1,0 @@
-{
-  "description": "User with GenericAll on a group that is local administrator of a member server",
-  "type": "object",
-  "requires": [
-    "member_server"
-  ],
-  "target": "member_server"
-}

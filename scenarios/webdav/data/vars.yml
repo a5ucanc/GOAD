@@ -1,3 +1,0 @@
-touched_settings:
-- key: net.webclient
-  vulnerable_value: present

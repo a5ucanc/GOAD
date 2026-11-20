@@ -1,8 +1,0 @@
-{
-  "description": "DC accepts LM and NTLMv1 (LmCompatibilityLevel 2)",
-  "type": "setting",
-  "target": "",
-  "touches": [
-    "ntlm.lmcompat"
-  ]
-}

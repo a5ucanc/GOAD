@@ -1,7 +1,0 @@
-{
-  "description": "ADCS web enrollment over HTTP with NTLM, no EPA",
-  "type": "setting",
-  "requires": ["adcs"],
-  "target": "adcs",
-  "touches": ["adcs.web_enrollment"]
-}

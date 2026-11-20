@@ -1,8 +1,0 @@
-{
-  "description": "DC does not enforce LDAPS channel binding",
-  "type": "setting",
-  "target": "",
-  "touches": [
-    "ldap.channel_binding"
-  ]
-}

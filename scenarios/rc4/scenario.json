@@ -1,8 +1,0 @@
-{
-  "description": "Kerberos RC4 allowed",
-  "type": "setting",
-  "target": "",
-  "touches": [
-    "kerberos.rc4"
-  ]
-}

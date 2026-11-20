@@ -1,5 +1,0 @@
-touched_settings:
-  - key: net.llmnr
-    vulnerable_value: enabled
-  - key: net.nbtns
-    vulnerable_value: enabled

@@ -1,3 +1,0 @@
-touched_settings:
-- key: trust.sid_history
-  vulnerable_value: enabled

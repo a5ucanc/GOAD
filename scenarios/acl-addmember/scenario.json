@@ -1,5 +1,0 @@
-{
-  "description": "User that can write the member attribute of a group (AddMember)",
-  "type": "object",
-  "target": ""
-}

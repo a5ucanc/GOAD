@@ -1,5 +1,0 @@
-; iis extension: no VM, IIS goes on castelblack
-[iis]
-srv02
-
-[extensions]

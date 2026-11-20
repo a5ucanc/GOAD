@@ -1,3 +1,0 @@
-touched_settings:
-- key: ntlm.lmcompat
-  vulnerable_value: 2

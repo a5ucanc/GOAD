@@ -1,8 +1,0 @@
-{
-  "description": "Group with a member from the trusted forest that has GenericAll on a domain controller",
-  "type": "object",
-  "requires": [
-    "forest_trust"
-  ],
-  "target": "forest_trust"
-}

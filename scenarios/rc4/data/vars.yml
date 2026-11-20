@@ -1,3 +1,0 @@
-touched_settings:
-- key: kerberos.rc4
-  vulnerable_value: enabled

@@ -1,3 +1,0 @@
-touched_settings:
-- key: adcs.enforce_encrypt
-  vulnerable_value: 'off'

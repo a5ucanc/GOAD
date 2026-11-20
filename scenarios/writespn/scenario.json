@@ -1,5 +1,0 @@
-{
-  "description": "User that can write the servicePrincipalName of another user (targeted kerberoast)",
-  "type": "object",
-  "target": ""
-}

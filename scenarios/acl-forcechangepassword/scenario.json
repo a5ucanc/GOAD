@@ -1,5 +1,0 @@
-{
-  "description": "User that can reset another user's password (ForceChangePassword)",
-  "type": "object",
-  "target": ""
-}

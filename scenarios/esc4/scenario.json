@@ -1,8 +1,0 @@
-{
-  "description": "Certificate template writable by a low-privileged user (ESC4)",
-  "type": "object",
-  "requires": [
-    "adcs"
-  ],
-  "target": "adcs"
-}

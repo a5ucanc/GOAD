@@ -1,8 +1,0 @@
-{
-  "description": "Enrollment agent template plus a template that accepts enrollment agents (ESC3)",
-  "type": "object",
-  "requires": [
-    "adcs"
-  ],
-  "target": "adcs"
-}
