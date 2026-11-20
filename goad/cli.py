@@ -76,15 +76,19 @@ def _template_delete(args, ctx) -> int:
 
 
 def _template_build(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
     from goad.templates.build import build_template
-    template = build_template(args.os, ctx.settings, ctx.runner, _store(ctx))
+    with keep_host_awake():
+        template = build_template(args.os, ctx.settings, ctx.runner, _store(ctx))
     Console().print(f'template {template.name} built')
     return 0
 
 
 def _template_test(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
     from goad.templates.smoke import smoke_test
-    smoke_test(args.os, ctx.settings, ctx.runner, _store(ctx))
+    with keep_host_awake():
+        smoke_test(args.os, ctx.settings, ctx.runner, _store(ctx))
     return 0
 
 
