@@ -84,6 +84,13 @@ build {
     environment_vars = ["GOAD_IS_SERVER=${var.is_server}"]
     scripts          = ["${path.root}/scripts/install-features.ps1"]
   }
+  provisioner "powershell" {
+    scripts = ["${path.root}/scripts/compact.ps1"]
+  }
+  provisioner "powershell" {
+    environment_vars = ["GOAD_IS_WIN11=${var.is_win11}"]
+    scripts          = ["${path.root}/scripts/cleanup.ps1"]
+  }
   provisioner "windows-restart" {
     restart_timeout = "20m"
   }
@@ -99,9 +106,5 @@ build {
   provisioner "file" {
     source      = "${path.root}/sysprep/SetupComplete.cmd"
     destination = "C:/Windows/Setup/Scripts/SetupComplete.cmd"
-  }
-  provisioner "powershell" {
-    environment_vars = ["GOAD_IS_WIN11=${var.is_win11}"]
-    scripts          = ["${path.root}/scripts/cleanup.ps1"]
   }
 }

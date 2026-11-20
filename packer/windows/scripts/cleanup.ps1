@@ -5,6 +5,7 @@ if ($env:GOAD_IS_WIN11 -eq 'true') {
     Get-AppxPackage -AllUsers | Where-Object { $_.Name -notin $provisioned -and -not $_.IsFramework -and $_.NonRemovable -eq $false } |
         ForEach-Object { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction SilentlyContinue }
 }
-Dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase /Quiet
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $env:TEMP\*, C:\Windows\Temp\*, C:\Windows\SoftwareDistribution\Download\*
+# C:\Windows\Temp holds Packer's own uploaded scripts; leave it alone. The component store is
+# compacted earlier by compact.ps1, followed by a restart, so WinRM is fresh before sysprep.
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\Windows\SoftwareDistribution\Download\*
 exit 0
