@@ -20,12 +20,13 @@ source "vmware-iso" "windows" {
   network              = "nat"
   network_adapter_type = "e1000e"
   headless             = true
+  # VMware Tools ISO on an extra SATA CD (plugin 1.1.x has no tools_mode = "attach")
   vmx_data = {
-    "tools.syncTime" = "TRUE"
+    "tools.syncTime"     = "TRUE"
+    "sata0:5.present"    = "TRUE"
+    "sata0:5.deviceType" = "cdrom-image"
+    "sata0:5.fileName"   = var.tools_iso
   }
-
-  tools_mode        = "attach"
-  tools_source_path = var.tools_iso
 
   # Windows Setup reads autounattend.xml from the root of any attached disc
   cd_label = "goad"
