@@ -51,12 +51,16 @@ source "vmware-iso" "ubuntu" {
 build {
   sources = ["source.vmware-iso.ubuntu"]
 
+  # the upload target must exist, or a single certificate is written as the file /tmp/goad-ca
+  provisioner "shell" {
+    inline = ["mkdir -p /tmp/goad-ca"]
+  }
   dynamic "provisioner" {
     labels   = ["file"]
     for_each = var.ca_dir == "" ? [] : [1]
     content {
       source      = "${var.ca_dir}/"
-      destination = "/tmp/goad-ca"
+      destination = "/tmp/goad-ca/"
     }
   }
 

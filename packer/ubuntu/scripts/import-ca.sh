@@ -3,7 +3,7 @@
 set -euo pipefail
 count=0
 # the upload may land the folder's files directly in /tmp/goad-ca or one level deeper
-[ -d /tmp/goad-ca ] || mkdir -p /tmp/goad-ca
+[ -d /tmp/goad-ca ] || { echo '0 certificate(s) imported'; [ "${GOAD_CA_EXPECTED:-0}" = 1 ] && exit 1; exit 0; }
 while IFS= read -r -d '' cert; do
     name=$(basename "${cert%.*}")
     if grep -q 'BEGIN CERTIFICATE' "$cert"; then
