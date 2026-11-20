@@ -10,6 +10,7 @@ from goad.host.checks import run_checks
 from goad.host.paths import to_windows
 from goad.host.runner import Runner
 from goad.settings import OS_NAMES, Settings, resolve_packer
+from goad.templates.iso import ensure_iso
 from goad.templates.store import BUILD_DIR, OS_FAMILY, Template, TemplateStore
 
 REPO = Path(__file__).resolve().parents[2]
@@ -49,10 +50,10 @@ def build_template(os_name: str, settings: Settings, runner: Runner, store: Temp
     out_dir = f'{settings.template_root}\\{BUILD_DIR}\\{name}'
     source = packer_dir(os_name)
     log = settings.state_dir / 'logs' / f'template-{name}.log'
-    iso = settings.isos[os_name]
+    iso_url, iso_checksum = ensure_iso(os_name, settings, runner)
     variables = {
-        'iso_url': iso.url,
-        'iso_checksum': iso.checksum,
+        'iso_url': iso_url,
+        'iso_checksum': iso_checksum,
         'output_directory': out_dir,
         'vm_name': name,
         'password': PASSWORD,

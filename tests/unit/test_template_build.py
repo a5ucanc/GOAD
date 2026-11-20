@@ -9,6 +9,13 @@ from goad.templates.store import TemplateStore
 PACKER = '/w/packer.exe'
 
 
+@pytest.fixture(autouse=True)
+def no_iso_download(monkeypatch):
+    # ISO handling has its own tests (test_iso.py): here the configured source goes straight through
+    monkeypatch.setattr('goad.templates.build.ensure_iso',
+                        lambda os_name, settings, runner: (settings.isos[os_name].url, settings.isos[os_name].checksum))
+
+
 @pytest.fixture
 def store(tmp_path, settings, vmrun):
     root = tmp_path / 'templates'
