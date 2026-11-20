@@ -29,7 +29,21 @@ class Context:
 
 
 def make_context() -> Context:
-    return Context(settings=None, runner=None)
+    from goad.host.runner import Runner
+    from goad.settings import load_settings
+    return Context(settings=load_settings(), runner=Runner())
+
+
+def _check(args, ctx) -> int:
+    from rich.table import Table
+
+    from goad.host import checks
+    results = checks.run_checks(ctx.runner, ctx.settings, need_packer=True)
+    table = Table('Check', 'Status', 'Detail')
+    for check in results:
+        table.add_row(check.name, '[green]ok[/green]' if check.ok else '[red]fail[/red]', check.detail)
+    Console().print(table)
+    return 0 if all(check.ok for check in results) else 1
 
 
 def _not_implemented(args, ctx) -> int:
@@ -39,7 +53,7 @@ def _not_implemented(args, ctx) -> int:
 
 # command path -> handler(args, ctx) -> exit code
 HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = {
-    ('check',): _not_implemented,
+    ('check',): _check,
     ('template', 'build'): _not_implemented,
     ('template', 'list'): _not_implemented,
     ('template', 'delete'): _not_implemented,
