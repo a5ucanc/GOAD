@@ -71,13 +71,22 @@ class ExtensionService:
         keys = ', '.join(e.key for e in affected)
         if affected:
             Log.warning(f'extension {name} removal disables scenarios: {keys}')
-        Log.warning(RESIDUE_WARNING)
+        vms = self.provider.extension_vm_names(name, self.instance.lab_name, self.instance.ip_range)
+        has_uninstall = self._has_uninstall(name)
+        if vms:
+            Log.warning(RESIDUE_WARNING)
+        elif not has_uninstall:
+            Log.warning(f'extension {name} has no uninstall playbook: what it installed on the lab hosts stays')
         if not yes:
             if self.ask is None:
+                actions = []
                 if affected:
-                    Log.error(f'remove_extension {name} disables scenarios or destroys VMs: use --yes')
-                else:
-                    Log.error(f'remove_extension {name} destroys VMs: use --yes')
+                    actions.append('disables scenarios')
+                if has_uninstall:
+                    actions.append('uninstalls it')
+                if vms:
+                    actions.append('destroys VMs')
+                Log.error(f'remove_extension {name} {" and ".join(actions) or "removes it"}: use --yes')
                 return False
             if affected:
                 question = f'Remove extension {name} and disable scenarios {keys}? (y/N)'
@@ -88,10 +97,9 @@ class ExtensionService:
         if self.scenarios is not None and not self.scenarios.disable_entries(affected):
             Log.error(f'extension {name} kept: disabling scenarios failed')
             return False
-        if self._has_uninstall(name) and not self.provision(name, install=False):
+        if has_uninstall and not self.provision(name, install=False):
             Log.error(f'extension {name} kept: uninstall failed')
             return False
-        vms = self.provider.extension_vm_names(name, self.instance.lab_name, self.instance.ip_range)
         # destroy while the generated Vagrantfile still defines the VMs
         if vms and not self.provider.destroy_vms(vms):
             Log.error(f'destroying the VMs of extension {name} failed, extension kept')
