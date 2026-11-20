@@ -133,6 +133,27 @@ def test_remove_declined_confirmation_does_nothing(env):
     assert not any(c[0] == "destroy" for c in calls)
 
 
+def test_install_without_snapshot_prompts_asks_nothing(env):
+    svc, calls, answers, *_ = env
+    svc.snapshot_prompts = False
+    assert svc.install("ws01")
+    assert answers["asked"] == []
+    assert ("take", "extension:ws01") not in calls
+
+
+def test_remove_without_snapshot_prompts_still_confirms(env):
+    svc, calls, answers, snaps, inst, _ = env
+    assert svc.install("ws01")
+    svc.snapshot_prompts = False
+    answers["asked"].clear()
+    assert svc.remove("ws01")
+    # no revert offer, but the removal is still confirmed; the stale snapshot record is dropped
+    assert answers["asked"] == ["Remove extension ws01 without revert? (y/N)"]
+    assert ("revert", "ext-01-ws01") not in calls
+    assert ("forget", "extension:ws01") in calls
+    assert inst.extensions == []
+
+
 def test_remove_without_ask_needs_yes(env):
     svc, calls, answers, snaps, inst, _ = env
     svc.ask = None
@@ -291,3 +312,35 @@ def test_install_without_vms_skips_vagrant_up(mssql_env):
     assert e.svc.install("mssql")
     assert ("up",) not in e.calls
     assert e.calls == [("enable_extension", "mssql"), ("provision", "mssql")]
+
+
+def test_remove_vm_less_with_uninstall_has_no_residue_warning(mssql_env, capsys):
+    assert mssql_env.svc.remove("mssql", yes=True)
+    out = capsys.readouterr().out
+    assert "stay" not in out
+    assert "VMs" not in out
+
+
+def test_remove_vm_less_without_uninstall_warns_changes_stay(mssql_env, capsys):
+    mssql_env.svc.lab = FakeLab(uninstall=False)
+    assert mssql_env.svc.remove("mssql", yes=True)
+    out = " ".join(capsys.readouterr().out.split())
+    assert "no uninstall playbook" in out
+    assert "computer accounts" not in out
+
+
+def test_remove_with_vms_warns_residue(env, capsys):
+    svc, calls, answers, snaps, inst, _ = env
+    inst.extensions.append("ws01")
+    assert svc.remove("ws01", yes=True)
+    out = " ".join(capsys.readouterr().out.split())
+    assert "computer accounts" in out
+
+
+def test_remove_vm_less_refusal_does_not_mention_vms(mssql_env, capsys):
+    e = mssql_env
+    e.svc.ask = None
+    assert not e.svc.remove("mssql")
+    out = " ".join(capsys.readouterr().out.split())
+    assert "remove_extension mssql disables scenarios and uninstalls it: use --yes" in out
+    assert "VMs" not in out

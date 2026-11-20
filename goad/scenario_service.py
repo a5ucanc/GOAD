@@ -4,16 +4,19 @@ from goad.scenario_resolver import ScenarioRefused
 
 class ScenarioService:
 
-    def __init__(self, instance, lab, provisioner, snapshots=None, ask=None):
+    def __init__(self, instance, lab, provisioner, snapshots=None, ask=None, snapshot_prompts=True):
         self.instance = instance
         self.lab = lab
         self.provisioner = provisioner
         # snapshots: LabSnapshots; ask(prompt) -> bool. Without both, nothing is ever asked.
         self.snapshots = snapshots
         self.ask = ask
+        # False (--no-snapshot): never ask to take or revert to a snapshot
+        self.snapshot_prompts = snapshot_prompts
 
     def _prompts(self):
-        return self.snapshots is not None and self.ask is not None and self.snapshots.supported()
+        return (self.snapshot_prompts and self.snapshots is not None and self.ask is not None
+                and self.snapshots.supported())
 
     def _forget(self, key):
         if self.snapshots is not None:
