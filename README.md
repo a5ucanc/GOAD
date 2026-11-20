@@ -20,7 +20,7 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 
 ## Host requirements
 
-- Windows with VMware Workstation 17.5 or later.
+- Windows with VMware Workstation 17.6 or later (26.x tested).
 - WSL2 in **NAT** networking mode (mirrored mode hides the VMware host-only adapters).
 - Packer 1.11 or later on Windows (`winget install Hashicorp.Packer`). goad finds `packer.exe` on PATH
   or in the winget package folder.

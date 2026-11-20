@@ -2,8 +2,8 @@ packer {
   required_version = ">= 1.11.0"
   required_plugins {
     vmware = {
-      # 2.x requires Workstation 17.6+; 1.1.x supports 17.5
-      version = "~> 1.1.0"
+      # 2.x requires Workstation 17.6+
+      version = ">= 2.1.0"
       source  = "github.com/hashicorp/vmware"
     }
   }
