@@ -146,7 +146,7 @@ class Goad(cmd.Cmd):
             return
         for line in snapshots.report(record, keep_later=True).lines():
             Log.info(line)
-        ask = self._ask(False)
+        ask = self._ask()
         if ask is not None and not ask(f'Reset the lab to {record.name}? (y/N)'):
             Log.info('reset cancelled')
             return
@@ -356,9 +356,9 @@ class Goad(cmd.Cmd):
         return [p for p in parts if p not in flags], {p for p in parts if p in flags}
 
     @staticmethod
-    def _ask(no_snapshot):
+    def _ask():
         # prompts only for a person at a terminal: scripted runs (piped console, -t tasks) never block
-        if no_snapshot or not sys.stdin.isatty():
+        if not sys.stdin.isatty():
             return None
         return lambda prompt: Utils.confirm(prompt + ' ')
 
@@ -369,14 +369,15 @@ class Goad(cmd.Cmd):
         return LabSnapshots(instance, self.lab_manager.get_current_instance_provider(), instance.lab_name, instance.ip_range,
                             after_restore=provisioner.run_sync_time)
 
-    def _extension_service(self, ask=None):
+    def _extension_service(self, ask=None, snapshot_prompts=True):
         from goad.extension_service import ExtensionService
-        scenarios = self._scenario_service(ask) if self._is_base_lab() else None
+        scenarios = self._scenario_service(ask, snapshot_prompts) if self._is_base_lab() else None
         return ExtensionService(self.lab_manager.get_current_instance(),
                                 self.lab_manager.get_current_instance_provider(),
                                 self._provision_extension,
                                 snapshots=self._lab_snapshots(), ask=ask,
-                                scenarios=scenarios, lab=self.lab_manager.get_current_instance_lab())
+                                scenarios=scenarios, lab=self.lab_manager.get_current_instance_lab(),
+                                snapshot_prompts=snapshot_prompts)
 
     def do_install_extension(self, arg):
         parts, flags = self._split_flags(arg, {'--no-snapshot'})
@@ -391,7 +392,7 @@ class Goad(cmd.Cmd):
             Log.error(f'extension {extension_name} not found abort')
             return
         Log.info('start install extension')
-        self._extension_service(self._ask('--no-snapshot' in flags)).install(extension_name)
+        self._extension_service(self._ask(), '--no-snapshot' not in flags).install(extension_name)
 
     def do_remove_extension(self, arg):
         parts, flags = self._split_flags(arg, {'--no-snapshot', '--yes'})
@@ -401,7 +402,7 @@ class Goad(cmd.Cmd):
         if self.lab_manager.get_current_instance() is None:
             Log.error('Remove extension can only be run from an instance')
             return
-        self._extension_service(self._ask('--no-snapshot' in flags)).remove(parts[0], yes='--yes' in flags)
+        self._extension_service(self._ask(), '--no-snapshot' not in flags).remove(parts[0], yes='--yes' in flags)
 
     def complete_remove_extension(self, text, line, begidx, endidx):
         instance = self.lab_manager.get_current_instance()
@@ -435,7 +436,7 @@ class Goad(cmd.Cmd):
             Log.error(f'extension {extension_name} not enabled in instance abort')
             return False
 
-    def _scenario_service(self, ask=None):
+    def _scenario_service(self, ask=None, snapshot_prompts=True):
         if self.lab_manager.get_current_instance() is None:
             Log.error('Scenarios can only be used from an instance')
             return None
@@ -443,7 +444,8 @@ class Goad(cmd.Cmd):
         return ScenarioService(self.lab_manager.get_current_instance(),
                                self.lab_manager.get_current_instance_lab(),
                                self.lab_manager.get_current_instance_provisioner(),
-                               snapshots=self._lab_snapshots(), ask=ask)
+                               snapshots=self._lab_snapshots(), ask=ask,
+                               snapshot_prompts=snapshot_prompts)
 
     def do_show_credentials(self, arg=''):
         """Print every user and password of the current lab (instance lab, or the selected lab)."""
@@ -497,7 +499,7 @@ class Goad(cmd.Cmd):
         if not parts or len(parts) > 2:
             Log.error('usage: enable_scenario <name> [host] [--no-snapshot]')
             return
-        service = self._scenario_service(self._ask('--no-snapshot' in flags))
+        service = self._scenario_service(self._ask(), '--no-snapshot' not in flags)
         if service is None:
             return
         service.enable(parts[0], parts[1] if len(parts) > 1 else None)
@@ -507,7 +509,7 @@ class Goad(cmd.Cmd):
         if not parts or len(parts) > 2:
             Log.error('usage: disable_scenario <name> [host] [--cascade] [--no-snapshot]')
             return
-        service = self._scenario_service(self._ask('--no-snapshot' in flags))
+        service = self._scenario_service(self._ask(), '--no-snapshot' not in flags)
         if service is None:
             return
         service.disable(parts[0], parts[1] if len(parts) > 1 else None, cascade='--cascade' in flags)

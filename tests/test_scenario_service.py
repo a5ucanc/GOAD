@@ -253,6 +253,15 @@ def test_enable_no_prompt_without_ask(svc, prov):
     assert svc.snapshots.calls == []
 
 
+def test_no_snapshot_prompts_skips_snapshot_and_revert(snap_svc, prov):
+    snap_svc.snapshot_prompts = False
+    assert snap_svc.enable("esc8", None)
+    assert snap_svc.disable("esc8", None)
+    assert snap_svc.answers == []
+    assert not any(c[0] in ("take", "revert") for c in snap_svc.snapshots.calls)
+    assert ("esc8", "dc01", False) in prov.calls
+
+
 def test_enable_refused_asks_nothing(snap_svc):
     assert not snap_svc.enable("esc8", "srv02")
     assert snap_svc.answers == []

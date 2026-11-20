@@ -78,13 +78,15 @@ def services_cli(monkeypatch, tty):
     monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("input() reached"))
     seen = {}
 
-    def scenario_service(ask=None):
+    def scenario_service(ask=None, snapshot_prompts=True):
         seen["ask"] = ask
+        seen["snapshot_prompts"] = snapshot_prompts
         seen["svc"] = Recorder()
         return seen["svc"]
 
-    def extension_service(ask=None):
+    def extension_service(ask=None, snapshot_prompts=True):
         seen["ask"] = ask
+        seen["snapshot_prompts"] = snapshot_prompts
         seen["svc"] = Recorder()
         return seen["svc"]
 
@@ -105,12 +107,24 @@ def test_no_tty_never_prompts(monkeypatch, command, arg):
 
 @pytest.mark.parametrize("command,arg", [
     ("do_enable_scenario", "esc8 --no-snapshot"), ("do_disable_scenario", "--no-snapshot esc8"),
-    ("do_install_extension", "elk --no-snapshot"),
+    ("do_install_extension", "elk --no-snapshot"), ("do_remove_extension", "elk --no-snapshot"),
 ])
-def test_no_snapshot_flag_disables_ask(monkeypatch, command, arg):
+def test_no_snapshot_flag_disables_only_snapshot_prompts(monkeypatch, command, arg):
+    # --no-snapshot skips the snapshot and revert questions; a person at a terminal still confirms
     cli, seen = services_cli(monkeypatch, tty=True)
     getattr(cli, command)(arg)
-    assert seen["ask"] is None
+    assert seen["ask"] is not None
+    assert seen["snapshot_prompts"] is False
+
+
+@pytest.mark.parametrize("command,arg", [
+    ("do_enable_scenario", "esc8"), ("do_disable_scenario", "esc8 dc01"),
+    ("do_install_extension", "elk"), ("do_remove_extension", "elk"),
+])
+def test_snapshot_prompts_on_by_default(monkeypatch, command, arg):
+    cli, seen = services_cli(monkeypatch, tty=True)
+    getattr(cli, command)(arg)
+    assert seen["snapshot_prompts"] is True
 
 
 def test_tty_gives_an_ask(monkeypatch):
@@ -199,7 +213,7 @@ class FakeSnapshots:
 def snapshot_cli(fake):
     cli, _, _ = make_cli()
     cli._lab_snapshots = lambda: fake
-    cli._ask = staticmethod(lambda no_snapshot: None)
+    cli._ask = staticmethod(lambda: None)
     cli._reset_push = lambda: fake.reverted.append(("push", None))
     return cli
 
@@ -242,7 +256,7 @@ def test_reset_falls_back_to_push_snapshots():
 def test_reset_declined():
     fake = FakeSnapshots(RECORDS)
     cli = snapshot_cli(fake)
-    cli._ask = staticmethod(lambda no_snapshot: (lambda prompt: False))
+    cli._ask = staticmethod(lambda: (lambda prompt: False))
     cli.do_reset("")
     assert fake.reverted == []
 

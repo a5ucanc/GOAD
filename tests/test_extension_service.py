@@ -133,6 +133,27 @@ def test_remove_declined_confirmation_does_nothing(env):
     assert not any(c[0] == "destroy" for c in calls)
 
 
+def test_install_without_snapshot_prompts_asks_nothing(env):
+    svc, calls, answers, *_ = env
+    svc.snapshot_prompts = False
+    assert svc.install("ws01")
+    assert answers["asked"] == []
+    assert ("take", "extension:ws01") not in calls
+
+
+def test_remove_without_snapshot_prompts_still_confirms(env):
+    svc, calls, answers, snaps, inst, _ = env
+    assert svc.install("ws01")
+    svc.snapshot_prompts = False
+    answers["asked"].clear()
+    assert svc.remove("ws01")
+    # no revert offer, but the removal is still confirmed; the stale snapshot record is dropped
+    assert answers["asked"] == ["Remove extension ws01 without revert? (y/N)"]
+    assert ("revert", "ext-01-ws01") not in calls
+    assert ("forget", "extension:ws01") in calls
+    assert inst.extensions == []
+
+
 def test_remove_without_ask_needs_yes(env):
     svc, calls, answers, snaps, inst, _ = env
     svc.ask = None

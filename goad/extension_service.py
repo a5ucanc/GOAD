@@ -6,20 +6,24 @@ RESIDUE_WARNING = 'agents and domain objects the extension pushed to the lab sta
 class ExtensionService:
     """install_extension / remove_extension with optional whole-lab snapshots."""
 
-    def __init__(self, instance, provider, provision, snapshots=None, ask=None, scenarios=None, lab=None):
+    def __init__(self, instance, provider, provision, snapshots=None, ask=None, scenarios=None, lab=None,
+                 snapshot_prompts=True):
         self.instance = instance
         self.provider = provider
         # provision(name, install=True) -> bool runs the extension install or uninstall playbook
         self.provision = provision
         self.snapshots = snapshots
         self.ask = ask
+        # False (--no-snapshot): never ask to take or revert to a snapshot; confirmations are still asked
+        self.snapshot_prompts = snapshot_prompts
         # scenario service of the instance: finds and disables the scenarios that need the extension
         self.scenarios = scenarios
         # lab of the instance: tells whether the extension has an uninstall playbook
         self.lab = lab
 
     def _prompts(self):
-        return self.snapshots is not None and self.ask is not None and self.snapshots.supported()
+        return (self.snapshot_prompts and self.snapshots is not None and self.ask is not None
+                and self.snapshots.supported())
 
     def install(self, name):
         if self._prompts() and self.ask(f'Take a lab snapshot before installing extension {name}? (y/N)'):
