@@ -64,7 +64,8 @@ build {
     restart_timeout = "20m"
   }
   provisioner "powershell" {
-    scripts = ["${path.root}/scripts/import-ca.ps1", "${path.root}/scripts/base-settings.ps1"]
+    environment_vars = ["GOAD_CA_EXPECTED=${var.ca_dir == "" ? "0" : "1"}"]
+    scripts          = ["${path.root}/scripts/import-ca.ps1", "${path.root}/scripts/base-settings.ps1"]
   }
 
   dynamic "provisioner" {

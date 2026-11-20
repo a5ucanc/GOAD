@@ -61,7 +61,8 @@ build {
   }
 
   provisioner "shell" {
-    execute_command = local.sudo
+    execute_command  = local.sudo
+    environment_vars = ["GOAD_CA_EXPECTED=${var.ca_dir == "" ? "0" : "1"}"]
     scripts = [
       "${path.root}/scripts/base.sh",
       "${path.root}/scripts/import-ca.sh",
