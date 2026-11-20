@@ -1,0 +1,23 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  timezone: UTC
+  identity:
+    hostname: goad-template
+    username: ${user}
+    password: "${password_hash}"
+  ssh:
+    install-server: true
+    allow-pw: true
+  storage:
+    layout:
+      name: direct
+  packages:
+    - open-vm-tools
+  updates: all
+  late-commands:
+    - echo '${user} ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/90-goad
+    - chmod 440 /target/etc/sudoers.d/90-goad
