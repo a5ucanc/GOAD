@@ -14,7 +14,7 @@ snapshot takes 30+ minutes), and reliability (`ruby.exe` locks, the vagrant acco
 vagrant-vmware-utility VMnet failure). The interface does not expose everything the tool can do, and
 the console needs piped `yes y` to script.
 
-This work is a rewrite from scratch on a new trunk branch, `vmware`, which replaces `main` as the
+This work is a rewrite from scratch on a new trunk branch, `goad-v2`, which replaces `main` as the
 branch all further work starts from.
 
 ## Goals
@@ -104,7 +104,7 @@ Three decisions shaped this design. The user chose each.
 
 ## Design
 
-### Repository on the `vmware` branch
+### Repository on the `goad-v2` branch
 
 The old code is deleted on the branch, not kept beside the new: no `goad/provider/*` other than VMware,
 no `template/provider`, no `vagrant/`, no `packer/proxmox`, no `ad/` labs other than the three `-Base`
