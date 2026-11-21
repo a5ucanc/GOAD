@@ -45,11 +45,19 @@
   ignore_unreachable: true
   ignore_errors: true
   changed_when: false
+  # The result is the plaintext password. The next task shows the failure message without it.
+  no_log: true
   when: laps_dc is not skipped and laps_dc is succeeded and not (laps_dc.unreachable | default(false))
+
+- name: Show why the Windows LAPS password read failed
+  ansible.builtin.debug:
+    msg: "No Windows LAPS password for {{ hostname }}, the lab password stays: {{ laps_login.msg | default('no message') }}"
+  when: laps_login is not skipped and laps_login is failed
 
 - name: Use the Windows LAPS password for the local Administrator
   ansible.builtin.set_fact:
     ansible_password: "{{ laps_login.result }}"
+  no_log: true
   when: >-
     laps_login is not skipped and laps_login is succeeded and not (laps_login.unreachable | default(false))
     and laps_login.result | default('') is string and laps_login.result | default('') | length > 0

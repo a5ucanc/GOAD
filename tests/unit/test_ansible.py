@@ -168,3 +168,13 @@ def test_dns_record_cleanup_derives_subnet_from_the_lab_address():
     assert module['parameters']['LabAddress'] == '{{ ansible_host }}'
     assert 'Get-NetIPAddress -IPAddress $LabAddress' in module['script']
     assert 'Select-Object -First 1' not in module['script']
+
+
+def test_connect_hides_the_laps_password():
+    tasks = {t['name']: t for t in yaml.safe_load((ANSIBLE / 'roles' / 'connect' / 'tasks' / 'main.yml').read_text())}
+    assert tasks['Read the Windows LAPS password of the host from its DC'].get('no_log') is True
+    assert tasks['Use the Windows LAPS password for the local Administrator'].get('no_log') is True
+    # no_log hides the failure text too: a separate task shows it, never the result
+    report = tasks['Show why the Windows LAPS password read failed']
+    assert 'laps_login is failed' in report['when']
+    assert 'laps_login.msg' in report['ansible.builtin.debug']['msg'] and 'result' not in str(report)
