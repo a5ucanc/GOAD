@@ -18,12 +18,28 @@
       PasswordComplexity: 4
   register: laps_policy
 
+# A run interrupted after the registry write, or a failed backup, leaves no password in AD.
+# The probe lets a later run process the policy again; a failed probe counts as no password.
+- name: Look for the Windows LAPS password in Active Directory
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ hostname }}"
+    script: |
+      param([string]$Name)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $Ansible.Result = [bool](Get-LapsADPassword -Identity $Name -AsPlainText).Password
+  delegate_to: "{{ goad_domains[domain].dc }}"
+  register: laps_probe
+  failed_when: false
+  changed_when: false
+
 - name: Apply the Windows LAPS policy now
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = 'Stop'
       Invoke-LapsPolicyProcessing
-  when: laps_policy is changed
+  when: laps_policy is changed or not (laps_probe.result | default(false) | bool)
 
 # Reads the password from the domain's DC, with the DC's own connection settings.
 - name: Windows LAPS password is in Active Directory

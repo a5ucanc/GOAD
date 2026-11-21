@@ -81,3 +81,14 @@ def test_post_join_role_order():
     play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'post-join')
     names = [r['role'] if isinstance(r, dict) else r for r in play['roles']]
     assert names == ['laps_schema', 'laps_dc', 'local_groups', 'laps_host', 'adcs']
+
+
+def test_laps_processing_reruns_without_password():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'laps_host' / 'tasks' / 'main.yml').read_text())
+    names = [t['name'] for t in tasks]
+    probe = next(t for t in tasks if t.get('register') == 'laps_probe')
+    invoke = next(t for t in tasks if 'Invoke-LapsPolicyProcessing' in t.get('ansible.windows.win_powershell', {}).get('script', ''))
+    assert probe['failed_when'] is False and probe['changed_when'] is False
+    assert probe['delegate_to'] == '{{ goad_domains[domain].dc }}'
+    assert names.index(probe['name']) < names.index(invoke['name'])
+    assert 'laps_policy is changed' in invoke['when'] and 'laps_probe' in invoke['when']
