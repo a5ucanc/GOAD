@@ -42,28 +42,4 @@
           $Ansible.Changed = $true
       }
 
-# Covers this DC's own nat records and the glue records a child domain promotion writes into the
-# parent zone (WINTERFELL.north -> nat address of the child DC).
-- name: Remove A records of non-lab addresses
-  ansible.windows.win_powershell:
-    parameters:
-      Zone: "{{ domain }}"
-    script: |
-      param([string]$Zone)
-      $ErrorActionPreference = 'Stop'
-      $Ansible.Changed = $false
-      $lab = Get-NetIPAddress -InterfaceAlias lab -AddressFamily IPv4 | Select-Object -First 1
-      $mask = [uint32]0
-      if ($lab.PrefixLength -gt 0) { $mask = [uint32]::MaxValue -shl (32 - $lab.PrefixLength) }
-      function ConvertTo-UInt32([string]$Address) {
-          $bytes = ([System.Net.IPAddress]::Parse($Address)).GetAddressBytes()
-          [Array]::Reverse($bytes)
-          [BitConverter]::ToUInt32($bytes, 0)
-      }
-      $network = (ConvertTo-UInt32 $lab.IPAddress) -band $mask
-      $stale = @(Get-DnsServerResourceRecord -ZoneName $Zone -RRType A | Where-Object {
-          ((ConvertTo-UInt32 $_.RecordData.IPv4Address.IPAddressToString) -band $mask) -ne $network })
-      foreach ($record in $stale) {
-          Remove-DnsServerResourceRecord -ZoneName $Zone -InputObject $record -Force
-          $Ansible.Changed = $true
-      }
+- ansible.builtin.import_tasks: records.yml

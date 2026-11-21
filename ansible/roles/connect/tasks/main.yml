@@ -34,5 +34,3 @@
   ansible.builtin.set_fact:
     ansible_user: "{{ netbios }}\\Administrator"
   when: secure_channel.result | default(false)
-
-- ansible.builtin.meta: reset_connection

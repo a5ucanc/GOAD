@@ -7,8 +7,7 @@
     state: domain
     reboot: true
 
+# psrp opens a new connection for each task, so the next task already logs in as this user.
 - name: Use the domain Administrator from now on
   ansible.builtin.set_fact:
     ansible_user: "{{ netbios }}\\Administrator"
-
-- ansible.builtin.meta: reset_connection

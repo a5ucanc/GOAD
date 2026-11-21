@@ -32,6 +32,16 @@
   gather_facts: false
   strategy: linear
   tags: [trust]
+  pre_tasks:
+    # Child promotion (play child) writes glue for the child DC, nat address included, into the
+    # parent zone after the forest root ran dc_dns. Clean that zone again now.
+    - name: Remove A records of non-lab addresses from the parent zone
+      ansible.builtin.include_role:
+        name: dc_dns
+        tasks_from: records
+        apply:
+          tags: [trust]
+      when: inventory_hostname in groups.forest_root
   roles:
     - trust
 

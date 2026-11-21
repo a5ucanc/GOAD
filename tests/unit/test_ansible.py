@@ -56,3 +56,22 @@ def test_content_order():
     tasks = yaml.safe_load((ANSIBLE / 'roles' / 'ad_content' / 'tasks' / 'main.yml').read_text())
     modules = [next(k for k in t if '.' in k and k.split('.')[0] in ('microsoft', 'ansible')) for t in tasks]
     assert modules.index('microsoft.ad.ou') < modules.index('microsoft.ad.group') < modules.index('microsoft.ad.user')
+
+
+def test_parent_zone_cleanup_runs_after_child_play():
+    plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
+    names = [p['name'] for p in plays]
+    trust = plays[names.index('trust')]
+    assert names.index('child') < names.index('trust')
+    cleanup = trust['pre_tasks'][0]
+    assert cleanup['ansible.builtin.include_role']['name'] == 'dc_dns'
+    assert cleanup['ansible.builtin.include_role']['tasks_from'] == 'records'
+    assert cleanup['when'] == 'inventory_hostname in groups.forest_root'
+    main = yaml.safe_load((ANSIBLE / 'roles' / 'dc_dns' / 'tasks' / 'main.yml').read_text())
+    assert {'ansible.builtin.import_tasks': 'records.yml'} in main
+
+
+def test_no_reset_connection():
+    # ansible-core ignores an inherited role `when` on meta reset_connection and resets every host
+    for path in ANSIBLE.rglob('*.yml'):
+        assert 'reset_connection' not in path.read_text(), path
