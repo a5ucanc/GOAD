@@ -13,3 +13,18 @@ def remove_setup_account(ip: str, password: str) -> None:
                               cert_validation=False).execute_ps(script)
     if had_errors:
         raise GoadError(f'cannot remove account {SETUP_USER} on {ip}')
+
+
+def laps_password(dc_ip: str, password: str, hostname: str) -> str:
+    from pypsrp.client import Client
+    quoted = hostname.replace("'", "''")
+    script = f"(Get-LapsADPassword -Identity '{quoted}' -AsPlainText).Password"
+    try:
+        output, _, had_errors = Client(dc_ip, username='Administrator', password=password, ssl=False,
+                                       auth='ntlm', cert_validation=False).execute_ps(script)
+    except Exception as exc:
+        raise GoadError(f'no LAPS password for {hostname}') from exc
+    result = str(output).strip()
+    if had_errors or not result:
+        raise GoadError(f'no LAPS password for {hostname}')
+    return result

@@ -41,6 +41,26 @@ def deployed(settings):
 
 
 @pytest.fixture
+def lab_2forests(settings, fake, vmrun):
+    from goad.lab.context import Lab, vm_path
+    from goad.lab.definition import load_lab, shipped_lab
+    from goad.state import HostState, LabState, SnapshotRecord, save_state, working_lab_path
+    text = shipped_lab('2forests').read_text()
+    path = working_lab_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    definition = load_lab(path)
+    hosts = {name: HostState(vmx=vm_path(settings, name), template=f'{h.os}-v1', hostname=h.hostname,
+                             ip=definition.ip(name, '192.168.56'), ready=True)
+             for name, h in definition.hosts.items()}
+    state = LabState(lab='2forests', ip_range='192.168.56', step='finish', hosts=hosts,
+                     templates=sorted({h.template for h in hosts.values()}), current='base',
+                     snapshots=[SnapshotRecord(name='base', taken_at='2026-11-21T00:00:00Z', label='', lab_yml=text)])
+    save_state(settings, state)
+    return Lab(settings, fake, vmrun, state, definition)
+
+
+@pytest.fixture
 def lab(settings, fake, vmrun, deployed):
     from goad.lab.context import Lab
     from goad.lab.definition import load_lab

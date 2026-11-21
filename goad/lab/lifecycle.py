@@ -1,12 +1,13 @@
 """Lab status, destroy, credentials and single-VM control."""
 import shutil
 from dataclasses import dataclass
-from typing import List
+from typing import Callable, List
 
 from goad import GoadError
 from goad.host.paths import to_wsl
 from goad.lab.context import Lab, vm_folder
 from goad.lab.power import start_all, stop_all
+from goad.lab.remote import laps_password
 from goad.settings import Settings
 from goad.state import delete_state, load_state
 from goad.vmware.parallel import run_parallel
@@ -70,13 +71,23 @@ def destroy(settings: Settings, runner, yes: bool) -> None:
     delete_state(settings)
 
 
-def creds(lab: Lab) -> List[Credential]:
+def creds(lab: Lab, laps: Callable[[str, str, str], str] = laps_password) -> List[Credential]:
     password = lab.definition.password
     rows = [Credential(f'{d.netbios}\\Administrator', password, f'domain {d.name}')
             for d in lab.definition.domains.values()]
     for name in lab.state.hosts:
         if lab.family(name) == 'windows':
-            rows.append(Credential('.\\Administrator', password, f'local {name}'))
+            host = lab.definition.hosts.get(name)
+            if host is not None and host.laps and host.domain in lab.definition.domains:
+                dc = lab.definition.domains[host.domain].dc
+                hostname = lab.state.hosts[name].hostname
+                try:
+                    value = laps(lab.state.hosts[dc].ip, password, hostname)
+                except Exception as exc:
+                    value = f'unavailable: {exc}'
+                rows.append(Credential('.\\Administrator', value, f'local {name} (LAPS)'))
+            else:
+                rows.append(Credential('.\\Administrator', password, f'local {name}'))
         else:
             rows.append(Credential('goad', password, f'ssh {name}'))
     return rows

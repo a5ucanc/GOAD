@@ -91,6 +91,20 @@ def test_creds(lab):
     assert {c.password for c in rows} == {'Aa1234567890!'}
 
 
+def test_creds_laps_row(lab_2forests):
+    rows = creds(lab_2forests, laps=lambda ip, pw, host: f'{ip}/{host}')
+    row = next(r for r in rows if r.scope == 'local srv03 (LAPS)')
+    assert row.password == '192.168.56.12/braavos'
+    assert next(r for r in rows if r.scope == 'local srv02').password == 'Aa1234567890!'
+
+
+def test_creds_laps_unavailable(lab_2forests):
+    def fail(*_):
+        raise GoadError('no LAPS password for braavos')
+    row = next(r for r in creds(lab_2forests, laps=fail) if r.scope.endswith('(LAPS)'))
+    assert row.password == 'unavailable: no LAPS password for braavos'
+
+
 def test_console_spawns_vmware(lab, fake):
     vm_console(lab, 'dc01')
     assert fake.calls[-1][0].endswith('vmware.exe') and fake.calls[-1][1] == lab.vms()['dc01']
