@@ -38,3 +38,11 @@ def deployed(settings):
                      snapshots=[SnapshotRecord(name='base', taken_at='2026-11-21T00:00:00Z', label='', lab_yml=text)])
     save_state(settings, state)
     return state
+
+
+@pytest.fixture
+def lab(settings, fake, vmrun, deployed):
+    from goad.lab.context import Lab
+    from goad.lab.definition import load_lab
+    from goad.state import working_lab_path
+    return Lab(settings, fake, vmrun, deployed, load_lab(working_lab_path(settings)))
