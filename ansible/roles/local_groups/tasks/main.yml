@@ -1,0 +1,8 @@
+- name: Local group members
+  ansible.windows.win_group_membership:
+    name: "{{ item.key }}"
+    members: "{{ item.value }}"
+    state: present
+  loop: "{{ local_groups | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

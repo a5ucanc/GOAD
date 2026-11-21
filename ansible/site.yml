@@ -69,7 +69,16 @@
   gather_facts: false
   strategy: linear
   tags: [laps, local_groups, adcs]
-  roles: []
+  roles:
+    - role: laps_schema
+      when: laps_schema | default(false)
+    - role: laps_dc
+      when: inventory_hostname in groups.dc and goad_domains[domain].laps_hosts | length > 0
+    - local_groups
+    - role: laps_host
+      when: laps
+    - role: adcs
+      when: ca
 
 - name: settings
   hosts: windows

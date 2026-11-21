@@ -1,0 +1,33 @@
+# The forest and child_domain roles remove ADCS-Cert-Authority from DCs before promotion, so
+# it is installed again here. Member servers keep it from the template.
+- name: Certification authority role
+  ansible.windows.win_feature:
+    name: ADCS-Cert-Authority
+    state: present
+    include_management_tools: true
+  register: ca_feature
+
+- name: Reboot after installing the certification authority role
+  ansible.windows.win_reboot:
+  when: ca_feature is changed and ca_feature.reboot_required
+
+# The explicit credential avoids the PSRP double hop on member servers.
+- name: Enterprise root certification authority
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ netbios }}-CA"
+      User: "{{ netbios }}\\Administrator"
+      Password: "{{ lab_password }}"
+    script: |
+      param([string]$Name, [string]$User, [string]$Password)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if (-not (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\$Name")) {
+          $secure = ConvertTo-SecureString $Password -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential($User, $secure)
+          Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -CACommonName $Name `
+              -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider' -KeyLength 2048 `
+              -HashAlgorithmName SHA256 -ValidityPeriod Years -ValidityPeriodUnits 5 `
+              -Credential $cred -Force | Out-Null
+          $Ansible.Changed = $true
+      }

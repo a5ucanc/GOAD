@@ -1,0 +1,44 @@
+# Windows LAPS reads its Group Policy settings from this key.
+# source: https://learn.microsoft.com/en-us/windows-server/identity/laps/laps-management-policy-settings
+# BackupDirectory 2 = Active Directory; PasswordComplexity 4 = upper, lower, digits and specials.
+- name: Windows LAPS policy
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\LAPS
+    name: "{{ item.key }}"
+    data: "{{ item.value }}"
+    type: dword
+  loop: "{{ policy | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    policy:
+      BackupDirectory: 2
+      PasswordAgeDays: 30
+      PasswordLength: 15
+      PasswordComplexity: 4
+  register: laps_policy
+
+- name: Apply the Windows LAPS policy now
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Invoke-LapsPolicyProcessing
+  when: laps_policy is changed
+
+# Reads the password from the domain's DC, with the DC's own connection settings.
+- name: Windows LAPS password is in Active Directory
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ hostname }}"
+    script: |
+      param([string]$Name)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $password = (Get-LapsADPassword -Identity $Name -AsPlainText).Password
+      if (-not $password) { throw "no LAPS password in Active Directory for $Name" }
+  delegate_to: "{{ goad_domains[domain].dc }}"
+  register: laps_password
+  retries: 10
+  delay: 6
+  until: laps_password is succeeded
+  changed_when: false

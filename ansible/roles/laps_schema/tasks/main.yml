@@ -1,0 +1,12 @@
+# Windows LAPS stores the password in schema attributes the forest does not have by default.
+# Runs on forest-root DCs whose forest has a laps host (laps_schema in the inventory).
+- name: Extend the schema for Windows LAPS
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $schema = (Get-ADRootDSE).schemaNamingContext
+      if (-not (Get-ADObject -SearchBase $schema -LDAPFilter '(lDAPDisplayName=msLAPS-Password)')) {
+          Update-LapsADSchema -Confirm:$false
+          $Ansible.Changed = $true
+      }

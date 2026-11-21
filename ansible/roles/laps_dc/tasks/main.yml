@@ -1,0 +1,49 @@
+# Each DC prepares the OU of its domain's laps hosts; the hosts write their own password there.
+- name: Laps organizational unit
+  microsoft.ad.ou:
+    name: Laps
+    path: "{{ goad_domains[domain].dn }}"
+
+- name: Move the laps hosts into the Laps OU
+  ansible.windows.win_powershell:
+    parameters:
+      Hostnames: "{{ goad_domains[domain].laps_hosts }}"
+      Target: "OU=Laps,{{ goad_domains[domain].dn }}"
+    script: |
+      param([string[]]$Hostnames, [string]$Target)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      foreach ($name in $Hostnames) {
+          $computer = Get-ADComputer -Identity $name
+          if ($computer.DistinguishedName -ne "CN=$($computer.Name),$Target") {
+              Move-ADObject -Identity $computer.DistinguishedName -TargetPath $Target
+              $Ansible.Changed = $true
+          }
+      }
+
+# A child DC reads the LAPS schema extension only once the schema partition has replicated
+# from the forest root, so the lookup retries.
+- name: Computers in the Laps OU may write their own password
+  ansible.windows.win_powershell:
+    parameters:
+      Target: "OU=Laps,{{ goad_domains[domain].dn }}"
+    script: |
+      param([string]$Target)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $schema = (Get-ADRootDSE).schemaNamingContext
+      $attribute = Get-ADObject -SearchBase $schema -LDAPFilter '(lDAPDisplayName=msLAPS-Password)' -Properties schemaIDGUID
+      if (-not $attribute) { throw "msLAPS-Password is not in the schema yet" }
+      $guid = [guid]$attribute.schemaIDGUID
+      $access = (Get-ADObject -Identity $Target -Properties nTSecurityDescriptor).nTSecurityDescriptor.Access
+      $granted = @($access | Where-Object {
+          $_.IdentityReference.Value -eq 'NT AUTHORITY\SELF' -and $_.ObjectType -eq $guid
+      }).Count -gt 0
+      if (-not $granted) {
+          Set-LapsADComputerSelfPermission -Identity $Target | Out-Null
+          $Ansible.Changed = $true
+      }
+  register: laps_self_permission
+  retries: 30
+  delay: 10
+  until: laps_self_permission is succeeded

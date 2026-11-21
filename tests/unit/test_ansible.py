@@ -75,3 +75,9 @@ def test_no_reset_connection():
     # ansible-core ignores an inherited role `when` on meta reset_connection and resets every host
     for path in ANSIBLE.rglob('*.yml'):
         assert 'reset_connection' not in path.read_text(), path
+
+
+def test_post_join_role_order():
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'post-join')
+    names = [r['role'] if isinstance(r, dict) else r for r in play['roles']]
+    assert names == ['laps_schema', 'laps_dc', 'local_groups', 'laps_host', 'adcs']
