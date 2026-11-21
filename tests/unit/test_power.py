@@ -2,7 +2,7 @@ import pytest
 
 from goad import GoadError
 from goad.host.runner import Result
-from goad.lab.power import port_for, start_all, stop_all, wait_ready
+from goad.lab.power import SHUTDOWN_TIMEOUT, port_for, start_all, stop_all, wait_ready
 
 VMS = {'dc01': r'C:\goad\lab\dc01\dc01.vmx', 'srv02': r'C:\goad\lab\srv02\srv02.vmx'}
 
@@ -51,3 +51,32 @@ def test_port_for():
 def test_spawn_recorded(fake):
     fake.spawn(['vmware.exe', 'x.vmx'])
     assert fake.calls == [['vmware.exe', 'x.vmx']]
+
+
+def spy_timeouts(fake):
+    seen = []
+    original = fake.run
+
+    def run(argv, timeout=None):
+        seen.append((argv[3], argv[5] if argv[3] == 'stop' else None, timeout))
+        return original(argv, timeout=timeout)
+    fake.run = run
+    return seen
+
+
+def test_stop_all_soft_timeout_then_hard(fake, vmrun):
+    running(fake, VMS['dc01'])
+    fake.respond(lambda a: a[3] == 'stop' and a[5] == 'soft', Result(124, '', 'timed out after 180s: vmrun.exe'))
+    seen = spy_timeouts(fake)
+    stop_all(vmrun, {'dc01': VMS['dc01']})
+    stops = [s for s in seen if s[0] == 'stop']
+    assert stops == [('stop', 'soft', SHUTDOWN_TIMEOUT), ('stop', 'hard', 600)]
+    assert SHUTDOWN_TIMEOUT == 180
+
+
+def test_stop_all_one_failure_still_stops_the_rest(fake, vmrun):
+    running(fake, *VMS.values())
+    fake.respond(lambda a: a[3] == 'stop' and a[4] == VMS['dc01'], Result(1, 'Error: stuck', ''))
+    with pytest.raises(GoadError, match='dc01'):
+        stop_all(vmrun, VMS)
+    assert (VMS['srv02'], 'soft') in [(a[4], a[5]) for a in fake.calls if a[3] == 'stop']
