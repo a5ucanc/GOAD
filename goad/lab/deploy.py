@@ -17,9 +17,9 @@ from goad.lab.provision import provision
 from goad.lab.remote import remove_setup_account
 from goad.settings import Settings
 from goad.state import STEPS, HostState, LabState, SnapshotRecord, load_state, save_state, working_lab_path
-from goad.templates.smoke import check_psrp, check_ssh, is_up, wait_firstboot, wait_port
+from goad.templates.smoke import check_psrp, check_ssh, FIRSTBOOT_TIMEOUT, firstboot_marker, is_up, wait_port
 from goad.templates.store import TemplateStore
-from goad.vmware.guestinfo import GuestConfig, configure_hardware, lab_mac, write_guestinfo
+from goad.vmware.guestinfo import FIRSTBOOT_DONE, FIRSTBOOT_FAILED, GuestConfig, configure_hardware, lab_mac, write_guestinfo
 from goad.vmware.parallel import run_parallel
 from goad.vmware.vmrun import Vmrun
 from goad.vmware.vmx import Vmx
@@ -28,13 +28,15 @@ console = Console()
 
 # a host that finished first boot in an earlier run answers within this many seconds
 PROBE_TIMEOUT = 10
+FIRSTBOOT_POLL = 10
 
 
 @dataclass
 class Probes:
     """Network and host probes, replaceable in tests."""
     is_up: Callable = is_up
-    wait_firstboot: Callable = wait_firstboot
+    firstboot_marker: Callable = firstboot_marker
+    sleep: Callable = time.sleep
     wait_port: Callable = wait_port
     check_psrp: Callable = check_psrp
     check_ssh: Callable = check_ssh
@@ -107,11 +109,20 @@ def step_firstboot(lab: Lab, probes: Probes) -> None:
 
     def boot(name: str, host: HostState) -> None:
         family = lab.family(name)
-        if _already_booted(lab, probes, name, host):
-            if family == 'windows':
-                probes.remove_setup_account(host.ip, lab.definition.password)   # idempotent
-            return
-        probes.wait_firstboot(lab.vmrun, host.vmx)
+        deadline = time.monotonic() + FIRSTBOOT_TIMEOUT
+        while True:
+            marker = probes.firstboot_marker(lab.vmrun, host.vmx)
+            if marker == FIRSTBOOT_DONE:
+                break
+            if marker.startswith(FIRSTBOOT_FAILED):
+                raise GoadError(f'first boot {marker}')
+            if _already_booted(lab, probes, name, host):   # marker is lost on a power cycle
+                if family == 'windows':
+                    probes.remove_setup_account(host.ip, lab.definition.password)   # idempotent
+                return
+            if time.monotonic() >= deadline:
+                raise GoadError(f'first boot did not finish in {FIRSTBOOT_TIMEOUT:.0f}s')
+            probes.sleep(FIRSTBOOT_POLL)
         probes.wait_port(host.ip, port_for(family), READY_TIMEOUT)
         if family == 'windows':
             probes.check_psrp(host.ip, 'Administrator', lab.definition.password, host.hostname)

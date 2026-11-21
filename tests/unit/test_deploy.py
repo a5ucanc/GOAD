@@ -43,10 +43,9 @@ class FakeStore:
 
 
 def fail_on(host):
-    def wait_firstboot(vmrun, vmx):
-        if host in vmx:
-            raise GoadError('first boot failed: x')
-    return wait_firstboot
+    def marker(vmrun, vmx):
+        return 'failed: x' if host in vmx else 'done'
+    return marker
 
 
 @pytest.fixture
@@ -63,7 +62,7 @@ def env(settings, tmp_path, monkeypatch):
             raise GoadError(f'{ip}:{port} not reachable after {timeout}s')
 
     probes = Probes(is_up=lambda ip: False, run_checks=lambda *a, **k: [Check('vmrun', True, '')],
-                    wait_firstboot=lambda vmrun, vmx: None, wait_port=wait_port,
+                    firstboot_marker=lambda vmrun, vmx: 'done', sleep=lambda s: None, wait_port=wait_port,
                     check_psrp=lambda *a: None, check_ssh=lambda *a: None,
                     remove_setup_account=lambda ip, password: removed_setup.append(ip),
                     provision=lambda *a: False)
@@ -131,7 +130,7 @@ def test_refuses_leftover_vm_folder(env):
 
 
 def test_range_override_recorded(env):
-    env.probes.wait_firstboot = fail_on('dc01')  # keep the lab undeployed so a re-run resumes
+    env.probes.firstboot_marker = fail_on('dc01')  # keep the lab undeployed so a re-run resumes
     with pytest.raises(GoadError, match='dc01'):
         deploy('1domain', env.settings, env.fake, env.store, ip_range='10.9.8', probes=env.probes)
     state = load_state(env.settings)
@@ -152,7 +151,7 @@ def test_full_deploy(env):
 
 
 def test_firstboot_failure_keeps_ready_hosts(env):
-    env.probes.wait_firstboot = fail_on('srv02')
+    env.probes.firstboot_marker = fail_on('srv02')
     with pytest.raises(GoadError, match='srv02'):
         deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     state = load_state(env.settings)
@@ -161,11 +160,11 @@ def test_firstboot_failure_keeps_ready_hosts(env):
 
 
 def test_resume_firstboot_only_waits_for_unready(env):
-    env.probes.wait_firstboot = fail_on('srv02')
+    env.probes.firstboot_marker = fail_on('srv02')
     with pytest.raises(GoadError):
         deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     waited = []
-    env.probes.wait_firstboot = lambda vmrun, vmx: waited.append(vmx)
+    env.probes.firstboot_marker = lambda vmrun, vmx: waited.append(vmx) or 'done'
     assert deploy('2domains', env.settings, env.fake, env.store, probes=env.probes).step == 'finish'
     assert waited == [r'C:\goad\lab\srv02\srv02.vmx']
 
@@ -215,7 +214,7 @@ def test_finish_replaces_stale_base_record(env):
 
 
 def test_resume_skips_firstboot_wait_for_host_ready_in_guest(env):
-    env.probes.wait_firstboot = fail_on('srv02')
+    env.probes.firstboot_marker = fail_on('srv02')
     with pytest.raises(GoadError):
         deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     state = load_state(env.settings)
@@ -225,20 +224,26 @@ def test_resume_skips_firstboot_wait_for_host_ready_in_guest(env):
     env.in_guest.update({'192.168.56.10', '192.168.56.11'})
     env.removed_setup.clear()
     waited = []
-    env.probes.wait_firstboot = lambda vmrun, vmx: waited.append(vmx)
+
+    def marker(vmrun, vmx):   # the marker is gone after a power cycle for hosts finished earlier
+        if 'srv02' in vmx:
+            waited.append(vmx)
+            return 'done'
+        return ''
+    env.probes.firstboot_marker = marker
     assert deploy('2domains', env.settings, env.fake, env.store, probes=env.probes).step == 'finish'
     assert waited == [r'C:\goad\lab\srv02\srv02.vmx']
     assert sorted(env.removed_setup) == ['192.168.56.10', '192.168.56.11', '192.168.56.22']
 
 
 def test_firstboot_starts_ready_hosts_too(env):
-    env.probes.wait_firstboot = fail_on('srv02')
+    env.probes.firstboot_marker = fail_on('srv02')
     with pytest.raises(GoadError):
         deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     env.fake.calls.clear()   # the fake lists no running VM: the lab is powered off
     started = []
-    env.probes.wait_firstboot = lambda vmrun, vmx: started.append(
-        sorted(c[4] for c in env.fake.calls if c[3] == 'start'))
+    env.probes.firstboot_marker = lambda vmrun, vmx: started.append(
+        sorted(c[4] for c in env.fake.calls if c[3] == 'start')) or 'done'
     deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     assert started == [sorted(load_state(env.settings).hosts[h].vmx for h in ('dc01', 'dc02', 'srv02'))]
 
@@ -256,3 +261,58 @@ def test_resume_at_provision_starts_powered_off_vms(env):
         len([c for c in env.fake.calls if c[3] == 'start'])) or False
     deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     assert started_before == [3]
+
+
+def _boot_lab(env):
+    """Deploy 1domain up to a failing first boot, then mark the host unready for a resume."""
+    env.probes.firstboot_marker = fail_on('dc01')
+    with pytest.raises(GoadError):
+        deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
+
+
+def test_resume_after_power_cycle_polls_until_host_answers(env):
+    _boot_lab(env)
+    env.in_guest.clear()
+    polls = {'marker': 0, 'port': 0}
+    sleeps = []
+
+    def marker(vmrun, vmx):
+        polls['marker'] += 1
+        return ''
+
+    def wait_port(ip, port, timeout):
+        if timeout == deploy_module.PROBE_TIMEOUT:
+            polls['port'] += 1
+            if polls['port'] < 3:
+                raise GoadError('not up yet')
+
+    env.probes.firstboot_marker = marker
+    env.probes.wait_port = wait_port
+    env.probes.sleep = sleeps.append
+    env.removed_setup.clear()
+    assert deploy('1domain', env.settings, env.fake, env.store, probes=env.probes).step == 'finish'
+    assert polls['marker'] == 3 and len(sleeps) == 2
+    assert env.removed_setup and all(h.ready for h in load_state(env.settings).hosts.values())
+
+
+def test_firstboot_failed_marker_raises_at_once(env):
+    sleeps = []
+    env.probes.firstboot_marker = lambda vmrun, vmx: 'failed: boom'
+    env.probes.sleep = sleeps.append
+    with pytest.raises(GoadError, match='first boot failed: boom'):
+        deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
+    assert sleeps == []
+
+
+def test_firstboot_times_out_when_never_done(env, monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(deploy_module.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(deploy_module, 'FIRSTBOOT_TIMEOUT', 30)
+    env.probes.firstboot_marker = lambda vmrun, vmx: ''
+
+    def sleep(seconds):
+        clock[0] += seconds
+    env.probes.sleep = sleep
+    with pytest.raises(GoadError, match='first boot did not finish in 30s'):
+        deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
+    assert clock[0] == 30

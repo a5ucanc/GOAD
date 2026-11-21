@@ -33,13 +33,18 @@ def is_up(ip: str) -> bool:
     return subprocess.run(['ping', '-c', '1', '-W', '1', ip], capture_output=True).returncode == 0
 
 
+def firstboot_marker(vmrun: Vmrun, vmx: str) -> str:
+    """In-guest first-boot marker; '' while VMware Tools is not running yet."""
+    try:
+        return vmrun.read_guest_var(vmx, FIRSTBOOT_KEY)
+    except VmrunError:
+        return ''
+
+
 def wait_firstboot(vmrun: Vmrun, vmx: str, timeout: float = FIRSTBOOT_TIMEOUT, interval: float = 10) -> None:
     deadline = time.monotonic() + timeout
     while True:
-        try:
-            value = vmrun.read_guest_var(vmx, FIRSTBOOT_KEY)
-        except VmrunError:
-            value = ''  # VMware Tools not running yet
+        value = firstboot_marker(vmrun, vmx)
         if value == FIRSTBOOT_DONE:
             return
         if value.startswith(FIRSTBOOT_FAILED):

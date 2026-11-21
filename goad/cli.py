@@ -1,4 +1,5 @@
 import argparse
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -346,3 +347,9 @@ def main(argv: Optional[list] = None) -> int:
     except GoadError as e:
         err.print(f'[red]error:[/red] {e}')
         return 1
+    except KeyboardInterrupt:
+        # worker threads may be blocked in vmrun or a wait: os._exit stops them; saved steps survive
+        print('interrupted: run the same command again to resume', file=sys.stderr)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(130)

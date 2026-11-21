@@ -47,6 +47,20 @@ def test_goad_error_exit_code(monkeypatch, capsys):
     assert 'boom' in capsys.readouterr().err
 
 
+def test_keyboard_interrupt_hints_and_hard_exits(monkeypatch, capsys):
+    def handler(args, ctx):
+        raise KeyboardInterrupt
+    def fake_exit(code):
+        raise SystemExit(code)
+    monkeypatch.setattr('goad.cli.HANDLERS', {('check',): handler})
+    monkeypatch.setattr('goad.cli.make_context', lambda: None)
+    monkeypatch.setattr('goad.cli.os._exit', fake_exit)
+    with pytest.raises(SystemExit) as e:
+        main(['check'])
+    assert e.value.code == 130
+    assert 'interrupted: run the same command again to resume' in capsys.readouterr().err
+
+
 def test_unknown_command_exit_code():
     with pytest.raises(SystemExit) as e:
         main(['nope'])

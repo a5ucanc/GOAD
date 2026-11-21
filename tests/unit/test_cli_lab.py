@@ -145,7 +145,7 @@ def test_firstboot_linux_host_uses_ssh(lab):
                     check_psrp=lambda *a: calls.append(('psrp',) + a),
                     check_ssh=lambda ip: calls.append(('ssh', ip)),
                     remove_setup_account=lambda ip, pw: calls.append(('remove', ip)),
-                    wait_firstboot=lambda *a: calls.append(('firstboot',)))
+                    firstboot_marker=lambda *a: 'done')
     step_firstboot(lab, probes)
     ip = lab.state.hosts['srv02'].ip
     assert ('port', ip, 22) in calls and ('ssh', ip) in calls
