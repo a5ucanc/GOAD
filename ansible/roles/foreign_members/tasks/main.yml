@@ -1,0 +1,35 @@
+# Members from another domain are read from that domain's DC and added by SID; AD stores a
+# foreign security principal (CN = SID) for members of another forest.
+# A member name can be a user or a group, so the lookup is by sAMAccountName.
+- name: Members from other domains
+  ansible.windows.win_powershell:
+    parameters:
+      Group: "{{ item.0.key }}"
+      Name: "{{ item.1.name }}"
+      Server: "{{ goad_domains[item.1.domain].dc_hostname }}"
+      User: "{{ goad_domains[item.1.domain].netbios }}\\Administrator"
+      Password: "{{ lab_password }}"
+    script: |
+      param([string]$Group, [string]$Name, [string]$Server, [string]$User, [string]$Password)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $secure = ConvertTo-SecureString $Password -AsPlainText -Force
+      $cred = New-Object System.Management.Automation.PSCredential($User, $secure)
+      $principal = Get-ADObject -Server $Server -Credential $cred -LDAPFilter "(sAMAccountName=$Name)" -Properties objectSid
+      if (-not $principal) { throw "$Name not found on $Server" }
+      $principalSid = $principal.objectSid.Value
+      # A member of the same forest is stored by its own DN; one of another forest by a foreign
+      # security principal whose CN is its SID. Member DNs of another domain cannot be read here.
+      $members = @((Get-ADGroup $Group -Properties member).member)
+      $present = ($members -contains $principal.DistinguishedName) -or
+          @($members | Where-Object { $_ -like "CN=$principalSid,CN=ForeignSecurityPrincipals,*" }).Count -gt 0
+      if (-not $present) {
+          # Add-ADGroupMember resolves a SID in the local domain only and fails on a foreign one.
+          # A <SID=...> value of `member` is resolved by AD itself (FSP for another forest).
+          Set-ADGroup -Identity $Group -Add @{ member = "<SID=$principalSid>" }
+          $Ansible.Changed = $true
+      }
+  loop: "{{ goad_domains[domain].groups | dict2items | subelements('value.members') }}"
+  loop_control:
+    label: "{{ item.0.key }} <- {{ item.1.domain }}\\{{ item.1.name }}"
+  when: item.1.domain != domain

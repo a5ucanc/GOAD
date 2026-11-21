@@ -9,3 +9,30 @@
   ansible.builtin.set_fact:
     ansible_user: "{{ local_user }}"
   when: domain_login.unreachable | default(false)
+
+# A joined member that boots before its DC can keep a failed secure channel for a while, so the
+# domain login fails although the host is joined. Reset the channel and go back to the domain login.
+- name: Repair the secure channel of a joined host
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $system = Get-CimInstance Win32_ComputerSystem
+      $Ansible.Result = $system.PartOfDomain
+      if ($system.PartOfDomain -and -not (Test-ComputerSecureChannel)) {
+          nltest "/sc_reset:$($system.Domain)" | Out-Null
+          if (-not (Test-ComputerSecureChannel)) { throw "no secure channel to $($system.Domain)" }
+          $Ansible.Changed = $true
+      }
+  register: secure_channel
+  retries: 30
+  delay: 10
+  until: secure_channel is succeeded
+  when: domain_login.unreachable | default(false)
+
+- name: Use the domain Administrator on a joined host
+  ansible.builtin.set_fact:
+    ansible_user: "{{ netbios }}\\Administrator"
+  when: secure_channel.result | default(false)
+
+- ansible.builtin.meta: reset_connection

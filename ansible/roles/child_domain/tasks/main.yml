@@ -25,7 +25,8 @@
 - name: Create the child domain
   microsoft.ad.domain_child:
     dns_domain_name: "{{ domain }}"
-    domain_admin_user: "{{ goad_domains[goad_domains[domain].parent].netbios }}\\Administrator"
+    # Install-ADDSDomain rejects NETBIOS\user: "You must supply a DNS resolvable domain name".
+    domain_admin_user: "Administrator@{{ goad_domains[domain].parent }}"
     domain_admin_password: "{{ lab_password }}"
     safe_mode_password: "{{ lab_password }}"
     domain_mode: WinThreshold

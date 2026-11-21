@@ -50,3 +50,9 @@ def test_connect_runs_first_on_every_run():
     first = plays[0]['roles'][0]
     assert first['role'] == 'connect'
     assert 'always' in first['tags']
+
+
+def test_content_order():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'ad_content' / 'tasks' / 'main.yml').read_text())
+    modules = [next(k for k in t if '.' in k and k.split('.')[0] in ('microsoft', 'ansible')) for t in tasks]
+    assert modules.index('microsoft.ad.ou') < modules.index('microsoft.ad.group') < modules.index('microsoft.ad.user')

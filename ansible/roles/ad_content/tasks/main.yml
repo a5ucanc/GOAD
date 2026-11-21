@@ -1,0 +1,63 @@
+# Each DC creates the content of its own domain.
+- name: Organizational units
+  microsoft.ad.ou:
+    name: "{{ item }}"
+    path: "{{ goad_domains[domain].dn }}"
+  loop: "{{ goad_domains[domain].ous }}"
+
+# managed_by points at users that do not exist yet; it is set with the members below.
+# Built-in groups (Domain Admins) already sit in CN=Users with scope global, so they stay in place.
+- name: Groups
+  microsoft.ad.group:
+    name: "{{ item.key }}"
+    scope: "{{ item.value.scope }}"
+    path: "{{ item.value.path }}"
+  loop: "{{ goad_domains[domain].groups | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Users
+  microsoft.ad.user:
+    name: "{{ item.key }}"
+    firstname: "{{ item.value.firstname }}"
+    surname: "{{ item.value.surname }}"
+    city: "{{ item.value.city }}"
+    description: "{{ item.value.description }}"
+    path: "{{ item.value.path }}"
+    password: "{{ lab_password }}"
+    update_password: on_create
+    password_never_expires: true
+    groups:
+      add: "{{ item.value.groups }}"
+  loop: "{{ goad_domains[domain].users | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Sensitive users cannot be delegated
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.key }}"
+    script: |
+      param([string]$Name)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if (-not (Get-ADUser $Name -Properties AccountNotDelegated).AccountNotDelegated) {
+          Set-ADUser $Name -AccountNotDelegated $true
+          $Ansible.Changed = $true
+      }
+  loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.sensitive') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# Members of other domains are added by the foreign_members role.
+- name: Group managers and same-domain members
+  microsoft.ad.group:
+    name: "{{ item.key }}"
+    scope: "{{ item.value.scope }}"
+    path: "{{ item.value.path }}"
+    managed_by: "{{ item.value.managed_by if item.value.managed_by is not none else omit }}"
+    members:
+      add: "{{ item.value.members | selectattr('domain', 'equalto', domain) | map(attribute='name') | list }}"
+  loop: "{{ goad_domains[domain].groups | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

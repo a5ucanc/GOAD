@@ -43,13 +43,16 @@
   roles:
     - role: join
       when: inventory_hostname in groups.member
+    - role: ad_content
+      when: inventory_hostname in groups.dc
 
 - name: foreign members
   hosts: dc
   gather_facts: false
   strategy: linear
   tags: [content]
-  roles: []
+  roles:
+    - foreign_members
 
 - name: post-join
   hosts: windows
