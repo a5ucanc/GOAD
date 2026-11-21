@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
+from goad import GoadError
 from goad.settings import Settings
 
 STEPS = ('check', 'clone', 'configure', 'firstboot', 'provision', 'finish')
@@ -69,10 +70,13 @@ def load_state(settings: Settings) -> Optional[LabState]:
     path = state_path(settings)
     if not path.is_file():
         return None
-    data = json.loads(path.read_text())
-    data['hosts'] = {k: HostState(**v) for k, v in data.get('hosts', {}).items()}
-    data['snapshots'] = [SnapshotRecord(**s) for s in data.get('snapshots', [])]
-    return LabState(**data)
+    try:
+        data = json.loads(path.read_text())
+        data['hosts'] = {k: HostState(**v) for k, v in data.get('hosts', {}).items()}
+        data['snapshots'] = [SnapshotRecord(**s) for s in data.get('snapshots', [])]
+        return LabState(**data)
+    except (ValueError, TypeError, AttributeError) as e:   # JSONDecodeError is a ValueError
+        raise GoadError(f'corrupt lab state {path}: {e}: fix the file or delete it')
 
 
 def save_state(settings: Settings, state: LabState) -> None:

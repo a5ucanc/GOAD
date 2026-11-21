@@ -47,3 +47,15 @@ def test_deployed_and_snapshot_lookup():
     assert state.deployed
     assert state.snapshot('base') is snap
     assert state.snapshot('nope') is None
+
+
+@pytest.mark.parametrize('text', ['{not json', '{"lab": "1domain", "ip_range": "x", "colour": 1}', '[]',
+                                  '{"lab": "1domain", "ip_range": "x", "hosts": {"dc01": {"bogus": 1}}}'])
+def test_corrupt_state_raises_goad_error(settings, text):
+    from goad import GoadError
+    path = state_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    with pytest.raises(GoadError, match='delete it') as info:
+        load_state(settings)
+    assert str(path) in str(info.value)
