@@ -1,0 +1,16 @@
+- name: Prefer the lab adapter and keep the nat address out of DNS
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      foreach ($pair in @(@('lab', 10), @('nat', 100))) {
+          $alias, $metric = $pair
+          if (Get-NetIPInterface -InterfaceAlias $alias | Where-Object InterfaceMetric -ne $metric) {
+              Set-NetIPInterface -InterfaceAlias $alias -InterfaceMetric $metric
+              $Ansible.Changed = $true
+          }
+      }
+      if ((Get-DnsClient -InterfaceAlias nat).RegisterThisConnectionsAddress) {
+          Set-DnsClient -InterfaceAlias nat -RegisterThisConnectionsAddress $false
+          $Ansible.Changed = $true
+      }

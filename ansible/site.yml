@@ -1,0 +1,59 @@
+# goad-v2 provisioning. Play names, hosts and order are fixed; later tasks add their roles.
+- name: common
+  hosts: windows
+  gather_facts: false
+  strategy: linear
+  tags: [common]
+  roles:
+    - common
+
+- name: forest
+  hosts: forest_root
+  gather_facts: false
+  strategy: linear
+  tags: [forest]
+  roles:
+    - forest
+
+- name: child
+  hosts: child_dc
+  gather_facts: false
+  strategy: linear
+  tags: [child]
+  roles:
+    - child_domain
+
+- name: trust
+  hosts: dc
+  gather_facts: false
+  strategy: linear
+  tags: [trust]
+  roles: []
+
+- name: join and content
+  hosts: dc:member
+  gather_facts: false
+  strategy: free
+  tags: [join, content]
+  roles: []
+
+- name: foreign members
+  hosts: dc
+  gather_facts: false
+  strategy: linear
+  tags: [content]
+  roles: []
+
+- name: post-join
+  hosts: windows
+  gather_facts: false
+  strategy: linear
+  tags: [laps, local_groups, adcs]
+  roles: []
+
+- name: settings
+  hosts: windows
+  gather_facts: false
+  strategy: free
+  tags: [settings]
+  roles: []

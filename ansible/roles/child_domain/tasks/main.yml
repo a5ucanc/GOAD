@@ -1,0 +1,53 @@
+# parent_domain_name is left out: microsoft.ad.domain_child rejects it for domain_type=child
+# and derives the parent from dns_domain_name.
+# The template ships ADCS-Cert-Authority installed, and dcpromo refuses to run while it is
+# ("Certificate Server is installed"). Remove it before promotion; the adcs role adds it back.
+- name: Check whether the host is a domain controller
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $Ansible.Result = (Get-CimInstance Win32_ComputerSystem).DomainRole -ge 4
+  register: dc_role
+  changed_when: false
+
+- name: Remove the certification authority role before promotion
+  ansible.windows.win_feature:
+    name: ADCS-Cert-Authority
+    state: absent
+  register: ca_removed
+  when: not dc_role.result
+
+- name: Reboot after removing the certification authority role
+  ansible.windows.win_reboot:
+  when: ca_removed is changed and ca_removed.reboot_required
+
+- name: Create the child domain
+  microsoft.ad.domain_child:
+    dns_domain_name: "{{ domain }}"
+    domain_admin_user: "{{ goad_domains[goad_domains[domain].parent].netbios }}\\Administrator"
+    domain_admin_password: "{{ lab_password }}"
+    safe_mode_password: "{{ lab_password }}"
+    domain_mode: WinThreshold
+    install_dns: true
+    reboot: true
+
+- name: Wait for Active Directory
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if ((Get-ADDomain).NetBIOSName -ne '{{ netbios }}') {
+          throw "domain {{ domain }} is not ready"
+      }
+  register: ad_ready
+  retries: 30
+  delay: 10
+  until: ad_ready is succeeded
+  changed_when: false
+
+- name: DNS of the domain controller
+  ansible.builtin.include_role:
+    name: dc_dns
+    apply:
+      tags: [always]

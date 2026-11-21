@@ -1,0 +1,63 @@
+- name: Lab adapter uses the domain DNS servers
+  ansible.windows.win_powershell:
+    parameters:
+      Servers: "{{ dc_dns }}"
+    script: |
+      param([string[]]$Servers)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $current = @((Get-DnsClientServerAddress -InterfaceAlias lab -AddressFamily IPv4).ServerAddresses)
+      if (($current -join ',') -ne ($Servers -join ',')) {
+          Set-DnsClientServerAddress -InterfaceAlias lab -ServerAddresses $Servers
+          $Ansible.Changed = $true
+      }
+
+- name: DNS server listens on the lab address only
+  ansible.windows.win_powershell:
+    parameters:
+      Address: "{{ ansible_host }}"
+    script: |
+      param([string]$Address)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $setting = Get-DnsServerSetting -All
+      $current = @($setting.ListeningIPAddress | ForEach-Object { "$_" })
+      if (($current -join ',') -ne $Address) {
+          $setting.ListeningIPAddress = @($Address)
+          Set-DnsServerSetting -InputObject $setting
+          $Ansible.Changed = $true
+      }
+
+- name: DNS server forwarder
+  ansible.windows.win_powershell:
+    parameters:
+      Forwarder: "{{ dc_forwarder }}"
+    script: |
+      param([string]$Forwarder)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $current = @((Get-DnsServerForwarder).IPAddress | ForEach-Object { "$_" })
+      if (($current -join ',') -ne $Forwarder) {
+          Set-DnsServerForwarder -IPAddress $Forwarder
+          $Ansible.Changed = $true
+      }
+
+- name: Remove A records of non-lab addresses
+  ansible.windows.win_powershell:
+    parameters:
+      Zone: "{{ domain }}"
+      HostName: "{{ hostname }}"
+    script: |
+      param([string]$Zone, [string]$HostName)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $others = @(Get-NetIPAddress -AddressFamily IPv4 |
+          Where-Object { $_.InterfaceAlias -ne 'lab' -and $_.IPAddress -ne '127.0.0.1' } |
+          ForEach-Object { $_.IPAddress })
+      $stale = @(Get-DnsServerResourceRecord -ZoneName $Zone -RRType A | Where-Object {
+          ($_.HostName -eq $HostName -or $_.HostName -eq '@') -and
+          $others -contains $_.RecordData.IPv4Address.IPAddressToString })
+      foreach ($record in $stale) {
+          Remove-DnsServerResourceRecord -ZoneName $Zone -InputObject $record -Force
+          $Ansible.Changed = $true
+      }
