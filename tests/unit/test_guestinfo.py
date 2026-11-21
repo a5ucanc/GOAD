@@ -77,3 +77,10 @@ def test_windows_accepts_15_char_hostname(tmp_path):
     vmx = _vmx(tmp_path)
     write_guestinfo(vmx, dataclasses.replace(_cfg(), hostname='abcdefghijklmn5'), 'windows')
     assert vmx['guestinfo.goad.hostname'] == 'abcdefghijklmn5'
+
+
+def test_windows_hostname_trailing_newline_rejected(tmp_path):
+    from goad.vmware.guestinfo import is_valid_windows_hostname
+    assert not is_valid_windows_hostname('abc\n')
+    with pytest.raises(GoadError, match='hostname'):
+        write_guestinfo(_vmx(tmp_path), dataclasses.replace(_cfg(), hostname='abc\n'), 'windows')

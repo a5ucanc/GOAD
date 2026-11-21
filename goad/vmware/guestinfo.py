@@ -18,11 +18,11 @@ FIRSTBOOT_DONE = 'done'
 # a failed first boot sets the marker to 'failed: <message>'
 FIRSTBOOT_FAILED = 'failed'
 # NetBIOS limit: COMPUTERNAME is cut to 15 characters, and firstboot compares it to this name
-_WINDOWS_HOSTNAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9-]{0,14}$')
+_WINDOWS_HOSTNAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]{0,14}')
 
 
 def is_valid_windows_hostname(name: str) -> bool:
-    return bool(_WINDOWS_HOSTNAME.match(name))
+    return bool(_WINDOWS_HOSTNAME.fullmatch(name))   # fullmatch: '$' would accept a trailing newline
 
 
 # NIC 0 (NAT, internet) uses this adapter type so Linux guests can tell it from the lab NIC
