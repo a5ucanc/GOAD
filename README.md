@@ -113,6 +113,40 @@ goad lab reset before-change     # prints: lab reset to before-change in 94s
 goad lab destroy --yes
 ```
 
+## Provisioning
+
+`deploy` runs `ansible/site.yml` as its `provision` step. `goad lab provision` runs it again on the
+deployed lab. Plays run in this order:
+
+| Play | Hosts | Tags | Roles |
+|---|---|---|---|
+| common | all Windows hosts | `common` | connect (members, runs with every tag), common |
+| forest | forest root DCs | `forest` | forest |
+| child | child DCs | `child` | child_domain |
+| trust | DCs | `trust` | dc_dns records cleanup, trust |
+| join and content | DCs and members | `join`, `content` | join (members), ad_content (DCs) |
+| foreign members | DCs | `content` | foreign_members (cross-forest group members) |
+| post-join | all Windows hosts | `laps`, `local_groups`, `adcs` | laps_schema, laps_dc, local_groups, laps_host, adcs |
+| settings | all Windows hosts | `settings` | settings (the lab.yml `settings` catalogue) |
+
+```bash
+goad lab provision                       # every play
+goad lab provision --tags content        # OUs, users, groups and foreign members (and the join play)
+goad lab provision --tags settings       # re-apply security settings after editing lab.yml
+goad lab provision --tags laps,adcs      # a tag selects whole plays; the connect role always runs
+```
+
+- Provisioning is additive: edit `~/.goad/lab.yml` (users, groups, settings) and run `goad lab provision`.
+  Removing a user or group from `lab.yml` does not delete it from AD: `goad lab reset` is the way back
+  to a clean state. Adding, removing or renaming hosts, or changing their OS or address, needs a
+  destroy and redeploy.
+- A second run on an unchanged lab reports `changed=0` on every host.
+- Each run writes `~/.goad/logs/provision-<date>.log`. It ends with the `PLAY RECAP` and a per-role
+  duration table (the `profile_roles` callback), for example `forest ---- 1280.16s` on a fresh 2forests deploy.
+- Hosts with `laps: true` get native Windows LAPS. `goad creds` reads the current password from the
+  domain controller with `Get-LapsADPassword` and shows it in the `local <host> (LAPS)` row. When the
+  DC cannot be reached, the row says `unavailable: ...`.
+
 ## Commands and scripts
 
 Every command works without a terminal. A prompt that cannot be answered fails with exit code 2 and
