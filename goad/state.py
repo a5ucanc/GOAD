@@ -96,4 +96,7 @@ def templates_in_use(settings: Settings) -> Set[str]:
     path = state_path(settings)
     if not path.is_file():
         return set()
-    return set(json.loads(path.read_text()).get('templates', []))
+    try:
+        return set(json.loads(path.read_text()).get('templates', []))
+    except (ValueError, TypeError, AttributeError) as e:   # JSONDecodeError is a ValueError
+        raise GoadError(f'corrupt lab state {path}: {e}: fix the file or delete it')
