@@ -19,6 +19,12 @@ FIRSTBOOT_DONE = 'done'
 FIRSTBOOT_FAILED = 'failed'
 # NetBIOS limit: COMPUTERNAME is cut to 15 characters, and firstboot compares it to this name
 _WINDOWS_HOSTNAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9-]{0,14}$')
+
+
+def is_valid_windows_hostname(name: str) -> bool:
+    return bool(_WINDOWS_HOSTNAME.match(name))
+
+
 # NIC 0 (NAT, internet) uses this adapter type so Linux guests can tell it from the lab NIC
 NAT_NIC_DEVICE = 'e1000e'
 
@@ -91,7 +97,7 @@ def _linux_userdata(cfg: GuestConfig) -> str:
 def write_guestinfo(vmx: Vmx, cfg: GuestConfig, os_family: Literal['windows', 'linux']) -> None:
     del vmx['guestinfo.' + FIRSTBOOT_KEY]
     if os_family == 'windows':
-        if not _WINDOWS_HOSTNAME.match(cfg.hostname):
+        if not is_valid_windows_hostname(cfg.hostname):
             raise GoadError(f'invalid Windows hostname {cfg.hostname!r}: 1-15 letters, digits or hyphens, not starting with a hyphen')
         vmx['guestinfo.goad.hostname'] = cfg.hostname
         vmx['guestinfo.goad.ip'] = cfg.ip

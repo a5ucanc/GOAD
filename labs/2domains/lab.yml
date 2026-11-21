@@ -1,0 +1,10 @@
+name: 2domains
+password: Aa1234567890!
+dns_forwarder: 1.1.1.1
+domains:
+  sevenkingdoms.local: {netbios: SEVENKINGDOMS, dc: dc01}
+  north.sevenkingdoms.local: {netbios: NORTH, dc: dc02, parent: sevenkingdoms.local}
+hosts:
+  dc01: {hostname: kingslanding, os: win2025, role: dc, domain: sevenkingdoms.local, octet: 10, cpus: 2, memory: 4096}
+  dc02: {hostname: winterfell, os: win2025, role: dc, domain: north.sevenkingdoms.local, octet: 11, cpus: 2, memory: 4096}
+  srv02: {hostname: castelblack, os: win2022, role: server, domain: north.sevenkingdoms.local, octet: 22, cpus: 2, memory: 4096}

@@ -1,0 +1,7 @@
+name: 1domain
+password: Aa1234567890!
+dns_forwarder: 1.1.1.1
+domains:
+  sevenkingdoms.local: {netbios: SEVENKINGDOMS, dc: dc01}
+hosts:
+  dc01: {hostname: kingslanding, os: win2025, role: dc, domain: sevenkingdoms.local, octet: 10, cpus: 2, memory: 4096}
