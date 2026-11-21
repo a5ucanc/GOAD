@@ -80,6 +80,38 @@ goad template delete win2025-v1  # --yes to skip the prompt
 - A template that the deployed lab uses cannot be deleted.
 - Build logs go to `~/.goad/logs/`.
 
+## Labs
+
+```bash
+goad lab deploy 2domains         # 1domain | 2domains | 2forests; --range 192.168.57 to move the network
+goad lab status
+goad snapshot take pre-adcs      # briefly powers the lab off
+goad snapshot list
+goad lab reset [snapshot]        # default: base
+goad lab destroy                 # --yes to skip the prompt
+goad creds
+goad vm stop dc01                # also: vm start, vm console; --hard on stop
+```
+
+- `deploy` clones the templates, configures network and hostnames, and boots every VM. It is resumable:
+  run it again after a failure and it continues at the failed step. It prints a duration table at the end.
+- The working copy of the lab definition is `~/.goad/lab.yml`. `lab.json` next to it records the deploy
+  state.
+- A snapshot covers every VM and a copy of `lab.yml`. `base` is taken at the end of deploy and cannot
+  be deleted. `lab reset` reverts all VMs and restores `lab.yml` from the snapshot; later snapshots are kept.
+- `lab start` and `lab stop` act on the whole lab. `lab provision [--tags a,b]` runs `ansible/site.yml`
+  and fails if it does not exist yet.
+- `lab destroy` deletes the VMs, their folders and the state.
+
+Example:
+
+```bash
+goad lab deploy 1domain
+goad snapshot take before-change
+goad lab reset before-change     # prints: lab reset to before-change in 94s
+goad lab destroy --yes
+```
+
 ## Commands and scripts
 
 Every command works without a terminal. A prompt that cannot be answered fails with exit code 2 and

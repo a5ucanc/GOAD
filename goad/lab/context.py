@@ -1,10 +1,10 @@
 """Lab context: settings, runner, vmrun, state and definition of the deployed lab."""
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from goad import GoadError
 from goad.host.runner import Runner
-from goad.lab.definition import LabDef, load_lab
+from goad.lab.definition import LabDef, load_lab, parse_lab
 from goad.lab.power import port_for
 from goad.settings import Settings
 from goad.state import LabState, load_state, save_state, working_lab_path
@@ -38,8 +38,10 @@ class Lab:
         save_state(self.settings, self.state)
 
 
-def open_lab(settings: Settings, runner: Runner) -> Lab:
+def open_lab(settings: Settings, runner: Runner, lab_yml: Optional[str] = None) -> Lab:
+    """Open the deployed lab. With lab_yml, the definition comes from that text, not the working lab.yml."""
     state = load_state(settings)
     if state is None:
         raise GoadError('no lab deployed: run goad lab deploy <lab>')
-    return Lab(settings, runner, Vmrun(runner, settings), state, load_lab(working_lab_path(settings)))
+    definition = parse_lab(lab_yml, 'snapshot lab.yml') if lab_yml is not None else load_lab(working_lab_path(settings))
+    return Lab(settings, runner, Vmrun(runner, settings), state, definition)
