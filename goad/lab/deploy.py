@@ -12,7 +12,7 @@ from goad.host.checks import run_checks
 from goad.host.paths import to_wsl
 from goad.lab.context import Lab, vm_folder, vm_path
 from goad.lab.definition import load_lab, shipped_lab
-from goad.lab.power import READY_TIMEOUT, port_for, start_all, stop_all
+from goad.lab.power import READY_TIMEOUT, port_for, start_all, stop_all, wait_ready
 from goad.lab.provision import provision
 from goad.lab.remote import remove_setup_account
 from goad.settings import Settings
@@ -25,6 +25,9 @@ from goad.vmware.vmrun import Vmrun
 from goad.vmware.vmx import Vmx
 
 console = Console()
+
+# a host that finished first boot in an earlier run answers within this many seconds
+PROBE_TIMEOUT = 10
 
 
 @dataclass
@@ -83,12 +86,31 @@ def step_configure(lab: Lab) -> None:
         vmx.save()
 
 
+def _already_booted(lab: Lab, probes: Probes, name: str, host: HostState) -> bool:
+    """True when the host answers and passes its check: first boot finished in an earlier run.
+    The in-guest marker does not survive a power cycle, so the marker alone cannot tell."""
+    family = lab.family(name)
+    try:
+        probes.wait_port(host.ip, port_for(family), PROBE_TIMEOUT)
+        if family == 'windows':
+            probes.check_psrp(host.ip, 'Administrator', lab.definition.password, host.hostname)
+        else:
+            probes.check_ssh(host.ip)
+    except Exception:
+        return False
+    return True
+
+
 def step_firstboot(lab: Lab, probes: Probes) -> None:
     pending = {name: host for name, host in lab.state.hosts.items() if not host.ready}
-    start_all(lab.vmrun, {name: host.vmx for name, host in pending.items()})
+    start_all(lab.vmrun, lab.vms())   # ready hosts too: later steps need every VM running
 
     def boot(name: str, host: HostState) -> None:
-        family = lab.definition.hosts[name].family
+        family = lab.family(name)
+        if _already_booted(lab, probes, name, host):
+            if family == 'windows':
+                probes.remove_setup_account(host.ip, lab.definition.password)   # idempotent
+            return
         probes.wait_firstboot(lab.vmrun, host.vmx)
         probes.wait_port(host.ip, port_for(family), READY_TIMEOUT)
         if family == 'windows':
@@ -105,6 +127,8 @@ def step_firstboot(lab: Lab, probes: Probes) -> None:
 
 
 def step_provision(lab: Lab, probes: Probes) -> None:
+    start_all(lab.vmrun, lab.vms())   # a resumed deploy may find the lab powered off
+    wait_ready(lab.endpoints(), wait=probes.wait_port)
     if not probes.provision(lab.settings, lab.runner, lab.definition, lab.state):
         console.print('no Ansible playbooks yet (ansible/site.yml): provisioning skipped')
 

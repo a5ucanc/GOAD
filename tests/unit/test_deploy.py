@@ -56,13 +56,19 @@ def env(settings, tmp_path, monkeypatch):
 
     monkeypatch.setattr(deploy_module, 'to_wsl', lambda p: local(p))
     removed_setup = []
+    in_guest = set()   # IPs whose first boot finished in an earlier run: the short probe answers
+
+    def wait_port(ip, port, timeout):
+        if timeout == deploy_module.PROBE_TIMEOUT and ip not in in_guest:
+            raise GoadError(f'{ip}:{port} not reachable after {timeout}s')
+
     probes = Probes(is_up=lambda ip: False, run_checks=lambda *a, **k: [Check('vmrun', True, '')],
-                    wait_firstboot=lambda vmrun, vmx: None, wait_port=lambda *a: None,
+                    wait_firstboot=lambda vmrun, vmx: None, wait_port=wait_port,
                     check_psrp=lambda *a: None, check_ssh=lambda *a: None,
                     remove_setup_account=lambda ip, password: removed_setup.append(ip),
                     provision=lambda *a: False)
     return SimpleNamespace(settings=settings, fake=CloneRunner(local), store=FakeStore(), probes=probes,
-                           local=local, removed_setup=removed_setup)
+                           local=local, removed_setup=removed_setup, in_guest=in_guest)
 
 
 def test_setup_user():
@@ -206,3 +212,47 @@ def test_finish_replaces_stale_base_record(env):
     bases = [r for r in state.snapshots if r.name == 'base']
     assert len(bases) == 1 and bases[0].label == 'taken by deploy'
     assert bases[0].lab_yml == working_lab_path(env.settings).read_text()
+
+
+def test_resume_skips_firstboot_wait_for_host_ready_in_guest(env):
+    env.probes.wait_firstboot = fail_on('srv02')
+    with pytest.raises(GoadError):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    state = load_state(env.settings)
+    for host in state.hosts.values():
+        host.ready = False   # flags lost, e.g. Ctrl-C during the first-boot wait
+    save_state(env.settings, state)
+    env.in_guest.update({'192.168.56.10', '192.168.56.11'})
+    env.removed_setup.clear()
+    waited = []
+    env.probes.wait_firstboot = lambda vmrun, vmx: waited.append(vmx)
+    assert deploy('2domains', env.settings, env.fake, env.store, probes=env.probes).step == 'finish'
+    assert waited == [r'C:\goad\lab\srv02\srv02.vmx']
+    assert sorted(env.removed_setup) == ['192.168.56.10', '192.168.56.11', '192.168.56.22']
+
+
+def test_firstboot_starts_ready_hosts_too(env):
+    env.probes.wait_firstboot = fail_on('srv02')
+    with pytest.raises(GoadError):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    env.fake.calls.clear()   # the fake lists no running VM: the lab is powered off
+    started = []
+    env.probes.wait_firstboot = lambda vmrun, vmx: started.append(
+        sorted(c[4] for c in env.fake.calls if c[3] == 'start'))
+    deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    assert started == [sorted(load_state(env.settings).hosts[h].vmx for h in ('dc01', 'dc02', 'srv02'))]
+
+
+def test_resume_at_provision_starts_powered_off_vms(env):
+    def fail(*a):
+        raise GoadError('ansible-playbook failed (exit 2)')
+    env.probes.provision = fail
+    with pytest.raises(GoadError, match='ansible'):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    assert load_state(env.settings).step == 'firstboot'
+    env.fake.calls.clear()   # the fake lists no running VM: the lab is powered off
+    started_before = []
+    env.probes.provision = lambda *a: started_before.append(
+        len([c for c in env.fake.calls if c[3] == 'start'])) or False
+    deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    assert started_before == [3]
