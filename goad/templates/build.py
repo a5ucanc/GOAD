@@ -69,7 +69,7 @@ def build_template(os_name: str, settings: Settings, runner: Runner, store: Temp
         argv += ['-var', f'{key}={value}']
     argv.append(to_windows(source))
     if runner.stream(argv, log, env) != 0:
-        raise GoadError(f'packer build of {name} failed: see {log} (unfinished VM kept in {out_dir})')
+        raise GoadError(f'packer build of {name} failed: see {log}')
 
     built = store.root / BUILD_DIR / name
     final = store.root / name
