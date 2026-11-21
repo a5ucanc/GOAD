@@ -173,6 +173,7 @@ def test_valid_content_loads():
         (ESSOS + ('users', 'khal.drogo'), {'firstname': 'Khal', 'surname': 'Drogo', 'city': 'Vaes Dothrak',
                                            'description': 'Khal Drogo', 'groups': ['Dothraki'], 'ou': 'Dorne'}),
         (ESSOS + ('users', 'daenerys.targaryen'), {'firstname': 'D', 'surname': 'T', 'sensitive': True}),
+        (('domains', 'sevenkingdoms.local', 'users', 'tyron.lannister'), {'firstname': 'T', 'surname': 'L'}),
         (SRV03 + ('local_groups',), {'Administrators': ['ESSOS\\T1-ServerAdmins', 'north\\x']}))
     d = lab.domains['essos.local']
     assert d.ous == ('Vale', 'Dorne')
@@ -183,7 +184,8 @@ def test_valid_content_loads():
 
 def test_same_forest_member_in_universal_group_ok():
     lab = _lab((('domains', 'sevenkingdoms.local', 'groups', 'G'),
-                {'scope': 'universal', 'members': ['north.sevenkingdoms.local\\a']}))
+                {'scope': 'universal', 'members': ['north.sevenkingdoms.local\\a']}),
+               (('domains', 'north.sevenkingdoms.local', 'users', 'a'), {'firstname': 'A', 'surname': 'A'}))
     assert lab.domains['sevenkingdoms.local'].groups['G'].scope == 'universal'
 
 
@@ -255,3 +257,39 @@ def test_unquoted_hex_cert_mapping_accepted():
     assert yaml.safe_load(text)['settings']['dc']['dc.cert_mapping'] == 4
     lab = parse_lab(text, 'lab.yml')
     assert lab.effective_settings('dc01')['dc.cert_mapping'] == '0x4'
+
+
+SEVEN = ('domains', 'sevenkingdoms.local')
+TYWIN = {'firstname': 'Tywin', 'surname': 'Lannister'}
+
+
+@pytest.mark.parametrize('patches, message', [
+    ([(ESSOS + ('users',), {'viserys': {**TYWIN, 'groups': ['Dothrak']}})],
+     r"user viserys in domain essos.local names unknown group 'Dothrak'"),
+    ([(ESSOS + ('groups', 'Dothraki', 'managed_by'), 'khal.drogo')],
+     r"group Dothraki in domain essos.local has unknown managed_by 'khal.drogo'"),
+    ([(ESSOS + ('groups', 'Dothraki', 'members'), ['khal.drogo'])],
+     r"unknown member 'khal.drogo' of group Dothraki in domain essos.local: not a user or group of essos.local"),
+    ([(ESSOS + ('groups', 'Dothraki', 'scope'), 'domainlocal'),
+      (ESSOS + ('groups', 'Dothraki', 'members'), ['sevenkingdoms.local\\'])],
+     r"member 'sevenkingdoms.local\\\\' of group Dothraki in domain essos.local has an empty name"),
+    ([(ESSOS + ('groups', 'Dothraki', 'scope'), 'domainlocal'),
+      (ESSOS + ('groups', 'Dothraki', 'members'), ['sevenkingdoms.local\\tywin.lanister']),
+      (SEVEN + ('users',), {'tywin.lannister': TYWIN})],
+     r"unknown member 'sevenkingdoms.local\\\\tywin.lanister' of group Dothraki in domain essos.local: not a user or group of sevenkingdoms.local"),
+    ([(ESSOS + ('groups', 'Dothraki', 'scope'), 'domainlocal'),
+      (ESSOS + ('groups', 'Dothraki', 'members'), ['westeros.local\\tywin.lannister'])],
+     r"unknown domain 'westeros.local'"),
+])
+def test_content_references_checked(patches, message):
+    with pytest.raises(GoadError, match=message):
+        _lab(*patches)
+
+
+def test_content_references_resolve():
+    lab = _lab((ESSOS + ('users',), {'viserys': {**TYWIN, 'groups': ['Dothraki', 'Domain Admins', 'Protected Users']}}),
+               (ESSOS + ('groups', 'Dothraki', 'scope'), 'domainlocal'),
+               (ESSOS + ('groups', 'Dothraki', 'managed_by'), 'Administrator'),
+               (ESSOS + ('groups', 'Dothraki', 'members'), ['viserys', 'sevenkingdoms.local\\tywin.lannister', 'sevenkingdoms.local\\Domain Admins']),
+               (SEVEN + ('users',), {'tywin.lannister': TYWIN}))
+    assert lab.domains['essos.local'].groups['Dothraki'].managed_by == 'Administrator'

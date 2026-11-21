@@ -26,6 +26,12 @@ _HOST_REQUIRED = {'hostname', 'os', 'role', 'octet', 'cpus', 'memory'}
 _GROUP_KEYS = {'scope', 'ou', 'managed_by', 'members'}
 _USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'sensitive'}
 _USER_REQUIRED = {'firstname', 'surname'}
+# AD built-ins a lab may name without defining them (AD names are case-insensitive).
+_BUILTIN_GROUPS = frozenset(n.lower() for n in (
+    'Administrators', 'Domain Admins', 'Domain Users', 'Domain Computers', 'Domain Controllers', 'Domain Guests',
+    'Enterprise Admins', 'Schema Admins', 'Protected Users', 'Account Operators', 'Backup Operators',
+    'Server Operators', 'Print Operators', 'Remote Desktop Users', 'Group Policy Creator Owners', 'DnsAdmins'))
+_BUILTIN_USERS = frozenset(n.lower() for n in ('Administrator', 'Guest', 'krbtgt'))
 
 
 @dataclass(frozen=True)
@@ -360,7 +366,33 @@ def parse_lab(text: str, source: str) -> LabDef:
     return lab
 
 
+def _principals(domain: DomainDef) -> set:
+    """Lower-cased names of the users and groups a group member or manager may name in a domain."""
+    return {n.lower() for n in (*domain.users, *domain.groups)} | _BUILTIN_USERS | _BUILTIN_GROUPS
+
+
+def _validate_references(lab: LabDef, source: str) -> None:
+    for dname, d in lab.domains.items():
+        groups = {n.lower() for n in d.groups} | _BUILTIN_GROUPS
+        for uname, u in d.users.items():
+            for gname in u.groups:
+                if gname.lower() not in groups:
+                    raise GoadError(f'{source}: user {uname} in domain {dname} names unknown group {gname!r}: not in groups of {dname} or the AD built-in groups')
+        for gname, g in d.groups.items():
+            if g.managed_by is not None and g.managed_by.lower() not in _principals(d):
+                raise GoadError(f'{source}: group {gname} in domain {dname} has unknown managed_by {g.managed_by!r}: not a user or group of {dname}')
+            for member in g.members:
+                fqdn, name = lab.split_member(dname, member)
+                if fqdn not in lab.domains:
+                    raise GoadError(f'{source}: unknown domain {fqdn!r} in member {member!r} of group {gname} in domain {dname}')
+                if not name:
+                    raise GoadError(f'{source}: member {member!r} of group {gname} in domain {dname} has an empty name')
+                if name.lower() not in _principals(lab.domains[fqdn]):
+                    raise GoadError(f'{source}: unknown member {member!r} of group {gname} in domain {dname}: not a user or group of {fqdn}')
+
+
 def _validate_content(lab: LabDef, source: str) -> None:
+    _validate_references(lab, source)
     for dname, d in lab.domains.items():
         if d.parent and d.trust:
             raise GoadError(f'{source}: {"trust"!r} in domain {dname} is not allowed on a child domain (has parent)')
