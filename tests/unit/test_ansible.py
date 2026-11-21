@@ -46,6 +46,23 @@ def test_join_falls_back_only_when_unreachable():
     assert fallback['when'] == 'domain_login.unreachable | default(false)'
 
 
+def test_connect_laps_read_survives_an_unreachable_dc():
+    # An unreachable delegate marks the member unreachable; failed_when cannot cover it, and
+    # ansible-core skips retries/until on a connection failure, so the DC is awaited first.
+    tasks = {t['name']: t for t in yaml.safe_load((ANSIBLE / 'roles' / 'connect' / 'tasks' / 'main.yml').read_text())}
+    wait = tasks['Wait for the DC before reading the Windows LAPS password']
+    read = tasks['Read the Windows LAPS password of the host from its DC']
+    names = list(tasks)
+    assert names.index(wait['name']) < names.index(read['name'])
+    for task in (wait, read):
+        assert task['delegate_to'] == '{{ goad_domains[domain].dc }}'
+        assert task.get('ignore_unreachable') is True
+        assert task.get('ignore_errors') is True
+    assert 'ansible.builtin.wait_for_connection' in wait and wait['ansible.builtin.wait_for_connection']['timeout'] > 0
+    assert read['retries'] > 0 and read['delay'] > 0 and read['until'] == 'laps_login is succeeded'
+    assert 'laps_dc is not skipped' in read['when']
+
+
 def test_connect_runs_first_on_every_run():
     plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     first = plays[0]['roles'][0]
