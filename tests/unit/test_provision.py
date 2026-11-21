@@ -4,7 +4,7 @@ import yaml
 from goad import GoadError
 from goad.host.runner import Result
 from goad.lab.definition import load_lab, parse_lab
-from goad.lab.provision import check_compatible, provision
+from goad.lab.provision import ansible_bin, check_compatible, provision
 from goad.state import inventory_path, working_lab_path
 
 
@@ -19,14 +19,14 @@ def test_provision_runs_with_tags(settings, fake, deployed, tmp_path):
     playbook.write_text('[]')
     lab = load_lab(working_lab_path(settings))
     assert provision(settings, fake, lab, deployed, tags=['users', 'acl'], playbook=playbook) is True
-    assert fake.calls == [['ansible-playbook', '-i', str(inventory_path(settings)), '-f', '3', str(playbook),
+    assert fake.calls == [[ansible_bin('ansible-playbook'), '-i', str(inventory_path(settings)), '-f', '3', str(playbook),
                            '--tags', 'users,acl']]
 
 
 def test_provision_failure_names_log(settings, fake, deployed, tmp_path):
     playbook = tmp_path / 'site.yml'
     playbook.write_text('[]')
-    fake.respond(lambda a: a[0] == 'ansible-playbook', Result(2, '', ''))
+    fake.respond(lambda a: a[0] == ansible_bin('ansible-playbook'), Result(2, '', ''))
     with pytest.raises(GoadError, match=r'exit 2.*provision-'):
         provision(settings, fake, load_lab(working_lab_path(settings)), deployed, playbook=playbook)
 
@@ -52,3 +52,12 @@ def test_added_host_refused(settings, deployed):
     assert 'srv09' in lab.hosts
     with pytest.raises(GoadError, match='host srv09 was added to lab.yml'):
         check_compatible(lab, deployed)
+
+
+def test_provision_env_and_binary(settings, fake, deployed, tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(fake, 'stream', lambda argv, log, env=None: seen.update(argv=argv, env=env) or 0)
+    playbook = tmp_path / 'site.yml'; playbook.write_text('[]')
+    provision(settings, fake, load_lab(working_lab_path(settings)), deployed, playbook=playbook)
+    assert seen['argv'][0] == ansible_bin('ansible-playbook')
+    assert seen['env']['ANSIBLE_CALLBACKS_ENABLED'] == 'ansible.posix.profile_roles'

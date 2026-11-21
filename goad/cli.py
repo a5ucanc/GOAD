@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -146,8 +147,10 @@ def _lab_provision(args, ctx) -> int:
     if not provisioning.PLAYBOOK.exists():
         raise GoadError('no Ansible playbooks yet (ansible/site.yml)')
     tags = args.tags.split(',') if args.tags else None
+    started = time.monotonic()
     with keep_host_awake():
         provisioning.provision(ctx.settings, ctx.runner, lab.definition, lab.state, tags=tags)
+    print(f'provisioned in {int(time.monotonic() - started)} s')
     return 0
 
 

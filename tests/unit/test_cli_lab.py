@@ -104,7 +104,7 @@ def test_provision_incompatible_edit(cli, settings, deployed, monkeypatch, tmp_p
     assert main(['lab', 'provision']) == 1
     err = flat(capsys.readouterr().err)
     assert 'host srv02' in err and 'ip changed' in err
-    assert not any(a[0] == 'ansible-playbook' for a in cli.calls)
+    assert not any(a[0].endswith('ansible-playbook') for a in cli.calls)
 
 
 def test_templates_in_use_corrupt_state(settings):
@@ -151,3 +151,12 @@ def test_firstboot_linux_host_uses_ssh(lab):
     assert ('port', ip, 22) in calls and ('ssh', ip) in calls
     assert not any(c[0] in ('psrp', 'remove', 'firstboot') for c in calls)
     assert lab.state.hosts['srv02'].ready
+
+
+def test_provision_prints_elapsed(cli, deployed, monkeypatch, tmp_path, capsys):
+    playbook = tmp_path / 'site.yml'
+    playbook.write_text('[]')
+    monkeypatch.setattr(provision_module, 'PLAYBOOK', playbook)
+    monkeypatch.setattr(provision_module, 'provision', lambda *a, **k: True)
+    assert main(['lab', 'provision']) == 0
+    assert re.search(r'provisioned in \d+ s', capsys.readouterr().out)
