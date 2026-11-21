@@ -22,5 +22,7 @@ def test_lab_lifecycle():
         assert main(['snapshot', 'take', 'live-check']) == 0
         assert main(['lab', 'reset', 'live-check']) == 0
         assert main(['lab', 'reset']) == 0
-    finally:
-        assert main(['lab', 'destroy', '--yes']) == 0
+    except BaseException:
+        main(['lab', 'destroy', '--yes'])   # best effort: the original failure is the one reported
+        raise
+    assert main(['lab', 'destroy', '--yes']) == 0
