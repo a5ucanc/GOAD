@@ -80,3 +80,33 @@ def test_stop_all_one_failure_still_stops_the_rest(fake, vmrun):
     with pytest.raises(GoadError, match='dc01'):
         stop_all(vmrun, VMS)
     assert (VMS['srv02'], 'soft') in [(a[4], a[5]) for a in fake.calls if a[3] == 'stop']
+
+
+def test_start_all_starts_one_vm_at_a_time_in_order(fake, vmrun, monkeypatch):
+    # parallel vmrun.exe starts race on the vmware-authd pipe (ERROR_PIPE_BUSY)
+    active, overlap = [], []
+    real_start = vmrun.start
+
+    def start(vmx):
+        active.append(vmx)
+        overlap.append(len(active))
+        try:
+            real_start(vmx)
+        finally:
+            active.remove(vmx)
+
+    monkeypatch.setattr(vmrun, 'start', start)
+    monkeypatch.setattr('goad.lab.power.run_parallel', None)   # must not be used for starts
+    running(fake)
+    start_all(vmrun, VMS)
+    starts = [a[4] for a in fake.calls if a[3] == 'start']
+    assert starts == [VMS['dc01'], VMS['srv02']]
+    assert overlap == [1, 1]
+
+
+def test_start_all_keeps_going_after_a_failed_start(fake, vmrun):
+    running(fake)
+    fake.respond(lambda a: a[3] == 'start' and a[4] == VMS['dc01'], Result(1, 'Error: Unknown error', ''))
+    with pytest.raises(GoadError, match=r'start failed on dc01: .*Unknown error'):
+        start_all(vmrun, VMS)
+    assert [a[4] for a in fake.calls if a[3] == 'start'] == [VMS['dc01'], VMS['srv02']]
