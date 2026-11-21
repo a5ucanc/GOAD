@@ -130,3 +130,21 @@ def test_vm_stop_off_is_noop(lab, fake):
 def test_unknown_vm(lab):
     with pytest.raises(GoadError, match='no VM named dc09'):
         vm_start(lab, 'dc09')
+
+
+def test_endpoints_and_creds_use_state_when_definition_lacks_a_host(lab):
+    import yaml
+
+    from goad.lab.definition import parse_lab
+    from goad.state import working_lab_path
+    data = yaml.safe_load(working_lab_path(lab.settings).read_text())
+    data['hosts'].pop('srv02')
+    lab.definition = parse_lab(yaml.safe_dump(data), 'edited')
+    assert lab.endpoints()['srv02'] == ('192.168.56.22', 5985)
+    assert [c.scope for c in creds(lab)].count('local srv02') == 1
+
+
+def test_endpoints_without_definition(lab):
+    lab.definition = None
+    assert lab.endpoints() == {'dc01': ('192.168.56.10', 5985), 'dc02': ('192.168.56.11', 5985),
+                               'srv02': ('192.168.56.22', 5985)}

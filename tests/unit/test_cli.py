@@ -102,3 +102,22 @@ def test_reset_ignores_corrupt_working_lab(monkeypatch, settings, fake, deployed
     assert main(['lab', 'reset']) == 0
     lab, name = seen[0]
     assert name == 'base' and lab.definition.name == '2domains'
+
+
+@pytest.mark.parametrize('argv', [['lab', 'status'], ['lab', 'stop'], ['snapshot', 'list'],
+                                  ['vm', 'stop', 'dc01'], ['vm', 'start', 'dc01']])
+def test_corrupt_working_lab_does_not_block(monkeypatch, settings, fake, deployed, argv):
+    from goad.state import working_lab_path
+    working_lab_path(settings).write_text('not: [valid')
+    monkeypatch.setattr('goad.cli.make_context', lambda: Context(settings, fake))
+    assert main(argv) == 0
+
+
+@pytest.mark.parametrize('argv', [['creds'], ['snapshot', 'take', 'x']])
+def test_corrupt_working_lab_refused_where_needed(monkeypatch, settings, fake, deployed, argv, capsys):
+    from goad.state import working_lab_path
+    working_lab_path(settings).write_text('not: [valid')
+    monkeypatch.setattr('goad.cli.make_context', lambda: Context(settings, fake))
+    assert main(argv) == 1
+    assert 'invalid YAML' in capsys.readouterr().err
+    assert fake.calls == []

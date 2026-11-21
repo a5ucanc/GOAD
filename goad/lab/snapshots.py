@@ -11,6 +11,7 @@ from goad import GoadError
 from goad.lab.context import Lab
 from goad.lab.definition import parse_lab
 from goad.lab.power import start_all, stop_all, wait_ready
+from goad.lab.provision import check_compatible
 from goad.state import SnapshotRecord, working_lab_path
 from goad.vmware.parallel import run_parallel
 
@@ -56,6 +57,7 @@ def take(lab: Lab, label: Optional[str] = None, now=datetime.now) -> SnapshotRec
         raise GoadError(f'bad snapshot name {name!r}: use letters, digits, . _ - (max 64)')
     if name == PROTECTED or lab.state.snapshot(name):
         raise GoadError(f'snapshot {name} already exists')
+    check_compatible(lab.definition, lab.state)   # never record a lab.yml that reset could not restore
     start = time.monotonic()
     stop_all(lab.vmrun, lab.vms())
     result = run_parallel(lab.vms(), lambda host, vmx: lab.vmrun.snapshot(vmx, name), 'snapshot')
@@ -97,6 +99,9 @@ def reset(lab: Lab, name: str = PROTECTED, wait=wait_ready) -> float:
     record = lab.state.snapshot(name)
     if record is None:
         raise GoadError(f'unknown snapshot {name}')
+    path = working_lab_path(lab.settings)
+    definition = parse_lab(record.lab_yml, f'snapshot {name} lab.yml')
+    check_compatible(definition, lab.state)   # before any VM is listed or powered off
     found = _listed(lab)
     missing = [host for host in lab.vms() if name not in found[host]]
     if missing:
@@ -107,9 +112,8 @@ def reset(lab: Lab, name: str = PROTECTED, wait=wait_ready) -> float:
     if result.failed:
         raise GoadError(f'revert to {name} failed on {", ".join(sorted(result.failed))}: the lab is half reverted '
                         f'and powered off; run goad lab reset {name} again')
-    path = working_lab_path(lab.settings)
     path.write_text(record.lab_yml)
-    lab.definition = parse_lab(record.lab_yml, str(path))
+    lab.definition = definition
     lab.state.current = name
     lab.save()
     start_all(lab.vmrun, lab.vms())

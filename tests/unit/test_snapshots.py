@@ -119,3 +119,28 @@ def test_reset_revert_failure_names_vms_and_keeps_state(lab, fake):
     assert 'srv02' in str(info.value)
     assert lab.state.current == 'x' and working_lab_path(lab.settings).read_text() == original
     assert not [a for a in fake.calls if a[3] == 'start']
+
+
+def without_srv02(text):
+    import yaml
+    data = yaml.safe_load(text)
+    data['hosts'].pop('srv02')
+    return yaml.safe_dump(data)
+
+
+def test_take_refuses_incompatible_working_copy(lab, fake):
+    path = working_lab_path(lab.settings)
+    path.write_text(without_srv02(path.read_text()))
+    lab.definition = parse_lab(path.read_text(), 'edited')
+    with pytest.raises(GoadError, match='srv02 was removed'):
+        take(lab, 'x')
+    assert fake.calls == [] and lab.state.snapshot('x') is None
+
+
+def test_reset_refuses_incompatible_record(lab, fake):
+    take(lab, 'x')
+    lab.state.snapshot('x').lab_yml = without_srv02(lab.state.snapshot('x').lab_yml)
+    fake.calls.clear()
+    with pytest.raises(GoadError, match='srv02 was removed'):
+        reset(lab, 'x', wait=lambda e: None)
+    assert fake.calls == []

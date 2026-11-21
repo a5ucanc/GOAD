@@ -75,7 +75,7 @@ def creds(lab: Lab) -> List[Credential]:
     rows = [Credential(f'{d.netbios}\\Administrator', password, f'domain {d.name}')
             for d in lab.definition.domains.values()]
     for name in lab.state.hosts:
-        if lab.definition.hosts[name].family == 'windows':
+        if lab.family(name) == 'windows':
             rows.append(Credential('.\\Administrator', password, f'local {name}'))
         else:
             rows.append(Credential('goad', password, f'ssh {name}'))

@@ -93,9 +93,10 @@ def _template_test(args, ctx) -> int:
     return 0
 
 
-def _open(ctx):
+def _open(ctx, need_definition: bool = True):
+    """Open the deployed lab; need_definition=False skips the working lab.yml, so an edited copy cannot block."""
     from goad.lab.context import open_lab
-    return open_lab(ctx.settings, ctx.runner)
+    return open_lab(ctx.settings, ctx.runner, need_definition=need_definition)
 
 
 def _lab_deploy(args, ctx) -> int:
@@ -110,7 +111,7 @@ def _lab_status(args, ctx) -> int:
     from rich.table import Table
 
     from goad.lab import lifecycle
-    lab = _open(ctx)
+    lab = _open(ctx, need_definition=False)
     state = lab.state
     console = Console()
     console.print(f'lab {state.lab} ({state.ip_range}.0/24), snapshot {state.current or "-"}, '
@@ -124,7 +125,7 @@ def _lab_status(args, ctx) -> int:
 
 def _lab_start(args, ctx) -> int:
     from goad.lab.power import start_all, wait_ready
-    lab = _open(ctx)
+    lab = _open(ctx, need_definition=False)
     start_all(lab.vmrun, lab.vms())
     wait_ready(lab.endpoints())
     return 0
@@ -132,7 +133,7 @@ def _lab_start(args, ctx) -> int:
 
 def _lab_stop(args, ctx) -> int:
     from goad.lab.power import stop_all
-    lab = _open(ctx)
+    lab = _open(ctx, need_definition=False)
     stop_all(lab.vmrun, lab.vms())
     return 0
 
@@ -187,7 +188,7 @@ def _snapshot_list(args, ctx) -> int:
 
     from goad.lab import snapshots
     table = Table('Name', 'Taken', 'Label', 'Missing on')
-    for row in snapshots.list_snapshots(_open(ctx)):
+    for row in snapshots.list_snapshots(_open(ctx, need_definition=False)):
         table.add_row(row.record.name, row.record.taken_at, row.record.label, ', '.join(row.missing_on))
     Console().print(table)
     return 0
@@ -195,7 +196,7 @@ def _snapshot_list(args, ctx) -> int:
 
 def _snapshot_delete(args, ctx) -> int:
     from goad.lab import snapshots
-    lab = _open(ctx)
+    lab = _open(ctx, need_definition=False)
     if not confirm(f'Delete snapshot {args.name}?', args.yes):
         raise GoadError('cancelled')
     snapshots.delete(lab, args.name)
@@ -216,19 +217,19 @@ def _creds(args, ctx) -> int:
 
 def _vm_start(args, ctx) -> int:
     from goad.lab import lifecycle
-    lifecycle.vm_start(_open(ctx), args.vm)
+    lifecycle.vm_start(_open(ctx, need_definition=False), args.vm)
     return 0
 
 
 def _vm_stop(args, ctx) -> int:
     from goad.lab import lifecycle
-    lifecycle.vm_stop(_open(ctx), args.vm, hard=args.hard)
+    lifecycle.vm_stop(_open(ctx, need_definition=False), args.vm, hard=args.hard)
     return 0
 
 
 def _vm_console(args, ctx) -> int:
     from goad.lab import lifecycle
-    lifecycle.vm_console(_open(ctx), args.vm)
+    lifecycle.vm_console(_open(ctx, need_definition=False), args.vm)
     return 0
 
 
