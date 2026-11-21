@@ -10,5 +10,9 @@
     ('EDITF_ATTRIBUTESUBJECTALTNAME2' in editf_current.stdout) != (setting_value == 'on')
   notify: restart-adcs
 
+# flush_handlers runs every handler this host has pending, not only restart-adcs: a reboot-settings
+# notified by a setting earlier in goad_settings (lsa.ppl, for one) reboots a CA DC here, mid-play,
+# and settings after this one run on the rebooted host. Which reboot runs here depends on the order
+# of goad_settings; settings after it still notify reboot-settings for the end of the play.
 - name: "Restart certsvc now"
   ansible.builtin.meta: flush_handlers
