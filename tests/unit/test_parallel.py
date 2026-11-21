@@ -40,3 +40,23 @@ def test_raise_if_failed_names_every_vm():
     with pytest.raises(GoadError) as e:
         run_parallel(VMS, fn, 'revert').raise_if_failed('revert')
     assert 'dc01' in str(e.value) and 'dc02' in str(e.value) and str(e.value).startswith('revert failed on')
+
+
+def test_interrupt_does_not_wait_for_workers(monkeypatch):
+    import threading
+    import time as _time
+    from goad.vmware import parallel
+    release = threading.Event()
+
+    def interrupted(futures):
+        raise KeyboardInterrupt
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(parallel, 'as_completed', interrupted)
+    start = _time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            run_parallel({'dc01': None}, lambda name, item: release.wait(5), 'wait')
+        assert _time.monotonic() - start < 2   # a Ctrl-C must not block on a worker stuck in a long wait
+    finally:
+        release.set()

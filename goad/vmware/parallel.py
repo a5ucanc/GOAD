@@ -32,7 +32,8 @@ def run_parallel(items: Dict[str, T], fn: Callable[[str, T], None], label: str,
         fn(name, item)
         return time.monotonic() - start
 
-    with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(items) or 1))) as pool:
+    pool = ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(items) or 1)))
+    try:
         futures = {pool.submit(timed, name, item): name for name, item in items.items()}
         for future in as_completed(futures):
             name = futures[future]
@@ -44,4 +45,9 @@ def run_parallel(items: Dict[str, T], fn: Callable[[str, T], None], label: str,
             else:
                 result.ok.append(name)
                 console.print(f'{label} {name} [green]ok[/green] ({seconds:.0f}s)')
+    except BaseException:
+        # Ctrl-C: do not join workers that may sit in a 20-minute wait; goad.cli.main exits the process
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
     return result
