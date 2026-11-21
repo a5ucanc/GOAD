@@ -9,7 +9,7 @@ from goad.lab import deploy as deploy_module
 from goad.lab.deploy import Probes, deploy
 from goad.lab.definition import shipped_lab
 from goad.lab.remote import SETUP_USER
-from goad.state import STEPS, load_state, working_lab_path
+from goad.state import STEPS, SnapshotRecord, load_state, save_state, working_lab_path
 from goad.templates.store import Template
 from goad.vmware.vmx import Vmx
 
@@ -167,3 +167,42 @@ def test_resume_firstboot_only_waits_for_unready(env):
 def test_provision_skipped_message(env, capsys):
     deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
     assert 'provisioning skipped' in capsys.readouterr().out
+
+
+def snapshotted(env):
+    return [a[4] for a in env.fake.calls if a[3] == 'snapshot']
+
+
+def test_snapshot_failure_leaves_base_unrecorded(env):
+    env.fake.respond(lambda a: a[3] == 'snapshot' and 'srv02' in a[4], Result(1, 'Error: disk full', ''))
+    with pytest.raises(GoadError, match='snapshot failed on .*srv02'):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    state = load_state(env.settings)
+    assert state.step == 'provision' and state.snapshot('base') is None and state.current != 'base'
+
+
+def test_resume_finish_skips_vms_with_base(env):
+    env.fake.respond(lambda a: a[3] == 'snapshot' and 'srv02' in a[4], Result(1, 'Error: disk full', ''))
+    with pytest.raises(GoadError):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    env.fake.calls.clear()
+    env.fake._responses.clear()
+    env.fake.respond(lambda a: a[3] == 'listSnapshots' and 'srv02' not in a[4], Result(0, 'Total snapshots: 1\nbase\n', ''))
+    state = deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    assert snapshotted(env) == [r'C:\goad\lab\srv02\srv02.vmx']
+    assert state.step == 'finish' and state.current == 'base'
+
+
+def test_finish_replaces_stale_base_record(env):
+    env.fake.respond(lambda a: a[3] == 'snapshot' and 'srv02' in a[4], Result(1, 'Error: disk full', ''))
+    with pytest.raises(GoadError):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    state = load_state(env.settings)
+    state.snapshots = [SnapshotRecord('base', '2000-01-01T00:00:00Z', 'stale', 'old'),
+                       SnapshotRecord('base', '2000-01-02T00:00:00Z', 'dup', 'old')]
+    save_state(env.settings, state)
+    env.fake._responses.clear()
+    state = deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    bases = [r for r in state.snapshots if r.name == 'base']
+    assert len(bases) == 1 and bases[0].label == 'taken by deploy'
+    assert bases[0].lab_yml == working_lab_path(env.settings).read_text()
