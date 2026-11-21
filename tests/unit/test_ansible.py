@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 
@@ -127,3 +128,34 @@ def test_settings_play_forces_handlers():
     # a reboot notified before a later task fails must still run: the re-run would not notify again
     play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'settings')
     assert play['force_handlers'] is True
+
+
+def _module_keys(node):
+    # every mapping key shaped like a fully qualified collection name: namespace.collection.module
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(key, str) and re.fullmatch(r'[a-z0-9_]+\.[a-z0-9_]+\.[a-z0-9_]+', key):
+                yield key
+            yield from _module_keys(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _module_keys(item)
+
+
+def test_modules_come_from_required_collections():
+    # a fresh install only has ansible.builtin and the collections in requirements.yml
+    required = {c['name'] for c in yaml.safe_load((ANSIBLE / 'requirements.yml').read_text())['collections']}
+    allowed = required | {'ansible.builtin'}
+    paths = [p for p in ANSIBLE.rglob('*.yml') if p.parent.name in ('tasks', 'handlers')] + [ANSIBLE / 'site.yml']
+    for path in paths:
+        for key in _module_keys(yaml.safe_load(path.read_text())):
+            assert '.'.join(key.split('.')[:2]) in allowed, f'{path}: {key} not from {sorted(allowed)}'
+
+
+def test_firewall_state_task_is_idempotent_powershell():
+    task, = yaml.safe_load((ANSIBLE / 'roles' / 'settings' / 'tasks' / 'firewall_state.yml').read_text())
+    module = task['ansible.windows.win_powershell']
+    assert module['parameters'] == {'Wanted': '{{ setting_value }}'}
+    script = module['script']
+    assert '$Ansible.Changed = $false' in script and '$Ansible.Changed = $true' in script
+    assert 'Domain, Private, Public' in script and 'Set-NetFirewallProfile' in script

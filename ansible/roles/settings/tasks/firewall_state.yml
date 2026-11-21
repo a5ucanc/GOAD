@@ -1,7 +1,16 @@
+# Same profiles and on/off meaning as community.windows.win_firewall, without that collection.
 - name: "Set firewall state on all profiles"
-  community.windows.win_firewall:
-    profiles:
-      - Domain
-      - Private
-      - Public
-    state: "{{ 'enabled' if setting_value == 'on' else 'disabled' }}"
+  ansible.windows.win_powershell:
+    parameters:
+      Wanted: "{{ setting_value }}"
+    script: |
+      param([string]$Wanted)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $enabled = if ($Wanted -eq 'on') { 'True' } else { 'False' }
+      $wrong = @(Get-NetFirewallProfile -Name Domain, Private, Public |
+          Where-Object { $_.Enabled.ToString() -ne $enabled } | ForEach-Object { $_.Name })
+      if ($wrong.Count -gt 0) {
+          Set-NetFirewallProfile -Name $wrong -Enabled $enabled
+          $Ansible.Changed = $true
+      }
