@@ -85,4 +85,5 @@
   gather_facts: false
   strategy: free
   tags: [settings]
-  roles: []
+  roles:
+    - settings

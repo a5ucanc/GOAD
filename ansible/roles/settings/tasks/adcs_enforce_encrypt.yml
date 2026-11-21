@@ -1,0 +1,14 @@
+- name: "Read current InterfaceFlags"
+  ansible.windows.win_command: certutil -getreg CA\InterfaceFlags
+  register: ifflags_current
+  changed_when: false
+  failed_when: false
+
+- name: "Set IF_ENFORCEENCRYPTICERTREQUEST"
+  ansible.windows.win_command: "certutil -setreg CA\\InterfaceFlags {{ '+' if setting_value == 'on' else '-' }}IF_ENFORCEENCRYPTICERTREQUEST"
+  when: >-
+    ('IF_ENFORCEENCRYPTICERTREQUEST' in ifflags_current.stdout) != (setting_value == 'on')
+  notify: restart-adcs
+
+- name: "Restart certsvc now"
+  ansible.builtin.meta: flush_handlers

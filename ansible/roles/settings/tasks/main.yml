@@ -1,0 +1,10 @@
+# One task file per lab.yml setting key. goad validated and normalized every value to a string.
+- name: "Apply setting {{ setting.key }}={{ setting.value }}"
+  ansible.builtin.include_tasks: "{{ setting.key | replace('.', '_') }}.yml"
+  vars:
+    setting_key: "{{ setting.key }}"
+    setting_value: "{{ setting.value }}"
+  loop: "{{ goad_settings | dict2items }}"
+  loop_control:
+    loop_var: setting
+    label: "{{ setting.key }}"

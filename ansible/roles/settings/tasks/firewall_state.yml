@@ -1,0 +1,7 @@
+- name: "Set firewall state on all profiles"
+  community.windows.win_firewall:
+    profiles:
+      - Domain
+      - Private
+      - Public
+    state: "{{ 'enabled' if setting_value == 'on' else 'disabled' }}"

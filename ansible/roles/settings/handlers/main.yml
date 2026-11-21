@@ -1,0 +1,8 @@
+- name: restart-adcs
+  ansible.windows.win_service:
+    name: certsvc
+    state: restarted
+
+- name: reboot-settings
+  ansible.windows.win_reboot:
+    reboot_timeout: 600

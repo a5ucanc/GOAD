@@ -1,0 +1,7 @@
+- name: "Set LmCompatibilityLevel"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
+    name: LmCompatibilityLevel
+    data: "{{ setting_value | int }}"
+    type: dword
+    state: present

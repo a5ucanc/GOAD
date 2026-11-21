@@ -1,0 +1,14 @@
+- name: "Read current EditFlags"
+  ansible.windows.win_command: certutil -getreg policy\EditFlags
+  register: editf_current
+  changed_when: false
+  failed_when: false
+
+- name: "Set EDITF_ATTRIBUTESUBJECTALTNAME2"
+  ansible.windows.win_command: "certutil -setreg policy\\EditFlags {{ '+' if setting_value == 'on' else '-' }}EDITF_ATTRIBUTESUBJECTALTNAME2"
+  when: >-
+    ('EDITF_ATTRIBUTESUBJECTALTNAME2' in editf_current.stdout) != (setting_value == 'on')
+  notify: restart-adcs
+
+- name: "Restart certsvc now"
+  ansible.builtin.meta: flush_handlers

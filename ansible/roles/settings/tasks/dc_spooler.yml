@@ -1,0 +1,5 @@
+- name: "Set Print Spooler service"
+  ansible.windows.win_service:
+    name: Spooler
+    start_mode: "{{ 'disabled' if setting_value == 'disabled' else 'auto' }}"
+    state: "{{ 'stopped' if setting_value == 'disabled' else 'started' }}"

@@ -1,0 +1,8 @@
+- name: "Set mDNS"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters
+    name: EnableMDNS
+    data: "{{ 0 if setting_value == 'disabled' else 1 }}"
+    type: dword
+    state: present
+  notify: reboot-settings

@@ -1,0 +1,7 @@
+- name: "Set StrongCertificateBindingEnforcement"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\Kdc
+    name: StrongCertificateBindingEnforcement
+    data: "{{ setting_value | int }}"
+    type: dword
+    state: present

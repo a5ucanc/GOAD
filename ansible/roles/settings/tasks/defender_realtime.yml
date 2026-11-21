@@ -1,0 +1,43 @@
+# Port of main's settings/windows_defender role, folded into one idempotent script.
+# win_feature works only on Windows Server: client editions ship Defender built in.
+- name: "Read the OS product type"
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      (Get-CimInstance Win32_OperatingSystem).ProductType
+  register: defender_product
+  changed_when: false
+
+- name: "Install Windows Defender"
+  ansible.windows.win_feature:
+    name: Windows-Defender
+  register: defender_feature
+  when: defender_product.output[0] | int != 1
+
+- name: "Reboot after installing Windows Defender"
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: defender_feature is changed and defender_feature.reboot_required
+
+# MAPS reporting off and never send samples, on and off alike.
+- name: "Set Defender realtime protection and sample submission"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Wanted)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $pref = Get-MpPreference
+      $off = $Wanted -eq 'off'
+      if ($pref.MAPSReporting -ne 0) { Set-MpPreference -MAPSReporting 0; $Ansible.Changed = $true }
+      if ($pref.SubmitSamplesConsent -ne 2) { Set-MpPreference -SubmitSamplesConsent 2; $Ansible.Changed = $true }
+      if ($off -and -not $pref.DisableScanningMappedNetworkDrivesForFullScan) {
+        Set-MpPreference -DisableScanningMappedNetworkDrivesForFullScan $true
+        $Ansible.Changed = $true
+      }
+      if ([bool]$pref.DisableRealtimeMonitoring -ne $off) {
+        Set-MpPreference -DisableRealtimeMonitoring $off
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Wanted: "{{ setting_value }}"
+    error_action: stop

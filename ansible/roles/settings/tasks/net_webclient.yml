@@ -1,0 +1,17 @@
+- name: "Set WebDAV client feature"
+  ansible.windows.win_feature:
+    name: WebDAV-Redirector
+    state: "{{ setting_value }}"
+  register: webclient_feature
+
+- name: "Reboot to apply the WebDAV client feature"
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: webclient_feature is changed and webclient_feature.reboot_required
+
+- name: "Start the WebClient service"
+  ansible.windows.win_service:
+    name: WebClient
+    start_mode: auto
+    state: started
+  when: setting_value == 'present'

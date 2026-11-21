@@ -1,0 +1,69 @@
+# The explicit credential avoids the PSRP double hop on member servers.
+- name: "Install ADCS web enrollment"
+  ansible.windows.win_powershell:
+    error_action: stop
+    parameters:
+      User: "{{ netbios }}\\Administrator"
+      Password: "{{ lab_password }}"
+    script: |
+      param([string]$User, [string]$Password)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $feature = Get-WindowsFeature ADCS-Web-Enrollment
+      if (-not $feature.Installed) {
+        Install-WindowsFeature ADCS-Web-Enrollment -IncludeManagementTools | Out-Null
+        $Ansible.Changed = $true
+      }
+      if (-not (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration')) { throw 'No CA configured' }
+      Import-Module WebAdministration
+      if (-not (Get-WebApplication -Site 'Default Web Site' -Name 'CertSrv' -ErrorAction SilentlyContinue)) {
+        $secure = ConvertTo-SecureString $Password -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential($User, $secure)
+        Install-AdcsWebEnrollment -Credential $cred -Force | Out-Null
+        $Ansible.Changed = $true
+      }
+  no_log: true
+  when: setting_value == 'on'
+
+- name: "Allow NTLM over HTTP on /certsrv, EPA off"
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Import-Module WebAdministration
+      $Ansible.Changed = $false
+      $f = 'system.webServer/security/authentication/windowsAuthentication'
+      $loc = 'Default Web Site/CertSrv'
+      if (-not (Get-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter $f -Name enabled).Value) {
+        Set-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter $f -Name enabled -Value $true
+        $Ansible.Changed = $true
+      }
+      $pr = Get-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter "$f/providers" -Name '.'
+      if (-not ($pr.Collection | Where-Object { $_.Value -eq 'NTLM' })) {
+        Add-WebConfiguration -PSPath IIS:\ -Location $loc -Filter "$f/providers" -Value @{value='NTLM'}
+        $Ansible.Changed = $true
+      }
+      $epa = Get-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter "$f/extendedProtection" -Name tokenChecking
+      if ($epa -ne 'None') {
+        Set-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter "$f/extendedProtection" -Name tokenChecking -Value 'None'
+        $Ansible.Changed = $true
+      }
+      $ssl = Get-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter 'system.webServer/security/access' -Name sslFlags
+      if ("$ssl" -ne 'None' -and "$ssl" -ne '') {
+        Set-WebConfigurationProperty -PSPath IIS:\ -Location $loc -Filter 'system.webServer/security/access' -Name sslFlags -Value 'None'
+        $Ansible.Changed = $true
+      }
+  when: setting_value == 'on'
+
+- name: "Uninstall ADCS web enrollment"
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if ((Get-WindowsFeature ADCS-Web-Enrollment).Installed) {
+        Uninstall-AdcsWebEnrollment -Force | Out-Null
+        Uninstall-WindowsFeature ADCS-Web-Enrollment | Out-Null
+        $Ansible.Changed = $true
+      }
+  when: setting_value == 'off'

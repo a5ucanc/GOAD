@@ -1,0 +1,8 @@
+# absent = Windows default (0x18, strong mappings only). 0x4 = UPN mapping (ESC10 case 2).
+- name: "Set Schannel CertificateMappingMethods"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\Schannel
+    name: CertificateMappingMethods
+    data: 4
+    type: dword
+    state: "{{ 'absent' if setting_value == 'absent' else 'present' }}"

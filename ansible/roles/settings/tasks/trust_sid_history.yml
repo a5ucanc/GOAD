@@ -1,0 +1,27 @@
+# On the DC of <domain>: let <domain> accept SID history from users of each trust partner
+# (trustAttributes bit 0x40, TREAT_AS_EXTERNAL). netdom needs the partner's admin.
+- name: "Set SID history on the forest trust"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Domain, [string]$Partner, [string]$PartnerUser, [string]$PartnerPassword, [string]$Wanted)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      $tdo = Get-ADObject -Identity "CN=$Partner,CN=System,$((Get-ADDomain).DistinguishedName)" -Properties trustAttributes
+      $enabled = ($tdo.trustAttributes -band 0x40) -ne 0
+      if ($enabled -ne ($Wanted -eq 'enabled')) {
+        $flag = if ($Wanted -eq 'enabled') { 'yes' } else { 'no' }
+        $out = netdom trust $Domain /d:$Partner /enablesidhistory:$flag /ud:$PartnerUser /pd:$PartnerPassword 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "netdom failed: $out" }
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Domain: "{{ domain }}"
+      Partner: "{{ sid_partner }}"
+      PartnerUser: "{{ goad_domains[sid_partner].netbios }}\\administrator"
+      PartnerPassword: "{{ lab_password }}"
+      Wanted: "{{ setting_value }}"
+  loop: "{{ goad_domains[domain].trusts }}"
+  loop_control:
+    loop_var: sid_partner
+  no_log: true

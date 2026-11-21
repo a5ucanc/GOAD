@@ -9,6 +9,7 @@ from goad.host.paths import ansible_bin
 from goad.lab.definition import LAB_NAMES, REPO, load_lab, shipped_lab
 from goad.lab.inventory import render_inventory
 from goad.lab.provision import ANSIBLE_ENV
+from goad.lab.settings_catalog import SETTINGS
 
 ANSIBLE = REPO / 'ansible'
 PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign members', 'post-join', 'settings']
@@ -92,3 +93,14 @@ def test_laps_processing_reruns_without_password():
     assert probe['delegate_to'] == '{{ goad_domains[domain].dc }}'
     assert names.index(probe['name']) < names.index(invoke['name'])
     assert 'laps_policy is changed' in invoke['when'] and 'laps_probe' in invoke['when']
+
+
+def test_every_setting_has_a_task_file():
+    files = {p.stem for p in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml')} - {'main'}
+    assert files == {key.replace('.', '_') for key in SETTINGS}
+
+
+def test_settings_files_have_no_become_or_assert():
+    for path in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml'):
+        text = path.read_text()
+        assert 'ansible_become' not in text and 'ansible.builtin.assert' not in text, path

@@ -1,0 +1,7 @@
+- name: "Set LDAP channel binding"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters
+    name: LdapEnforceChannelBinding
+    data: "{{ 2 if setting_value == 'always' else 0 }}"
+    type: dword
+    state: present
