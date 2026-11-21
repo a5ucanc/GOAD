@@ -46,7 +46,7 @@ class Probes:
 
 
 def step_check(lab: Lab, store: TemplateStore, probes: Probes) -> None:
-    failed = [c for c in probes.run_checks(lab.runner, lab.settings, need_packer=False) if not c.ok]
+    failed = [c for c in probes.run_checks(lab.runner, lab.settings, need_packer=False, need_ansible=True) if not c.ok]
     if failed:
         raise GoadError('host checks failed: ' + '; '.join(f'{c.name}: {c.detail}' for c in failed))
     templates = {}

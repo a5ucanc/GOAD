@@ -13,6 +13,7 @@ dependencies = [
     "rich>=13",
     "PyYAML>=6",
     "pypsrp>=0.8",
+    "ansible-core>=2.16",
 ]
 
 [project.scripts]

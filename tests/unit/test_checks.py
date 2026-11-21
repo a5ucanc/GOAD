@@ -1,3 +1,4 @@
+import json
 from collections import namedtuple
 
 from goad.cli import Context, main
@@ -20,10 +21,11 @@ Usage = namedtuple('Usage', 'total used free')
 GB = 1024 ** 3
 
 
-def _checks(fake, settings, ip='192.168.56.1', packer='Packer v1.16.2', free=500 * GB, need_packer=True):
+def _checks(fake, settings, ip='192.168.56.1', packer='Packer v1.16.2', free=500 * GB, need_packer=True,
+            need_ansible=False):
     fake.respond(lambda a: a[0].endswith('ipconfig.exe'), Result(0, IPCONFIG.format(ip=ip), ''))
     fake.respond(lambda a: a[-1] == 'version', Result(0, packer + '\n', ''))
-    return {c.name: c for c in run_checks(fake, settings, need_packer,
+    return {c.name: c for c in run_checks(fake, settings, need_packer, need_ansible=need_ansible,
                                            exists=lambda p: True, disk_usage=lambda p: Usage(0, 0, free),
                                            packer_path=lambda s: '/w/packer.exe')}
 
@@ -81,3 +83,39 @@ def test_check_command_exit_code(monkeypatch):
     assert main(['check']) == 0
     monkeypatch.setattr('goad.host.checks.run_checks', lambda *a, **k: [Check('vmnet', False, 'missing')])
     assert main(['check']) == 1
+
+
+GALAXY = json.dumps({'/x': {'ansible.windows': {'version': '2.5.0'}, 'microsoft.ad': {'version': '1.7.1'},
+                            'ansible.posix': {'version': '1.6.2'}}})
+
+
+def test_ansible_checks_pass(fake, settings):
+    fake.respond(lambda a: a[-1] == '--version', Result(0, 'ansible-playbook [core 2.17.4]\n', ''))
+    fake.respond(lambda a: 'collection' in a, Result(0, GALAXY, ''))
+    checks = _checks(fake, settings, need_packer=False, need_ansible=True)
+    assert checks['ansible'].ok and checks['collections'].ok
+
+
+def test_ansible_too_old(fake, settings):
+    fake.respond(lambda a: a[-1] == '--version', Result(0, 'ansible-playbook [core 2.14.1]\n', ''))
+    checks = _checks(fake, settings, need_packer=False, need_ansible=True)
+    assert not checks['ansible'].ok and 'need ansible-core >= 2.16' in checks['ansible'].detail
+    assert 'collections' not in checks
+
+
+def test_ansible_not_found(fake, settings):
+    fake.respond(lambda a: a[-1] == '--version', Result(127, '', 'not found'))
+    checks = _checks(fake, settings, need_packer=False, need_ansible=True)
+    assert not checks['ansible'].ok and 'pip install -e .' in checks['ansible'].detail
+
+
+def test_missing_collection_named(fake, settings):
+    fake.respond(lambda a: a[-1] == '--version', Result(0, 'ansible-playbook [core 2.17.4]\n', ''))
+    fake.respond(lambda a: 'collection' in a, Result(0, json.dumps({'/x': {'ansible.windows': {}}}), ''))
+    checks = _checks(fake, settings, need_packer=False, need_ansible=True)
+    assert 'ansible.posix, microsoft.ad' in checks['collections'].detail
+
+
+def test_ansible_skipped_by_default(fake, settings):
+    checks = _checks(fake, settings, need_packer=False)
+    assert 'ansible' not in checks and 'collections' not in checks

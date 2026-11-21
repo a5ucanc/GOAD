@@ -41,7 +41,7 @@ def _check(args, ctx) -> int:
     from rich.table import Table
 
     from goad.host import checks
-    results = checks.run_checks(ctx.runner, ctx.settings, need_packer=True)
+    results = checks.run_checks(ctx.runner, ctx.settings, need_packer=True, need_ansible=True)
     table = Table('Check', 'Status', 'Detail')
     for check in results:
         table.add_row(check.name, '[green]ok[/green]' if check.ok else '[red]fail[/red]', check.detail)

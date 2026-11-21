@@ -33,6 +33,7 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 ```bash
 python3 -m venv ~/.goad/v2
 ~/.goad/v2/bin/pip install -e .
+~/.goad/v2/bin/ansible-galaxy collection install -r ansible/requirements.yml
 ~/.goad/v2/bin/goad check
 ```
 

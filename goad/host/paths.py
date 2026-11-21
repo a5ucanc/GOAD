@@ -1,4 +1,5 @@
 import re
+import sys
 from pathlib import Path, PurePosixPath
 from typing import Union
 
@@ -25,3 +26,9 @@ def to_wsl(path: str) -> Path:
         raise GoadError(f'path not on a Windows drive: {path}')
     drive, rest = match.group(1).lower(), match.group(2).replace('\\', '/').strip('/')
     return Path(f'/mnt/{drive}') / rest if rest else Path(f'/mnt/{drive}')
+
+
+def ansible_bin(name: str) -> str:
+    """The venv is not on PATH when ~/.goad/v2/bin/goad runs: prefer the binary next to the interpreter."""
+    path = Path(sys.executable).parent / name
+    return str(path) if path.exists() else name

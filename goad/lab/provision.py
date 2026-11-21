@@ -1,10 +1,10 @@
 """Provision: check the working lab.yml against the deployed hosts, then run ansible-playbook."""
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 from goad import GoadError
+from goad.host.paths import ansible_bin
 from goad.host.runner import Runner
 from goad.lab.definition import REPO, LabDef
 from goad.lab.inventory import write_inventory
@@ -15,12 +15,6 @@ PLAYBOOK = REPO / 'ansible' / 'site.yml'
 ANSIBLE_ENV = {'ANSIBLE_CALLBACKS_ENABLED': 'ansible.posix.profile_roles', 'ANSIBLE_HOST_KEY_CHECKING': 'False',
                'ANSIBLE_DISPLAY_SKIPPED_HOSTS': 'False', 'ANSIBLE_RETRY_FILES_ENABLED': 'False'}
 _TAIL = 'destroy and redeploy to change hosts'
-
-
-def ansible_bin(name: str) -> str:
-    """The venv is not on PATH when ~/.goad/v2/bin/goad runs: prefer the binary next to the interpreter."""
-    path = Path(sys.executable).parent / name
-    return str(path) if path.exists() else name
 
 
 def check_compatible(lab: LabDef, state: LabState) -> None:

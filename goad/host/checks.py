@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -5,12 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from goad.host.paths import to_wsl
+import yaml
+
+from goad.host.paths import ansible_bin, to_wsl
 from goad.host.runner import Runner
 from goad.settings import Settings, resolve_packer
 
 MIN_PACKER = (1, 11)
 MIN_FREE_GB = 100
+MIN_ANSIBLE = (2, 16)
+REPO = Path(__file__).resolve().parents[2]
+REQUIREMENTS = REPO / 'ansible' / 'requirements.yml'
 
 
 @dataclass(frozen=True)
@@ -43,7 +49,31 @@ def _cert_files(folder: str) -> List[Path]:
     return [p for p in path.iterdir() if p.suffix.lower() in ('.cer', '.crt')]
 
 
-def run_checks(runner: Runner, settings: Settings, need_packer: bool,
+def _ansible_checks(runner: Runner) -> List[Check]:
+    result = runner.run([ansible_bin('ansible-playbook'), '--version'], timeout=60)
+    match = re.search(r'core (\d+)\.(\d+)', result.stdout)
+    if result.code == 127 or not match:
+        return [Check('ansible', False, 'ansible-playbook not found: pip install -e . in the goad venv')]
+    first = result.stdout.strip().splitlines()[0]
+    if (int(match.group(1)), int(match.group(2))) < MIN_ANSIBLE:
+        return [Check('ansible', False, f'need ansible-core >= 2.16, found: {first}')]
+    checks = [Check('ansible', True, f'ansible-core {match.group(1)}.{match.group(2)}')]
+    listing = runner.run([ansible_bin('ansible-galaxy'), 'collection', 'list', '--format', 'json'], timeout=120)
+    try:
+        installed = {name for path in json.loads(listing.stdout).values() for name in path}
+    except (ValueError, AttributeError):
+        installed = set()
+    wanted = [c['name'] for c in yaml.safe_load(REQUIREMENTS.read_text())['collections']]
+    missing = sorted(set(wanted) - installed)
+    if missing:
+        checks.append(Check('collections', False, f'missing Ansible collections {", ".join(missing)}: '
+                                                  'ansible-galaxy collection install -r ansible/requirements.yml'))
+    else:
+        checks.append(Check('collections', True, ', '.join(wanted)))
+    return checks
+
+
+def run_checks(runner: Runner, settings: Settings, need_packer: bool, need_ansible: bool = False,
                exists: Callable[[str], bool] = os.path.isfile,
                disk_usage=shutil.disk_usage,
                packer_path: Callable[[str], Optional[str]] = resolve_packer,
@@ -64,6 +94,9 @@ def run_checks(runner: Runner, settings: Settings, need_packer: bool,
             version = tuple(int(x) for x in match.groups()) if match else None
             ok = version is not None and version[:2] >= MIN_PACKER
             checks.append(Check('packer', ok, out.strip() if ok else f'need Packer >= 1.11, found: {out.strip() or "nothing"}'))
+
+    if need_ansible:
+        checks.extend(_ansible_checks(runner))
 
     adapter = f'VMware Network Adapter {settings.vmnet}'
     want = f'{settings.ip_range}.1'

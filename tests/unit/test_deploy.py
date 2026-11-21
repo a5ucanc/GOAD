@@ -316,3 +316,16 @@ def test_firstboot_times_out_when_never_done(env, monkeypatch):
     with pytest.raises(GoadError, match='first boot did not finish in 30s'):
         deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
     assert clock[0] == 30
+
+
+def test_step_check_requires_ansible(env):
+    seen = {}
+
+    def run_checks(*a, **k):
+        seen.update(k)
+        return [Check('vmrun', False, 'stop here')]
+
+    env.probes.run_checks = run_checks
+    with pytest.raises(GoadError):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    assert seen['need_ansible'] is True
