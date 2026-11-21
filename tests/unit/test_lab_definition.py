@@ -57,3 +57,11 @@ def test_invalid_lab_rejected(mutate, message):
     mutate(data)
     with pytest.raises(GoadError, match=message):
         parse_lab(yaml.safe_dump(data), 'lab.yml')
+
+
+@pytest.mark.parametrize('key, value', [('cpus', 0), ('cpus', -1), ('memory', 0)])
+def test_sizes_must_be_positive(key, value):
+    data = yaml.safe_load(shipped_lab('2domains').read_text())
+    data['hosts']['srv02'][key] = value
+    with pytest.raises(GoadError, match=f"'{key}' in host srv02 must be at least 1"):
+        parse_lab(yaml.safe_dump(data), 'lab.yml')

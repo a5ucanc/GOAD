@@ -164,9 +164,13 @@ def parse_lab(text: str, source: str) -> LabDef:
         octet = _int(h['octet'], source, what, 'octet')
         if not 2 <= octet <= 254 or octet == SMOKE_OCTET:
             raise GoadError(f'{source}: invalid octet {octet} in {what}: use 2-254, not {SMOKE_OCTET} (reserved for template test)')
+        sizes = {}
+        for key in ('cpus', 'memory'):
+            sizes[key] = _int(h[key], source, what, key)
+            if sizes[key] < 1:
+                raise GoadError(f'{source}: {key!r} in {what} must be at least 1')
         hosts[hname] = HostDef(
-            name=hname, hostname=hostname, os=os_name, role=role, domain=domain, octet=octet,
-            cpus=_int(h['cpus'], source, what, 'cpus'), memory=_int(h['memory'], source, what, 'memory'))
+            name=hname, hostname=hostname, os=os_name, role=role, domain=domain, octet=octet, **sizes)
     if not hosts:
         raise GoadError(f'{source}: hosts must not be empty')
 
