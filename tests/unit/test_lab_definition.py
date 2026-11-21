@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 import yaml
 
@@ -65,3 +67,184 @@ def test_sizes_must_be_positive(key, value):
     data['hosts']['srv02'][key] = value
     with pytest.raises(GoadError, match=f"'{key}' in host srv02 must be at least 1"):
         parse_lab(yaml.safe_dump(data), 'lab.yml')
+
+
+BASE = {
+    'name': '2forests', 'password': 'Aa1234567890!', 'dns_forwarder': '1.1.1.1',
+    'domains': {
+        'sevenkingdoms.local': {'netbios': 'SEVENKINGDOMS', 'dc': 'dc01'},
+        'north.sevenkingdoms.local': {'netbios': 'NORTH', 'dc': 'dc02', 'parent': 'sevenkingdoms.local'},
+        'essos.local': {'netbios': 'ESSOS', 'dc': 'dc03', 'trust': 'sevenkingdoms.local',
+                        'groups': {'Dothraki': {'scope': 'global'}}},
+    },
+    'hosts': {
+        'dc01': {'hostname': 'kingslanding', 'os': 'win2025', 'role': 'dc', 'domain': 'sevenkingdoms.local', 'octet': 10, 'cpus': 2, 'memory': 4096},
+        'dc02': {'hostname': 'winterfell', 'os': 'win2025', 'role': 'dc', 'domain': 'north.sevenkingdoms.local', 'octet': 11, 'cpus': 2, 'memory': 4096},
+        'dc03': {'hostname': 'meereen', 'os': 'win2025', 'role': 'dc', 'domain': 'essos.local', 'octet': 12, 'cpus': 2, 'memory': 4096},
+        'srv02': {'hostname': 'castelblack', 'os': 'win2022', 'role': 'server', 'domain': 'north.sevenkingdoms.local', 'octet': 22, 'cpus': 2, 'memory': 4096},
+        'srv03': {'hostname': 'braavos', 'os': 'win2022', 'role': 'server', 'domain': 'essos.local', 'octet': 23, 'cpus': 2, 'memory': 4096,
+                  'laps': True, 'ca': True},
+    },
+}
+
+
+def _lab(*patches):  # each patch: (key path tuple, value); domain names contain dots
+    data = copy.deepcopy(BASE)
+    for path, value in patches:
+        target = data
+        for key in path[:-1]:
+            target = target.setdefault(key, {})
+        target[path[-1]] = value
+    return parse_lab(yaml.safe_dump(data), 'lab.yml')
+
+
+ESSOS = ('domains', 'essos.local')
+SRV02 = ('hosts', 'srv02')
+SRV03 = ('hosts', 'srv03')
+LINUX = {'hostname': 'lnx', 'os': 'ubuntu2404', 'role': 'linux', 'octet': 30, 'cpus': 1, 'memory': 1024}
+
+
+def test_base_loads():
+    lab = _lab()
+    assert lab.hosts['srv03'].laps and lab.hosts['srv03'].ca
+    assert lab.domains['essos.local'].groups['Dothraki'].scope == 'global'
+
+
+def test_yaml_booleans_normalized():
+    lab = _lab((('settings', 'all'), {'defender.realtime': True}),
+               (SRV03 + ('settings',), {'adcs.web_enrollment': False}))
+    assert lab.effective_settings('srv02')['defender.realtime'] == 'on'
+    assert lab.effective_settings('srv03')['adcs.web_enrollment'] == 'off'
+
+
+def test_boolean_not_accepted():
+    with pytest.raises(GoadError, match=r"smb.signing.*required, optional"):
+        _lab((('settings', 'all'), {'smb.signing': True}))
+
+
+def test_dc_setting_in_all_layer_refused():
+    with pytest.raises(GoadError, match=r'host srv02: setting dc.maq applies to DCs only'):
+        _lab((('settings', 'all'), {'dc.maq': 0}))
+
+
+def test_ca_setting_needs_ca_host():
+    with pytest.raises(GoadError, match=r'host srv02: setting adcs.editf_san'):
+        _lab((SRV02 + ('settings',), {'adcs.editf_san': 'off'}))
+
+
+def test_cross_forest_member_needs_domainlocal():
+    with pytest.raises(GoadError, match=r'group Dothraki'):
+        _lab((ESSOS + ('groups', 'Dothraki', 'members'), ['sevenkingdoms.local\\tywin.lannister']))
+
+
+def test_layering_and_helpers():
+    lab = _lab()
+    assert lab.forest_root('north.sevenkingdoms.local') == 'sevenkingdoms.local'
+    assert lab.forest_root('essos.local') == 'essos.local'
+    assert lab.dn('north.sevenkingdoms.local') == 'DC=north,DC=sevenkingdoms,DC=local'
+    assert lab.trusts('sevenkingdoms.local') == ['essos.local']
+    assert lab.trusts('essos.local') == ['sevenkingdoms.local']
+    assert lab.trusts('north.sevenkingdoms.local') == []
+    assert lab.split_member('essos.local', 'Dragons') == ('essos.local', 'Dragons')
+    assert lab.split_member('essos.local', 'north.sevenkingdoms.local\\arya') == ('north.sevenkingdoms.local', 'arya')
+
+
+def test_effective_settings_layer_order():
+    lab = _lab((('settings', 'all'), {'ntlm.lmcompat': 5, 'host.tier': 2}),
+               (('settings', 'dc'), {'host.tier': 0, 'dc.maq': 0}),
+               (('settings', 'server'), {'host.tier': 1}),
+               (SRV03 + ('settings',), {'ntlm.lmcompat': 3}))
+    assert lab.effective_settings('dc01') == {'ntlm.lmcompat': '5', 'host.tier': '0', 'dc.maq': '0'}
+    assert lab.effective_settings('srv02') == {'ntlm.lmcompat': '5', 'host.tier': '1'}
+    assert lab.effective_settings('srv03')['ntlm.lmcompat'] == '3'
+
+
+def test_effective_settings_linux_empty():
+    lab = _lab((('settings', 'all'), {'ntlm.lmcompat': 5}), (('hosts', 'lnx'), LINUX))
+    assert lab.effective_settings('lnx') == {}
+
+
+def test_valid_content_loads():
+    lab = _lab(
+        (ESSOS + ('ous',), ['Vale', 'Dorne']),
+        (ESSOS + ('groups', 'Dothraki'), {'scope': 'global', 'ou': 'Vale', 'managed_by': 'khal.drogo'}),
+        (ESSOS + ('groups', 'DragonsFriends'), {
+            'scope': 'domainlocal', 'members': ['daenerys.targaryen', 'sevenkingdoms.local\\tyron.lannister']}),
+        (ESSOS + ('users', 'khal.drogo'), {'firstname': 'Khal', 'surname': 'Drogo', 'city': 'Vaes Dothrak',
+                                           'description': 'Khal Drogo', 'groups': ['Dothraki'], 'ou': 'Dorne'}),
+        (ESSOS + ('users', 'daenerys.targaryen'), {'firstname': 'D', 'surname': 'T', 'sensitive': True}),
+        (SRV03 + ('local_groups',), {'Administrators': ['ESSOS\\T1-ServerAdmins', 'north\\x']}))
+    d = lab.domains['essos.local']
+    assert d.ous == ('Vale', 'Dorne')
+    assert d.groups['DragonsFriends'].members == ('daenerys.targaryen', 'sevenkingdoms.local\\tyron.lannister')
+    assert d.users['khal.drogo'].groups == ('Dothraki',) and d.users['daenerys.targaryen'].sensitive
+    assert lab.hosts['srv03'].local_groups == {'Administrators': ('ESSOS\\T1-ServerAdmins', 'north\\x')}
+
+
+def test_same_forest_member_in_universal_group_ok():
+    lab = _lab((('domains', 'sevenkingdoms.local', 'groups', 'G'),
+                {'scope': 'universal', 'members': ['north.sevenkingdoms.local\\a']}))
+    assert lab.domains['sevenkingdoms.local'].groups['G'].scope == 'universal'
+
+
+def test_plan2_lab_yml_still_loads():
+    text = ('name: x\npassword: p\ndns_forwarder: 1.1.1.1\ndomains: {a.local: {netbios: A, dc: dc01}}\n'
+            'hosts: {dc01: {hostname: dc, os: win2025, role: dc, domain: a.local, octet: 10, cpus: 2, memory: 4096}}\n')
+    lab = parse_lab(text, 'lab.yml')
+    assert lab.domains['a.local'].users == {} and lab.effective_settings('dc01') == {}
+
+
+G = ESSOS + ('groups', 'Dothraki')
+
+
+@pytest.mark.parametrize('patches, message', [
+    ([(ESSOS + ('groups', 'X'), {})], "missing key 'scope'"),
+    ([(G + ('colour',), 'red')], "unknown key 'colour'"),
+    ([(ESSOS + ('users', 'u'), {'surname': 'S'})], "missing key 'firstname'"),
+    ([(ESSOS + ('users', 'u'), {'firstname': 'F'})], "missing key 'surname'"),
+    ([(ESSOS + ('users', 'u'), {'firstname': 'F', 'surname': 'S', 'age': 3})], "unknown key 'age'"),
+    ([(('settings', 'everyone'), {})], 'everyone'),
+    ([(('settings', 'all'), 'x')], 'settings'),
+    ([(ESSOS + ('ous',), 'Vale')], 'ous'),
+    ([(ESSOS + ('ous',), ['Vale', 'Vale'])], "ous.*Vale"),
+    ([(ESSOS + ('ous',), [''])], 'ous'),
+    ([(ESSOS + ('ous',), [1])], 'ous'),
+    ([(G + ('scope',), 'local')], "scope.*global, universal, domainlocal"),
+    ([(G + ('ou',), 'Nowhere')], "ou.*group Dothraki"),
+    ([(ESSOS + ('users', 'u'), {'firstname': 'F', 'surname': 'S', 'ou': 'Nowhere'})], "ou.*user u"),
+    ([(G + ('members',), ['nope.local\\a'])], "nope.local"),
+    ([(G + ('members',), 'a')], 'members'),
+    ([(G + ('members',), ['north.sevenkingdoms.local\\a'])], 'group Dothraki'),
+    ([(ESSOS + ('users', 'u'), {'firstname': 'F', 'surname': 'S', 'groups': 'Dothraki'})], "groups.*user u"),
+    ([(ESSOS + ('users', 'u'), {'firstname': 'F', 'surname': 'S', 'groups': [1]})], "groups.*user u"),
+    ([(ESSOS + ('users', 'u'), {'firstname': 'F', 'surname': 'S', 'sensitive': 'yes'})], "sensitive.*user u"),
+    ([(SRV03 + ('laps',), 'yes')], "laps.*host srv03"),
+    ([(SRV03 + ('ca',), 1)], "ca.*host srv03"),
+    ([(('hosts', 'lnx'), dict(LINUX, laps=True))], "laps.*host lnx"),
+    ([(('hosts', 'lnx'), dict(LINUX, ca=True))], "ca.*host lnx"),
+    ([(('hosts', 'ws'), {'hostname': 'ws', 'os': 'win11', 'role': 'workstation', 'octet': 40, 'cpus': 1, 'memory': 1024, 'laps': True})], "laps.*host ws"),
+    ([(('hosts', 'ws'), {'hostname': 'ws', 'os': 'win11', 'role': 'workstation', 'domain': 'essos.local', 'octet': 40, 'cpus': 1, 'memory': 1024, 'ca': True})], "ca.*host ws"),
+    ([(('hosts', 'dc03', 'laps'), True)], "laps.*host dc03"),
+    ([(SRV03 + ('local_groups',), {'Administrators': ['T1-ServerAdmins']})], "local_groups.*host srv03"),
+    ([(SRV03 + ('local_groups',), {'Administrators': ['NOPE\\a']})], "local_groups.*NOPE"),
+    ([(SRV03 + ('local_groups',), {'Administrators': 'ESSOS\\a'})], "local_groups.*host srv03"),
+    ([(('hosts', 'lnx'), dict(LINUX, local_groups={'Administrators': ['ESSOS\\a']}))], "local_groups.*host lnx"),
+    ([(ESSOS + ('parent',), 'sevenkingdoms.local')], "trust.*essos.local"),
+    ([(ESSOS + ('trust',), 'north.sevenkingdoms.local')], "trust.*north.sevenkingdoms.local"),
+    ([(('settings', 'all'), {'no.such': 'on'})], "no.such"),
+    ([(('settings', 'all'), {'net.llmnr': 'maybe'})], "net.llmnr.*disabled, enabled"),
+    ([(SRV02 + ('settings',), {'dc.maq': 11})], "dc.maq.*0, 1, 2"),
+    ([(SRV02 + ('settings',), {'net.llmnr': 1.5})], "net.llmnr"),
+    ([(('settings', 'dc'), {'adcs.editf_san': 'on'})], "host dc01: setting adcs.editf_san"),
+    ([(('settings', 'server'), {'dc.spooler': 'enabled'})], "host srv02: setting dc.spooler applies to DCs only"),
+])
+def test_invalid_content_rejected(patches, message):
+    with pytest.raises(GoadError, match=message):
+        _lab(*patches)
+
+
+def test_two_ca_hosts_in_one_domain_refused():
+    with pytest.raises(GoadError, match=r'ca.*essos.local'):
+        _lab((('hosts', 'srv04'), {'hostname': 'srv04', 'os': 'win2022', 'role': 'server', 'domain': 'essos.local',
+                                   'octet': 24, 'cpus': 1, 'memory': 1024, 'ca': True}))
+
