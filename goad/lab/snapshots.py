@@ -37,6 +37,18 @@ def _listed(lab: Lab) -> Dict[str, List[str]]:
     return found
 
 
+def _undo_partial(lab: Lab, name: str, done: List[str]) -> None:
+    """Best effort after a failed take: drop the new snapshot where it exists, power the lab back on."""
+    def drop(host: str, vmx: str) -> None:
+        lab.vmrun.delete_snapshot(vmx, name)
+
+    run_parallel({host: lab.vms()[host] for host in done}, drop, 'undo snapshot')
+    try:
+        start_all(lab.vmrun, lab.vms())
+    except GoadError as error:
+        console.print(f'could not power the lab back on: {error}')
+
+
 def take(lab: Lab, label: Optional[str] = None, now=datetime.now) -> SnapshotRecord:
     taken = now(timezone.utc)
     name = label if label is not None else f'snap-{taken.strftime("%Y%m%d-%H%M%S")}'
@@ -46,7 +58,10 @@ def take(lab: Lab, label: Optional[str] = None, now=datetime.now) -> SnapshotRec
         raise GoadError(f'snapshot {name} already exists')
     start = time.monotonic()
     stop_all(lab.vmrun, lab.vms())
-    run_parallel(lab.vms(), lambda host, vmx: lab.vmrun.snapshot(vmx, name), 'snapshot').raise_if_failed('snapshot')
+    result = run_parallel(lab.vms(), lambda host, vmx: lab.vmrun.snapshot(vmx, name), 'snapshot')
+    if result.failed:
+        _undo_partial(lab, name, result.ok)
+        result.raise_if_failed('snapshot')
     record = SnapshotRecord(name=name, taken_at=taken.strftime('%Y-%m-%dT%H:%M:%SZ'),
                             label=label or '', lab_yml=working_lab_path(lab.settings).read_text())
     lab.state.snapshots.append(record)
@@ -88,7 +103,10 @@ def reset(lab: Lab, name: str = PROTECTED, wait=wait_ready) -> float:
         raise GoadError(f'snapshot {name} is missing on {", ".join(missing)}: nothing was changed')
     start = time.monotonic()
     stop_all(lab.vmrun, lab.vms(), hard=True)
-    run_parallel(lab.vms(), lambda host, vmx: lab.vmrun.revert(vmx, name), 'revert').raise_if_failed('revert')
+    result = run_parallel(lab.vms(), lambda host, vmx: lab.vmrun.revert(vmx, name), 'revert')
+    if result.failed:
+        raise GoadError(f'revert to {name} failed on {", ".join(sorted(result.failed))}: the lab is half reverted '
+                        f'and powered off; run goad lab reset {name} again')
     path = working_lab_path(lab.settings)
     path.write_text(record.lab_yml)
     lab.definition = parse_lab(record.lab_yml, str(path))

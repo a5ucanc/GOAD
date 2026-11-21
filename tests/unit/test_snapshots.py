@@ -5,6 +5,7 @@ import pytest
 from goad import GoadError
 from goad.host.runner import Result
 from goad.lab.snapshots import delete, list_snapshots, reset, take
+from goad.lab.definition import parse_lab
 from goad.state import load_state, working_lab_path
 
 
@@ -72,9 +73,12 @@ def test_reset_refused_when_missing_on_a_vm(lab, fake):
 def test_reset_restores_lab_yml(lab, fake):
     original = working_lab_path(lab.settings).read_text()
     working_lab_path(lab.settings).write_text(original.replace('1.1.1.1', '9.9.9.9'))
+    lab.definition = parse_lab(working_lab_path(lab.settings).read_text(), 'edited')
+    assert lab.definition.dns_forwarder == '9.9.9.9'
     reset(lab, wait=lambda e: None)
     assert working_lab_path(lab.settings).read_text() == original
-    assert [a[5] for a in fake.calls if a[3] == 'stop'] == ['hard'] * len([a for a in fake.calls if a[3] == 'stop'])
+    assert lab.definition.dns_forwarder == '1.1.1.1'
+    assert [a[5] for a in fake.calls if a[3] == 'stop'] == ['hard'] * 3
     assert sorted(a[5] for a in fake.calls if a[3] == 'revertToSnapshot') == ['base'] * 3
 
 
@@ -84,3 +88,34 @@ def test_list_reports_missing(lab, fake):
     fake.respond(lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 2\nbase\nx\n', ''))
     rows = {r.record.name: r.missing_on for r in list_snapshots(lab)}
     assert rows == {'base': [], 'x': ['srv02']}
+
+
+def test_take_failure_leaves_no_record_and_restarts(lab, fake):
+    before = load_state(lab.settings)
+    fake.respond(lambda a: a[3] == 'snapshot' and 'srv02' in a[4], Result(1, 'Error: disk full', ''))
+    with pytest.raises(GoadError, match='srv02'):
+        take(lab, 'x')
+    assert lab.state.snapshot('x') is None and load_state(lab.settings) == before
+    assert len([a for a in fake.calls if a[3] == 'deleteSnapshot']) == 2
+    assert not [a for a in fake.calls if a[3] == 'deleteSnapshot' and 'srv02' in a[4]]
+
+
+def test_take_failure_starts_stopped_vms(lab, fake):
+    fake.respond(lambda a: a[3] == 'snapshot' and 'srv02' in a[4], Result(1, 'Error: disk full', ''))
+    fake._responses.insert(0, (lambda a: a[3] == 'list', Result(0, 'Total running VMs: 0\n', '')))
+    with pytest.raises(GoadError):
+        take(lab, 'x')
+    assert len([a for a in fake.calls if a[3] == 'start']) == 3
+
+
+def test_reset_revert_failure_names_vms_and_keeps_state(lab, fake):
+    original = working_lab_path(lab.settings).read_text()
+    take(lab, 'x')
+    fake.calls.clear()
+    fake.respond(lambda a: a[3] == 'revertToSnapshot' and 'srv02' in a[4], Result(1, 'Error: busy', ''))
+    fake.respond(lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 2\nbase\nx\n', ''))
+    with pytest.raises(GoadError, match='goad lab reset base') as info:
+        reset(lab, wait=lambda e: None)
+    assert 'srv02' in str(info.value)
+    assert lab.state.current == 'x' and working_lab_path(lab.settings).read_text() == original
+    assert not [a for a in fake.calls if a[3] == 'start']
