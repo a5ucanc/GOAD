@@ -5,11 +5,14 @@
   ansible.windows.win_powershell:
     parameters:
       Zone: "{{ domain }}"
+      # The inventory lab address of this DC, not the first IPv4 of the adapter: that one can be
+      # an APIPA 169.254.x address, and then every lab record would look stale and be deleted.
+      LabAddress: "{{ ansible_host }}"
     script: |
-      param([string]$Zone)
+      param([string]$Zone, [string]$LabAddress)
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
-      $lab = Get-NetIPAddress -InterfaceAlias lab -AddressFamily IPv4 | Select-Object -First 1
+      $lab = Get-NetIPAddress -IPAddress $LabAddress -AddressFamily IPv4
       $mask = [uint32]0
       if ($lab.PrefixLength -gt 0) { $mask = [uint32]::MaxValue -shl (32 - $lab.PrefixLength) }
       function ConvertTo-UInt32([string]$Address) {

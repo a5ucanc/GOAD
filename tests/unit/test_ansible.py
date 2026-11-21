@@ -159,3 +159,12 @@ def test_firewall_state_task_is_idempotent_powershell():
     script = module['script']
     assert '$Ansible.Changed = $false' in script and '$Ansible.Changed = $true' in script
     assert 'Domain, Private, Public' in script and 'Set-NetFirewallProfile' in script
+
+
+def test_dns_record_cleanup_derives_subnet_from_the_lab_address():
+    # the first IPv4 of the adapter can be 169.254.x: every lab record would look stale and go
+    task, = yaml.safe_load((ANSIBLE / 'roles' / 'dc_dns' / 'tasks' / 'records.yml').read_text())
+    module = task['ansible.windows.win_powershell']
+    assert module['parameters']['LabAddress'] == '{{ ansible_host }}'
+    assert 'Get-NetIPAddress -IPAddress $LabAddress' in module['script']
+    assert 'Select-Object -First 1' not in module['script']
