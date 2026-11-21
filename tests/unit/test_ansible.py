@@ -36,3 +36,17 @@ def test_site_syntax(name, tmp_path):
     result = subprocess.run([ansible_bin('ansible-playbook'), '--syntax-check', '-i', str(inv), str(ANSIBLE / 'site.yml')],
                             capture_output=True, text=True, env={**os.environ, **ANSIBLE_ENV})
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_join_falls_back_only_when_unreachable():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'connect' / 'tasks' / 'main.yml').read_text())
+    probe, fallback = tasks[0], tasks[1]
+    assert probe.get('ignore_unreachable') is True
+    assert fallback['when'] == 'domain_login.unreachable | default(false)'
+
+
+def test_connect_runs_first_on_every_run():
+    plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
+    first = plays[0]['roles'][0]
+    assert first['role'] == 'connect'
+    assert 'always' in first['tags']

@@ -1,0 +1,14 @@
+# The connect role (play 1) has set ansible_user to the local Administrator on unjoined members.
+- name: Join the domain
+  microsoft.ad.membership:
+    dns_domain_name: "{{ domain }}"
+    domain_admin_user: "{{ netbios }}\\Administrator"
+    domain_admin_password: "{{ lab_password }}"
+    state: domain
+    reboot: true
+
+- name: Use the domain Administrator from now on
+  ansible.builtin.set_fact:
+    ansible_user: "{{ netbios }}\\Administrator"
+
+- ansible.builtin.meta: reset_connection

@@ -1,0 +1,11 @@
+# Members start in a workgroup: the inventory user <NETBIOS>\Administrator fails until the
+# join role runs. Fall back to the local Administrator for the rest of the run when it does.
+- name: Probe the domain Administrator login
+  ansible.windows.win_ping:
+  register: domain_login
+  ignore_unreachable: true
+
+- name: Use the local Administrator until the host is joined
+  ansible.builtin.set_fact:
+    ansible_user: "{{ local_user }}"
+  when: domain_login.unreachable | default(false)

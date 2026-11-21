@@ -1,0 +1,42 @@
+# Forest-root DCs forward each trusted forest's zone to its DC. The forwarder is stored in AD
+# with forest replication scope, so the child DCs of the forest resolve it too.
+- name: Conditional forwarders to the trusted forests
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Zone, [string]$Master)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if (-not (Get-DnsServerZone -Name $Zone -ErrorAction SilentlyContinue)) {
+          Add-DnsServerConditionalForwarderZone -Name $Zone -MasterServers $Master -ReplicationScope Forest
+          $Ansible.Changed = $true
+      }
+    parameters:
+      Zone: "{{ item }}"
+      Master: "{{ goad_domains[item].dc_ip }}"
+  loop: "{{ goad_domains[domain].trusts }}"
+  when: inventory_hostname in groups.forest_root
+
+# Only one side of each trust carries `trust` in lab.yml; its DC creates both sides at once.
+# source: https://social.technet.microsoft.com/wiki/contents/articles/11911.active-directory-powershell-how-to-create-forest-trust.aspx
+- name: Bidirectional forest trust
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$RemoteForest, [string]$RemoteAdmin, [string]$RemoteAdminPassword)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Clear-DnsClientCache
+      $localForest = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
+      try {
+          $localForest.GetTrustRelationship($RemoteForest) | Out-Null
+      } catch [System.DirectoryServices.ActiveDirectory.ActiveDirectoryObjectNotFoundException] {
+          $context = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext(
+              'Forest', $RemoteForest, $RemoteAdmin, $RemoteAdminPassword)
+          $remote = [System.DirectoryServices.ActiveDirectory.Forest]::GetForest($context)
+          $localForest.CreateTrustRelationship($remote, 'Bidirectional')
+          $Ansible.Changed = $true
+      }
+    parameters:
+      RemoteForest: "{{ goad_domains[domain].trust }}"
+      RemoteAdmin: "{{ goad_domains[goad_domains[domain].trust].netbios }}\\Administrator"
+      RemoteAdminPassword: "{{ lab_password }}"
+  when: goad_domains[domain].trust is not none

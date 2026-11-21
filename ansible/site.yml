@@ -5,6 +5,10 @@
   strategy: linear
   tags: [common]
   roles:
+    # Every run (any --tags) must pick the login that works on unjoined members.
+    - role: connect
+      when: inventory_hostname in groups.member
+      tags: [always]
     - common
 
 - name: forest
@@ -28,14 +32,17 @@
   gather_facts: false
   strategy: linear
   tags: [trust]
-  roles: []
+  roles:
+    - trust
 
 - name: join and content
   hosts: dc:member
   gather_facts: false
   strategy: free
   tags: [join, content]
-  roles: []
+  roles:
+    - role: join
+      when: inventory_hostname in groups.member
 
 - name: foreign members
   hosts: dc
