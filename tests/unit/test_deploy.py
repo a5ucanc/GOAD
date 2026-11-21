@@ -9,7 +9,7 @@ from goad.lab import deploy as deploy_module
 from goad.lab.deploy import Probes, deploy
 from goad.lab.definition import shipped_lab
 from goad.lab.remote import SETUP_USER
-from goad.state import load_state, working_lab_path
+from goad.state import STEPS, load_state, working_lab_path
 from goad.templates.store import Template
 from goad.vmware.vmx import Vmx
 
@@ -42,15 +42,27 @@ class FakeStore:
         return f'C:\\goad\\templates\\{name}\\{name}.vmx'
 
 
+def fail_on(host):
+    def wait_firstboot(vmrun, vmx):
+        if host in vmx:
+            raise GoadError('first boot failed: x')
+    return wait_firstboot
+
+
 @pytest.fixture
 def env(settings, tmp_path, monkeypatch):
     def local(path):
         return tmp_path / 'win' / path[3:].replace('\\', '/')
 
     monkeypatch.setattr(deploy_module, 'to_wsl', lambda p: local(p))
-    probes = Probes(is_up=lambda ip: False, run_checks=lambda *a, **k: [Check('vmrun', True, '')])
+    removed_setup = []
+    probes = Probes(is_up=lambda ip: False, run_checks=lambda *a, **k: [Check('vmrun', True, '')],
+                    wait_firstboot=lambda vmrun, vmx: None, wait_port=lambda *a: None,
+                    check_psrp=lambda *a: None, check_ssh=lambda *a: None,
+                    remove_setup_account=lambda ip, password: removed_setup.append(ip),
+                    provision=lambda *a: False)
     return SimpleNamespace(settings=settings, fake=CloneRunner(local), store=FakeStore(), probes=probes,
-                           local=local)
+                           local=local, removed_setup=removed_setup)
 
 
 def test_setup_user():
@@ -59,7 +71,7 @@ def test_setup_user():
 
 def test_fresh_deploy_runs_first_three_steps(env):
     state = deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
-    assert state.step == 'configure'
+    assert state.step == 'finish'
     assert state.templates == ['win2022-v1', 'win2025-v2']
     assert state.hosts['srv02'].template == 'win2022-v1'
     clones = [a for a in env.fake.calls if a[3] == 'clone']
@@ -113,7 +125,45 @@ def test_refuses_leftover_vm_folder(env):
 
 
 def test_range_override_recorded(env):
-    state = deploy('1domain', env.settings, env.fake, env.store, ip_range='10.9.8', probes=env.probes)
+    env.probes.wait_firstboot = fail_on('dc01')  # keep the lab undeployed so a re-run resumes
+    with pytest.raises(GoadError, match='dc01'):
+        deploy('1domain', env.settings, env.fake, env.store, ip_range='10.9.8', probes=env.probes)
+    state = load_state(env.settings)
     assert state.ip_range == '10.9.8' and state.hosts['dc01'].ip == '10.9.8.10'
     with pytest.raises(GoadError, match='--range'):
         deploy('1domain', env.settings, env.fake, env.store, ip_range='10.9.7', probes=env.probes)
+
+
+def test_full_deploy(env):
+    state = deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    assert state.step == 'finish' and state.current == 'base'
+    assert all(h.ready for h in state.hosts.values())
+    assert set(state.durations) == set(STEPS)
+    assert sorted(env.removed_setup) == ['192.168.56.10', '192.168.56.11', '192.168.56.22']
+    snaps = [a for a in env.fake.calls if a[3] == 'snapshot']
+    assert len(snaps) == 3 and all(a[5] == 'base' for a in snaps)
+    assert state.snapshot('base').lab_yml == working_lab_path(env.settings).read_text()
+
+
+def test_firstboot_failure_keeps_ready_hosts(env):
+    env.probes.wait_firstboot = fail_on('srv02')
+    with pytest.raises(GoadError, match='srv02'):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    state = load_state(env.settings)
+    assert state.step == 'configure'
+    assert {h for h, s in state.hosts.items() if s.ready} == {'dc01', 'dc02'}
+
+
+def test_resume_firstboot_only_waits_for_unready(env):
+    env.probes.wait_firstboot = fail_on('srv02')
+    with pytest.raises(GoadError):
+        deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    waited = []
+    env.probes.wait_firstboot = lambda vmrun, vmx: waited.append(vmx)
+    assert deploy('2domains', env.settings, env.fake, env.store, probes=env.probes).step == 'finish'
+    assert waited == [r'C:\goad\lab\srv02\srv02.vmx']
+
+
+def test_provision_skipped_message(env, capsys):
+    deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
+    assert 'provisioning skipped' in capsys.readouterr().out

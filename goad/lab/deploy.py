@@ -1,6 +1,7 @@
 """Lab deploy: ordered, resumable steps. Each finished step is saved in lab.json."""
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable, Dict, Optional
 
 from rich.console import Console
@@ -11,10 +12,11 @@ from goad.host.checks import run_checks
 from goad.host.paths import to_wsl
 from goad.lab.context import Lab, vm_folder, vm_path
 from goad.lab.definition import load_lab, shipped_lab
+from goad.lab.power import READY_TIMEOUT, port_for, start_all, stop_all
 from goad.lab.provision import provision
 from goad.lab.remote import remove_setup_account
 from goad.settings import Settings
-from goad.state import STEPS, HostState, LabState, load_state, save_state, working_lab_path
+from goad.state import STEPS, HostState, LabState, SnapshotRecord, load_state, save_state, working_lab_path
 from goad.templates.smoke import check_psrp, check_ssh, is_up, wait_firstboot, wait_port
 from goad.templates.store import TemplateStore
 from goad.vmware.guestinfo import GuestConfig, configure_hardware, lab_mac, write_guestinfo
@@ -81,6 +83,45 @@ def step_configure(lab: Lab) -> None:
         vmx.save()
 
 
+def step_firstboot(lab: Lab, probes: Probes) -> None:
+    pending = {name: host for name, host in lab.state.hosts.items() if not host.ready}
+    start_all(lab.vmrun, {name: host.vmx for name, host in pending.items()})
+
+    def boot(name: str, host: HostState) -> None:
+        family = lab.definition.hosts[name].family
+        probes.wait_firstboot(lab.vmrun, host.vmx)
+        probes.wait_port(host.ip, port_for(family), READY_TIMEOUT)
+        if family == 'windows':
+            probes.check_psrp(host.ip, 'Administrator', lab.definition.password, host.hostname)
+            probes.remove_setup_account(host.ip, lab.definition.password)
+        else:
+            probes.check_ssh(host.ip)
+
+    result = run_parallel(pending, boot, 'first boot')
+    for name in result.ok:
+        lab.state.hosts[name].ready = True
+    lab.save()  # partial success survives a failed run
+    result.raise_if_failed('first boot')
+
+
+def step_provision(lab: Lab, probes: Probes) -> None:
+    if not probes.provision(lab.settings, lab.runner, lab.definition, lab.state):
+        console.print('no Ansible playbooks yet (ansible/site.yml): provisioning skipped')
+
+
+def step_finish(lab: Lab) -> None:
+    vms = lab.vms()
+    stop_all(lab.vmrun, vms)
+    todo = {name: vmx for name, vmx in vms.items() if 'base' not in lab.vmrun.snapshots(vmx)}
+    run_parallel(todo, lambda name, vmx: lab.vmrun.snapshot(vmx, 'base'), 'snapshot').raise_if_failed('snapshot')
+    taken_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    lab.state.snapshots = [s for s in lab.state.snapshots if s.name != 'base']
+    lab.state.snapshots.append(SnapshotRecord('base', taken_at, 'taken by deploy',
+                                              working_lab_path(lab.settings).read_text()))
+    lab.state.current = 'base'
+    start_all(lab.vmrun, vms)
+
+
 def _open(lab_name: str, settings: Settings, ip_range: Optional[str]) -> LabState:
     state = load_state(settings)
     if state is not None:
@@ -105,11 +146,13 @@ def deploy(lab_name: str, settings: Settings, runner, store: TemplateStore, ip_r
     probes = probes or Probes()
     state = _open(lab_name, settings, ip_range)
     lab = Lab(settings, runner, Vmrun(runner, settings), state, load_lab(working_lab_path(settings)))
-    # Task 6 adds firstboot, provision and finish here
     step_functions: Dict[str, Callable[[Lab], None]] = {
         'check': lambda l: step_check(l, store, probes),
         'clone': lambda l: step_clone(l, store),
         'configure': step_configure,
+        'firstboot': lambda l: step_firstboot(l, probes),
+        'provision': lambda l: step_provision(l, probes),
+        'finish': step_finish,
     }
     finished = STEPS.index(state.step) + 1 if state.step else 0
     for step in STEPS[finished:]:
