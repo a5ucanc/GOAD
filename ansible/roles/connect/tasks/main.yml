@@ -10,17 +10,51 @@
     ansible_user: "{{ local_user }}"
   when: domain_login.unreachable | default(false)
 
+# Windows LAPS replaces the local Administrator password of a joined laps host, so the fallback
+# login needs the current password from the domain's DC. Before the first LAPS run there is none
+# (or no schema yet): the lookup fails quietly and the lab password stays.
+- name: Read the Windows LAPS password of the host from its DC
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ hostname }}"
+    script: |
+      param([string]$Name)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $Ansible.Result = [string](Get-LapsADPassword -Identity $Name -AsPlainText).Password
+  delegate_to: "{{ goad_domains[domain].dc }}"
+  register: laps_login
+  failed_when: false
+  changed_when: false
+  when: (domain_login.unreachable | default(false)) and (laps | default(false))
+
+- name: Use the Windows LAPS password for the local Administrator
+  ansible.builtin.set_fact:
+    ansible_password: "{{ laps_login.result }}"
+  when: laps_login.result | default('') is string and laps_login.result | default('') | length > 0
+
 # A joined member that boots before its DC can keep a failed secure channel for a while, so the
 # domain login fails although the host is joined. Reset the channel and go back to the domain login.
 - name: Repair the secure channel of a joined host
   ansible.windows.win_powershell:
+    parameters:
+      User: "{{ netbios }}\\Administrator"
+      Password: "{{ lab_password }}"
     script: |
+      param([string]$User, [string]$Password)
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       $system = Get-CimInstance Win32_ComputerSystem
       $Ansible.Result = $system.PartOfDomain
       if ($system.PartOfDomain -and -not (Test-ComputerSecureChannel)) {
-          nltest "/sc_reset:$($system.Domain)" | Out-Null
+          # nltest reports a failure on stderr, which Stop would turn into a terminating error.
+          cmd.exe /c "nltest /sc_reset:$($system.Domain) >nul 2>&1"
+          if (-not (Test-ComputerSecureChannel)) {
+              # A machine password out of step with AD needs a reset with domain credentials.
+              $secure = ConvertTo-SecureString $Password -AsPlainText -Force
+              $cred = New-Object System.Management.Automation.PSCredential($User, $secure)
+              Test-ComputerSecureChannel -Repair -Credential $cred | Out-Null
+          }
           if (-not (Test-ComputerSecureChannel)) { throw "no secure channel to $($system.Domain)" }
           $Ansible.Changed = $true
       }
@@ -33,4 +67,5 @@
 - name: Use the domain Administrator on a joined host
   ansible.builtin.set_fact:
     ansible_user: "{{ netbios }}\\Administrator"
+    ansible_password: "{{ lab_password }}"
   when: secure_channel.result | default(false)
