@@ -58,3 +58,22 @@ def test_linux_guestinfo_decodes(tmp_path):
     user = base64.b64decode(vmx['guestinfo.userdata']).decode()
     assert user.startswith('#cloud-config') and 'info-set guestinfo.goad.firstboot done' in user
     assert 'guestinfo.' + FIRSTBOOT_KEY not in vmx
+
+
+import dataclasses
+
+import pytest
+
+from goad import GoadError
+
+
+@pytest.mark.parametrize('name', ['abcdefghijklmnop', "dc'01", 'dc_01', '-dc01', ''])
+def test_windows_rejects_bad_hostname(tmp_path, name):
+    with pytest.raises(GoadError, match='hostname'):
+        write_guestinfo(_vmx(tmp_path), dataclasses.replace(_cfg(), hostname=name), 'windows')
+
+
+def test_windows_accepts_15_char_hostname(tmp_path):
+    vmx = _vmx(tmp_path)
+    write_guestinfo(vmx, dataclasses.replace(_cfg(), hostname='abcdefghijklmn5'), 'windows')
+    assert vmx['guestinfo.goad.hostname'] == 'abcdefghijklmn5'

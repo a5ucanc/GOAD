@@ -89,3 +89,9 @@ def test_refuses_when_test_ip_in_use(store, settings, fake, lab_root, quick, mon
 def test_wait_firstboot_returns_when_done(vmrun, fake):
     fake.respond(lambda a: 'readVariable' in a, Result(0, 'done', ''))
     smoke.wait_firstboot(vmrun, 'x.vmx', timeout=5, interval=0)
+
+
+def test_wait_firstboot_fails_fast_on_failed_marker(vmrun, fake):
+    fake.respond(lambda a: 'readVariable' in a, Result(0, 'failed: no network adapter with MAC 00-50-56-3F-38-0A', ''))
+    with pytest.raises(GoadError, match='first boot failed: no network adapter'):
+        smoke.wait_firstboot(vmrun, 'x.vmx', timeout=60, interval=0)

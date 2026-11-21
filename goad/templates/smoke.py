@@ -16,7 +16,7 @@ from goad.host.runner import Runner
 from goad.settings import Settings
 from goad.templates.build import PASSWORD
 from goad.templates.store import OS_FAMILY, TemplateStore
-from goad.vmware.guestinfo import FIRSTBOOT_DONE, FIRSTBOOT_KEY, GuestConfig, configure_hardware, lab_mac, write_guestinfo
+from goad.vmware.guestinfo import FIRSTBOOT_DONE, FIRSTBOOT_FAILED, FIRSTBOOT_KEY, GuestConfig, configure_hardware, lab_mac, write_guestinfo
 from goad.vmware.vmrun import Vmrun, VmrunError
 from goad.vmware.vmx import Vmx
 
@@ -37,10 +37,13 @@ def wait_firstboot(vmrun: Vmrun, vmx: str, timeout: float = FIRSTBOOT_TIMEOUT, i
     deadline = time.monotonic() + timeout
     while True:
         try:
-            if vmrun.read_guest_var(vmx, FIRSTBOOT_KEY) == FIRSTBOOT_DONE:
-                return
+            value = vmrun.read_guest_var(vmx, FIRSTBOOT_KEY)
         except VmrunError:
-            pass  # VMware Tools not running yet
+            value = ''  # VMware Tools not running yet
+        if value == FIRSTBOOT_DONE:
+            return
+        if value.startswith(FIRSTBOOT_FAILED):
+            raise GoadError(f'first boot {value}')
         if time.monotonic() >= deadline:
             raise GoadError(f'first boot did not finish in {timeout:.0f}s')
         time.sleep(interval)
