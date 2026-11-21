@@ -2,6 +2,60 @@ name: 1domain
 password: Aa1234567890!
 dns_forwarder: 1.1.1.1
 domains:
-  sevenkingdoms.local: {netbios: SEVENKINGDOMS, dc: dc01}
+  sevenkingdoms.local:
+    netbios: SEVENKINGDOMS
+    dc: dc01
+    ous:
+      - Vale
+      - IronIslands
+      - Riverlands
+      - Crownlands
+      - Stormlands
+      - Westerlands
+      - Reach
+      - Dorne
+    groups:
+      Lannister: {scope: global, ou: Westerlands, managed_by: tywin.lannister}
+      Baratheon: {scope: global, ou: Stormlands, managed_by: robert.baratheon}
+      Small Council: {scope: global, ou: Crownlands}
+      DragonStone: {scope: global, ou: Crownlands}
+      KingsGuard: {scope: global, ou: Crownlands}
+      DragonRider: {scope: global, ou: Crownlands}
+      T0-Admins: {scope: global}
+      T1-ServerAdmins: {scope: global}
+      T2-WorkstationAdmins: {scope: global}
+      AcrossTheNarrowSea: {scope: domainlocal}
+    users:
+      tywin.lannister: {firstname: Tywin, surname: Lanister, city: Casterly Rock, description: Tywin Lanister, ou: Crownlands, groups: [Lannister]}
+      jaime.lannister: {firstname: Jaime, surname: Lanister, city: 'King''s Landing', description: Jaime Lanister, ou: Crownlands, groups: [Lannister]}
+      cersei.lannister: {firstname: Cersei, surname: Lanister, city: 'King''s Landing', description: Cersei Lanister, ou: Crownlands, groups: [Lannister, Baratheon, Domain Admins, Small Council, T0-Admins, Protected Users], sensitive: true}
+      tyron.lannister: {firstname: Tyron, surname: Lanister, city: 'King''s Landing', description: Tyron Lanister, ou: Westerlands, groups: [Lannister]}
+      robert.baratheon: {firstname: Robert, surname: Baratheon, city: 'King''s Landing', description: Robert Lanister, ou: Crownlands, groups: [Baratheon, Domain Admins, Small Council, Protected Users, T0-Admins], sensitive: true}
+      joffrey.baratheon: {firstname: Joffrey, surname: Baratheon, city: 'King''s Landing', description: Joffrey Baratheon, ou: Crownlands, groups: [Baratheon, Lannister]}
+      renly.baratheon: {firstname: Renly, surname: Baratheon, city: 'King''s Landing', description: Renly Baratheon, ou: Crownlands, groups: [Baratheon, Small Council]}
+      stannis.baratheon: {firstname: Stannis, surname: Baratheon, city: 'King''s Landing', description: Stannis Baratheon, ou: Crownlands, groups: [Baratheon, Small Council]}
+      petyer.baelish: {firstname: Petyer, surname: Baelish, city: 'King''s Landing', description: Petyer Baelish, ou: Crownlands, groups: [Small Council]}
+      lord.varys: {firstname: Lord, surname: Varys, city: 'King''s Landing', description: Lord Varys, ou: Crownlands, groups: [Small Council]}
+      maester.pycelle: {firstname: Maester, surname: Pycelle, city: 'King''s Landing', description: Maester Pycelle, ou: Crownlands, groups: [Small Council]}
+settings:
+  all:
+    net.llmnr: disabled
+    net.nbtns: disabled
+    net.mdns: disabled
+    smb.signing: required
+    smb.v1: disabled
+    kerberos.rc4: disabled
+    ntlm.lmcompat: 5
+    defender.realtime: 'on'
+    firewall.state: 'on'
+    lsa.ppl: 'on'
+  dc:
+    host.tier: 0
+    ldap.signing: required
+    ldap.channel_binding: always
+    dc.maq: 0
+    dc.spooler: disabled
+    dc.strong_cert_binding: 2
+    dc.cert_mapping: absent
 hosts:
-  dc01: {hostname: kingslanding, os: win2025, role: dc, domain: sevenkingdoms.local, octet: 10, cpus: 2, memory: 4096}
+  dc01: {hostname: kingslanding, os: win2025, role: dc, domain: sevenkingdoms.local, octet: 10, cpus: 2, memory: 4096, ca: true, settings: {adcs.web_enrollment: 'off', adcs.editf_san: 'off', adcs.enforce_encrypt: 'on'}}
