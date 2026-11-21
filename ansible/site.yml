@@ -84,6 +84,8 @@
   hosts: windows
   gather_facts: false
   strategy: free
+  # A reboot notified before a later task fails must still run: the re-run finds the value set.
+  force_handlers: true
   tags: [settings]
   roles:
     - settings

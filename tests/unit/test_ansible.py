@@ -104,3 +104,9 @@ def test_settings_files_have_no_become_or_assert():
     for path in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml'):
         text = path.read_text()
         assert 'ansible_become' not in text and 'ansible.builtin.assert' not in text, path
+
+
+def test_settings_play_forces_handlers():
+    # a reboot notified before a later task fails must still run: the re-run would not notify again
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'settings')
+    assert play['force_handlers'] is True

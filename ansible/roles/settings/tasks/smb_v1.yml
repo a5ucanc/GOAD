@@ -19,11 +19,12 @@
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       $state = (Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol).State.ToString()
+      # Disabled and DisabledWithPayloadRemoved are both off. Pending states were rebooted above.
       $restart = $false
-      if ($Wanted -eq 'enabled' -and $state -ne 'Enabled') {
+      if ($Wanted -eq 'enabled' -and $state -notlike 'Enable*') {
         $restart = (Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -All -NoRestart).RestartNeeded
         $Ansible.Changed = $true
-      } elseif ($Wanted -eq 'disabled' -and $state -ne 'Disabled') {
+      } elseif ($Wanted -eq 'disabled' -and $state -notlike 'Disable*') {
         $restart = (Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart).RestartNeeded
         $Ansible.Changed = $true
       }
