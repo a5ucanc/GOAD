@@ -144,7 +144,7 @@ def step_provision(lab: Lab, probes: Probes) -> None:
         console.print('no Ansible playbooks yet (ansible/site.yml): provisioning skipped')
 
 
-def step_finish(lab: Lab) -> None:
+def step_finish(lab: Lab, probes: Probes) -> None:
     vms = lab.vms()
     stop_all(lab.vmrun, vms)
     todo = {name: vmx for name, vmx in vms.items() if 'base' not in lab.vmrun.snapshots(vmx)}
@@ -155,6 +155,7 @@ def step_finish(lab: Lab) -> None:
                                               working_lab_path(lab.settings).read_text()))
     lab.state.current = 'base'
     start_all(lab.vmrun, vms)
+    wait_ready(lab.endpoints(), wait=probes.wait_port)   # deploy returns a usable lab, like lab start/reset
 
 
 def _open(lab_name: str, settings: Settings, ip_range: Optional[str]) -> LabState:
@@ -187,7 +188,7 @@ def deploy(lab_name: str, settings: Settings, runner, store: TemplateStore, ip_r
         'configure': step_configure,
         'firstboot': lambda l: step_firstboot(l, probes),
         'provision': lambda l: step_provision(l, probes),
-        'finish': step_finish,
+        'finish': lambda l: step_finish(l, probes),
     }
     finished = STEPS.index(state.step) + 1 if state.step else 0
     for step in STEPS[finished:]:

@@ -329,3 +329,19 @@ def test_step_check_requires_ansible(env):
     with pytest.raises(GoadError):
         deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
     assert seen['need_ansible'] is True
+
+
+def test_finish_waits_until_every_vm_answers_after_the_restart(env):
+    # deploy returning means the lab is usable: the first command after it must not hit a booting VM
+    waits = []
+    inner = env.probes.wait_port
+
+    def wait_port(ip, port, timeout):
+        inner(ip, port, timeout)
+        waits.append((len(env.fake.calls), ip, timeout))
+
+    env.probes.wait_port = wait_port
+    deploy('2domains', env.settings, env.fake, env.store, probes=env.probes)
+    last_start = max(i for i, a in enumerate(env.fake.calls) if a[3] == 'start')
+    after = {ip for n, ip, timeout in waits if n > last_start and timeout == deploy_module.READY_TIMEOUT}
+    assert after == {'192.168.56.10', '192.168.56.11', '192.168.56.22'}
