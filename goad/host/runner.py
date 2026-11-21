@@ -30,6 +30,11 @@ class Runner:
             return Result(124, '', f'timed out after {timeout}s: {argv[0]}')
         return Result(done.returncode, done.stdout or '', done.stderr or '')
 
+    def spawn(self, argv: List[str]) -> None:
+        """Start a program detached and return at once."""
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+
     def stream(self, argv: List[str], log_path: Path, env: Optional[Dict[str, str]] = None) -> int:
         """Run a long command, echoing each output line to the terminal and to log_path. Returns the exit code.
         env: extra environment variables, merged over the current environment."""
@@ -66,6 +71,9 @@ class FakeRunner(Runner):
             if predicate(argv):
                 return result
         return Result(0, '', '')
+
+    def spawn(self, argv: List[str]) -> None:
+        self.calls.append(list(argv))
 
     def stream(self, argv: List[str], log_path: Path, env: Optional[Dict[str, str]] = None) -> int:
         return self.run(argv).code

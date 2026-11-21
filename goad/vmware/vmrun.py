@@ -40,8 +40,8 @@ class Vmrun:
     def start(self, vmx: str) -> None:
         self._run('start', vmx, 'nogui')
 
-    def stop(self, vmx: str, hard: bool = False) -> None:
-        self._run('stop', vmx, 'hard' if hard else 'soft')
+    def stop(self, vmx: str, hard: bool = False, timeout: float = 600) -> None:
+        self._run('stop', vmx, 'hard' if hard else 'soft', timeout=timeout)
 
     def running(self) -> List[str]:
         return [norm_vmx(line) for line in self._lines(self._run('list', timeout=60))]
