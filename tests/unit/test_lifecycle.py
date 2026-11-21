@@ -27,12 +27,38 @@ def test_status_power(lab, fake):
     assert rows['srv02'].ip == '192.168.56.22'
 
 
-def test_destroy_half_deployed(settings, fake, monkeypatch, tmp_path):
+def test_destroy_half_deployed(settings, fake):
     save_state(settings, LabState(lab='2domains', ip_range='192.168.56', step='check',
                                   hosts={'dc01': HostState(r'C:\goad\lab\dc01\dc01.vmx', 'win2025-v1', 'kingslanding', '192.168.56.10')}))
     fake.respond(lambda a: a[3] == 'deleteVM', Result(1, 'Error: The file does not exist', ''))
     destroy(settings, fake, yes=True)
+    assert any(a[3] == 'deleteVM' for a in fake.calls)
     assert load_state(settings) is None
+
+
+def test_destroy_empty_hosts(settings, fake):
+    save_state(settings, LabState(lab='2domains', ip_range='192.168.56', step='check'))
+    destroy(settings, fake, yes=True)
+    assert load_state(settings) is None
+
+
+def test_destroy_rmtree_failure_keeps_state(settings, fake, deployed, local_paths, monkeypatch):
+    folders = [local_paths(rf'C:\goad\lab\{h}') for h in ('dc01', 'dc02')]
+    for folder in folders:
+        folder.mkdir(parents=True)
+    tried = []
+
+    def rmtree(path):
+        tried.append(path)
+        if path == folders[0]:
+            raise PermissionError('locked')
+
+    monkeypatch.setattr(lifecycle_module.shutil, 'rmtree', rmtree)
+    with pytest.raises(GoadError, match='close VMware and retry') as err:
+        destroy(settings, fake, yes=True)
+    assert str(folders[0]) in str(err.value)
+    assert folders[1] in tried
+    assert load_state(settings) is not None
 
 
 def test_destroy_removes_folders(settings, fake, deployed, local_paths):
@@ -70,10 +96,33 @@ def test_console_spawns_vmware(lab, fake):
     assert fake.calls[-1][0].endswith('vmware.exe') and fake.calls[-1][1] == lab.vms()['dc01']
 
 
-def test_vm_start_stop(lab, fake):
+def test_vm_start_off(lab, fake):
     fake.respond(lambda a: a[3] == 'list', Result(0, 'Total running VMs: 0\n', ''))
     vm_start(lab, 'dc01')
     assert any(a[3] == 'start' for a in fake.calls)
+
+
+def test_vm_start_running_is_noop(lab, fake):
+    fake.respond(lambda a: a[3] == 'list', Result(0, f'Total running VMs: 1\n{lab.vms()["dc01"]}\n', ''))
+    vm_start(lab, 'dc01')
+    assert not any(a[3] == 'start' for a in fake.calls)
+
+
+def test_vm_stop_running(lab, fake):
+    fake.respond(lambda a: a[3] == 'list', Result(0, f'Total running VMs: 1\n{lab.vms()["dc01"]}\n', ''))
+    vm_stop(lab, 'dc01')
+    stops = [a for a in fake.calls if a[3] == 'stop']
+    assert len(stops) == 1 and 'hard' not in stops[0]
+
+
+def test_vm_stop_hard(lab, fake):
+    fake.respond(lambda a: a[3] == 'list', Result(0, f'Total running VMs: 1\n{lab.vms()["dc01"]}\n', ''))
+    vm_stop(lab, 'dc01', hard=True)
+    assert [a for a in fake.calls if a[3] == 'stop'][0][-1] == 'hard'
+
+
+def test_vm_stop_off_is_noop(lab, fake):
+    fake.respond(lambda a: a[3] == 'list', Result(0, 'Total running VMs: 0\n', ''))
     vm_stop(lab, 'dc01')
     assert not any(a[3] == 'stop' for a in fake.calls)
 

@@ -57,10 +57,16 @@ def destroy(settings: Settings, runner, yes: bool) -> None:
             pass
 
     run_parallel(vms, delete, 'delete')
+    failed = []
     for name in vms:
         folder = to_wsl(vm_folder(settings, name))
         if folder.exists():
-            shutil.rmtree(folder)
+            try:
+                shutil.rmtree(folder)
+            except OSError as exc:
+                failed.append(f'{folder} ({exc})')
+    if failed:
+        raise GoadError(f'cannot remove {"; ".join(failed)}: close VMware and retry')
     delete_state(settings)
 
 
