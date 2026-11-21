@@ -42,3 +42,13 @@ def test_incompatible_working_copy_refused(settings, deployed, edit, message):
     edit(data)
     with pytest.raises(GoadError, match=message):
         check_compatible(parse_lab(yaml.safe_dump(data), 'lab.yml'), deployed)
+
+
+def test_added_host_refused(settings, deployed):
+    data = yaml.safe_load(working_lab_path(settings).read_text())
+    data['hosts']['srv09'] = {'hostname': 'newhost', 'os': 'win2022', 'role': 'server',
+                              'domain': 'north.sevenkingdoms.local', 'octet': 30, 'cpus': 2, 'memory': 4096}
+    lab = parse_lab(yaml.safe_dump(data), 'lab.yml')
+    assert 'srv09' in lab.hosts
+    with pytest.raises(GoadError, match='host srv09 was added to lab.yml'):
+        check_compatible(lab, deployed)
