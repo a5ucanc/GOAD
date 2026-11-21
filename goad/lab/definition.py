@@ -207,7 +207,7 @@ def _parse_settings(value: Any, source: str, what: str) -> Dict[str, str]:
         if key not in SETTINGS:
             raise GoadError(f'{source}: unknown setting {key!r} in {what}')
         try:
-            text = normalize_value(raw_value)
+            text = normalize_value(raw_value, key)
         except TypeError:
             raise GoadError(f'{source}: setting {key!r} in {what} has unsupported value {raw_value!r}')
         accepted = SETTINGS[key][1]

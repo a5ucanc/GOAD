@@ -1,5 +1,5 @@
 """Catalogue of lab.yml security settings: key -> (scope, accepted values)."""
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 _EN = ('disabled', 'enabled')
 _ONOFF = ('on', 'off')
@@ -36,11 +36,17 @@ SETTING_LAYERS = ('all', 'dc', 'server', 'workstation')
 GROUP_SCOPES = ('global', 'universal', 'domainlocal')
 
 
-def normalize_value(value: Any) -> str:
+# YAML reads an unquoted hex value as an integer: map it back to the catalogue string.
+_HEX_VALUES = {'dc.cert_mapping': {4: '0x4'}}
+
+
+def normalize_value(value: Any, key: Optional[str] = None) -> str:
     """YAML value to the string form used in the catalogue (bool before int: bool is an int)."""
     if isinstance(value, bool):
         return 'on' if value else 'off'
     if isinstance(value, int):
+        if value in _HEX_VALUES.get(key, {}):
+            return _HEX_VALUES[key][value]
         return str(value)
     if isinstance(value, str):
         return value

@@ -248,3 +248,10 @@ def test_two_ca_hosts_in_one_domain_refused():
         _lab((('hosts', 'srv04'), {'hostname': 'srv04', 'os': 'win2022', 'role': 'server', 'domain': 'essos.local',
                                    'octet': 24, 'cpus': 1, 'memory': 1024, 'ca': True}))
 
+
+
+def test_unquoted_hex_cert_mapping_accepted():
+    text = yaml.safe_dump(BASE).replace("dns_forwarder: 1.1.1.1", "dns_forwarder: 1.1.1.1\nsettings:\n  dc:\n    dc.cert_mapping: 0x4")
+    assert yaml.safe_load(text)['settings']['dc']['dc.cert_mapping'] == 4
+    lab = parse_lab(text, 'lab.yml')
+    assert lab.effective_settings('dc01')['dc.cert_mapping'] == '0x4'

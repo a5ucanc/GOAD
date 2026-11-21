@@ -62,7 +62,7 @@ def reference_view(config, lab_name):
         domains[fqdn] = {'ous': set(d['organisation_units']), 'groups': groups, 'users': users}
     hosts = {}
     for name, h in config['hosts'].items():
-        settings = {k: normalize_value(v) for k, v in config['base_settings'][name].items()}
+        settings = {k: normalize_value(v, k) for k, v in config['base_settings'][name].items()}
         assert 'enable_run_as_ppl' in h['security']
         settings['lsa.ppl'] = 'on'
         if ASR_LSASS in h.get('security_vars', {}).get('asr', {}):

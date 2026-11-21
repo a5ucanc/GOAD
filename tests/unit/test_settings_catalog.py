@@ -23,3 +23,9 @@ def test_catalogue_scopes():
 def test_constants():
     assert SETTING_LAYERS == ('all', 'dc', 'server', 'workstation')
     assert GROUP_SCOPES == ('global', 'universal', 'domainlocal')
+
+
+def test_normalize_value_reads_unquoted_hex_cert_mapping():
+    # YAML reads an unquoted 0x4 as the integer 4
+    assert normalize_value(4, 'dc.cert_mapping') == '0x4'
+    assert normalize_value(4, 'ntlm.lmcompat') == '4'
