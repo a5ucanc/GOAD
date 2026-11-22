@@ -252,7 +252,8 @@ The core is done, and scenario/extension porting may start, when on the user's m
 
 - a whole-lab snapshot takes under 2 minutes;
 - a reset to `base` takes under 5 minutes until every host answers;
-- a deploy from already-built templates takes under 30 minutes;
+- a deploy from already-built templates takes under 35 minutes *(user decision, 2026-11-22: was 30;
+  measured deploys took 30–32 minutes)*;
 - 3 deploys in a row and 5 resets in a row succeed with no manual fix.
 
 `goad template test` passes for all four templates.

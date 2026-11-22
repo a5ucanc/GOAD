@@ -9,7 +9,7 @@ from typing import Dict, List
 
 from goad.settings import OS_NAMES
 
-LIMITS: Dict[str, float] = {'snapshot': 120.0, 'reset': 300.0, 'deploy': 1800.0}
+LIMITS: Dict[str, float] = {'snapshot': 120.0, 'reset': 300.0, 'deploy': 2100.0}   # user decision 2026-11-22: 35 min (was 30)
 REQUIRED: Dict[str, int] = {'snapshot': 1, 'reset': 5, 'deploy': 3}
 ORDER = ('deploy', 'snapshot', 'reset')
 

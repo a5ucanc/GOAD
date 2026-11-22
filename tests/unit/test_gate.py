@@ -55,8 +55,17 @@ def test_measured_text():
 def test_render_has_header_table_samples_and_verdict():
     text = render(good())
     assert 'abc1234' in text and '2domains' in text and 'win2025-v1' in text
-    assert '| deploy | < 1800 s | max 1500 s, 3 samples | pass |' in text
+    assert '| deploy | < 2100 s | max 1500 s, 3 samples | pass |' in text
     assert 'Result: PASS' in text
     bad = good()
     bad.samples.append(Sample('snapshot', 130.0, True))
     assert 'Result: FAIL' in render(bad)
+
+
+def test_deploy_limit_is_35_minutes():
+    # User decision 2026-11-22: 30 minutes became 35 after the measured 1802-1900 s deploys.
+    r = good()
+    r.samples.append(Sample('deploy', 2050.0, True))
+    assert by_check(r)['deploy'].passed
+    r.samples.append(Sample('deploy', 2100.0, True))
+    assert not by_check(r)['deploy'].passed
