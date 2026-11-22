@@ -12,19 +12,11 @@ from goad.settings import load_settings
 from goad.state import load_state, log_dir
 from goad.templates.store import TemplateStore
 from goad.vmware.vmrun import Vmrun
+from tests.live.helpers import PASSWORD, psrp
 
 pytestmark = pytest.mark.live
 
-PASSWORD = 'Aa1234567890!'
 DC01, DC02, DC03, SRV02, SRV03 = (f'192.168.56.{octet}' for octet in (10, 11, 12, 22, 23))
-
-
-def psrp(ip: str, user: str, script: str, password: str = PASSWORD) -> str:
-    from pypsrp.client import Client
-    output, streams, had_errors = Client(ip, username=user, password=password, ssl=False, auth='ntlm',
-                                         cert_validation=False).execute_ps(script)
-    assert not had_errors, f'{ip}: {script}: {[str(e) for e in streams.error]}'
-    return output.strip()
 
 
 def laps_row(settings, runner) -> str:
