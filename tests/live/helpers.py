@@ -23,21 +23,25 @@ def _health_problem(settings, runner) -> str:
     if off:
         return f'powered off: {", ".join(off)}'
     ip = {name: host.ip for name, host in lab.state.hosts.items()}
-    checks = [('dc01', '(Get-ADDomain).DNSRoot', 'sevenkingdoms.local'),
-              ('dc02', '(Get-ADDomain).DNSRoot', 'north.sevenkingdoms.local'),
-              ('srv02', 'Test-ComputerSecureChannel', 'True')]
-    for host, script, expected in checks:
+    # The domain logon comes before the secure-channel query: a logon makes Netlogon set up a channel
+    # that failed at boot (the member started before its DC); the query alone never retries it.
+    checks = [('dc01', 'Administrator', '(Get-ADDomain).DNSRoot', 'sevenkingdoms.local'),
+              ('dc02', 'Administrator', '(Get-ADDomain).DNSRoot', 'north.sevenkingdoms.local'),
+              ('srv02', 'NORTH\\Administrator', 'whoami', 'north\\administrator'),
+              ('srv02', 'Administrator', 'Test-ComputerSecureChannel', 'True')]
+    for host, user, script, expected in checks:
         try:
-            got = psrp(ip[host], 'Administrator', script)
+            got = psrp(ip[host], user, script)
         except Exception as e:  # any PSRP or WinRM failure means "not yet"
-            return f'{host}: {script}: {type(e).__name__}: {e}'
+            return f'{host} as {user}: {script}: {type(e).__name__}: {e}'
         if got != expected:
             return f'{host}: {script} returned {got!r}, expected {expected!r}'
     return ''
 
 
 def wait_healthy(settings, runner, timeout: float = 300) -> float:
-    """Wait until every VM runs, AD answers on dc01 and dc02 and srv02 has its secure channel; return seconds."""
+    """Wait until every VM runs, AD answers on dc01 and dc02, and srv02 logs in a domain user and has its
+    secure channel; return seconds."""
     start = time.monotonic()
     while True:
         problem = _health_problem(settings, runner)
