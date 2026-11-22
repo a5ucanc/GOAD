@@ -12,7 +12,7 @@ from goad.settings import load_settings
 from goad.state import load_state, log_dir
 from goad.templates.store import TemplateStore
 from goad.vmware.vmrun import Vmrun
-from tests.live.helpers import PASSWORD, psrp
+from tests.live.helpers import PASSWORD, psrp, wait_logon
 
 pytestmark = pytest.mark.live
 
@@ -26,6 +26,12 @@ def laps_row(settings, runner) -> str:
     assert password != PASSWORD and not password.startswith('unavailable'), password
     assert psrp(SRV03, '.\\Administrator', 'hostname', password=password).lower() == 'braavos'
     return password
+
+
+def wait_logons() -> None:
+    """Deploy and reset return when WinRM listens; AD DS on a DC accepts logons later."""
+    for ip in (DC01, DC02, DC03, SRV02):
+        print(f'logon {ip} after {wait_logon(ip, "Administrator"):.0f} s')
 
 
 def check_content() -> None:
@@ -68,11 +74,13 @@ def test_provision_2forests():
         pytest.fail('a lab is already deployed: run goad lab destroy first')
     try:
         assert main(['lab', 'deploy', '2forests']) == 0
+        wait_logons()
         check_content()
         laps_row(settings, runner)
         assert main(['lab', 'provision']) == 0
         check_idempotent(settings)
         assert main(['lab', 'reset']) == 0
+        wait_logons()
         laps_row(settings, runner)
     except BaseException:
         main(['lab', 'destroy', '--yes'])   # best effort: the original failure is the one reported

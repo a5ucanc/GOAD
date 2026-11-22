@@ -16,6 +16,20 @@ def psrp(ip: str, user: str, script: str, password: str = PASSWORD) -> str:
     return output.strip()
 
 
+def wait_logon(ip: str, user: str, timeout: float = 600, password: str = PASSWORD) -> float:
+    """Wait until user logs in to ip over PSRP; return seconds. Deploy, start and reset return when
+    WinRM listens, which on a DC comes before AD DS accepts domain logons (NTLM answers 401)."""
+    start = time.monotonic()
+    while True:
+        try:
+            psrp(ip, user, 'hostname', password=password)
+            return time.monotonic() - start
+        except Exception as e:  # any PSRP or WinRM failure means "not yet"
+            if time.monotonic() - start >= timeout:
+                raise AssertionError(f'{ip} as {user}: no logon after {timeout:.0f} s: {type(e).__name__}: {e}')
+        time.sleep(POLL)
+
+
 def _health_problem(settings, runner) -> str:
     """'' when the 2domains lab is healthy, otherwise the first check that failed."""
     lab = open_lab(settings, runner, need_definition=False)
