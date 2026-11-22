@@ -243,3 +243,12 @@ def test_secure_channel_repair_does_not_count_as_a_change():
     # The repair fixes the login after a member booted before its DC; it changes no lab configuration,
     # so an unchanged lab still re-provisions with changed=0.
     assert _task('connect', 'Repair the secure channel of a joined host')['changed_when'] is False
+
+
+def test_defender_feature_runs_only_when_the_service_is_missing():
+    # win_feature takes minutes on a busy servicing stack even with nothing to do.
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'settings' / 'tasks' / 'defender_realtime.yml').read_text())
+    check = tasks[0]
+    assert 'WinDefend' in check['ansible.windows.win_powershell']['script']
+    install = next(t for t in tasks if 'ansible.windows.win_feature' in t)
+    assert install['when'] == 'defender_missing.result'

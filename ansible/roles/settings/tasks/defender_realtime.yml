@@ -1,18 +1,20 @@
 # Port of main's settings/windows_defender role, folded into one idempotent script.
-# win_feature works only on Windows Server: client editions ship Defender built in.
-- name: "Read the OS product type"
+# win_feature works only on Windows Server: client editions ship Defender built in. It takes minutes on
+# a busy servicing stack even with nothing to do, so the WinDefend service decides whether it runs.
+- name: "Check whether Windows Defender is missing"
   ansible.windows.win_powershell:
     script: |
       $Ansible.Changed = $false
-      (Get-CimInstance Win32_OperatingSystem).ProductType
-  register: defender_product
+      $server = (Get-CimInstance Win32_OperatingSystem).ProductType -ne 1
+      $Ansible.Result = $server -and -not (Get-Service WinDefend -ErrorAction SilentlyContinue)
+  register: defender_missing
   changed_when: false
 
 - name: "Install Windows Defender"
   ansible.windows.win_feature:
     name: Windows-Defender
   register: defender_feature
-  when: defender_product.output[0] | int != 1
+  when: defender_missing.result
 
 - name: "Reboot after installing Windows Defender"
   ansible.windows.win_reboot:
