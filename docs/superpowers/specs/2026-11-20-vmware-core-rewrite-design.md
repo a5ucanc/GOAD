@@ -125,8 +125,11 @@ Python stays the language (Ansible is Python; goad already is).
 - Each build is versioned (`win2025-v3`) and immutable once built. Its folder holds the VM and a `base`
   snapshot taken powered off.
 - Windows templates carry: latest cumulative update at build time, VMware Tools, WinRM/PSRP enabled,
-  the AD DS, DNS, AD CS and RSAT features installed but not configured (servers only), the extra root CAs,
+  the AD DS and DNS features and the RSAT tools (AD, DNS, AD CS) installed but not configured (servers only),
+  the extra root CAs,
   and are sysprepped (generalized) so every clone gets a unique SID and runs specialize at first boot.
+  The AD CS role itself is not in the template: provisioning installs it on CA hosts only, because
+  dcpromo refuses to run while it is installed. *(User decision, 2026-11-22.)*
 - The Ubuntu template uses cloud-init with the VMware guestinfo datasource.
 - `goad template build <os>` builds one; `goad template list` shows versions and which lab uses which.
   Deleting a template a deployed lab uses is refused.

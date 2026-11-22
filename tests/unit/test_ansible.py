@@ -178,3 +178,15 @@ def test_connect_hides_the_laps_password():
     report = tasks['Show why the Windows LAPS password read failed']
     assert 'laps_login is failed' in report['when']
     assert 'laps_login.msg' in report['ansible.builtin.debug']['msg'] and 'result' not in str(report)
+
+
+def test_templates_do_not_ship_the_ca_role():
+    script = (REPO / 'packer' / 'windows' / 'scripts' / 'install-features.ps1').read_text()
+    assert 'ADCS-Cert-Authority' not in script
+    assert 'RSAT-ADCS' in script and 'AD-Domain-Services' in script
+
+
+def test_promotion_roles_keep_ca_removal():
+    for role in ('forest', 'child_domain'):
+        text = (ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text()
+        assert 'Remove the certification authority role before promotion' in text

@@ -1,7 +1,8 @@
 # parent_domain_name is left out: microsoft.ad.domain_child rejects it for domain_type=child
 # and derives the parent from dns_domain_name.
-# The template ships ADCS-Cert-Authority installed, and dcpromo refuses to run while it is
-# ("Certificate Server is installed"). Remove it before promotion; the adcs role adds it back.
+# dcpromo refuses to run while ADCS-Cert-Authority is installed ("Certificate Server is installed").
+# Templates built before it left the template ship it: remove it before promotion. On newer templates
+# this is a no-op. The ca_feature role installs it on CA hosts.
 - name: Check whether the host is a domain controller
   ansible.windows.win_powershell:
     script: |

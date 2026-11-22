@@ -1,5 +1,6 @@
-# The template ships ADCS-Cert-Authority installed, and dcpromo refuses to run while it is
-# ("Certificate Server is installed"). Remove it before promotion; the adcs role adds it back.
+# dcpromo refuses to run while ADCS-Cert-Authority is installed ("Certificate Server is installed").
+# Templates built before it left the template ship it: remove it before promotion. On newer templates
+# this is a no-op. The ca_feature role installs it on CA hosts.
 - name: Check whether the host is a domain controller
   ansible.windows.win_powershell:
     script: |

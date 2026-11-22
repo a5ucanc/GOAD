@@ -75,7 +75,8 @@ goad template delete win2025-v1  # --yes to skip the prompt
 - Each build is a new version (`win2025-v1`, `win2025-v2`, ...) under `template_root`. It is immutable,
   and it ends on a powered-off snapshot named `base`.
 - Windows templates are patched, have VMware Tools, PSRP enabled, and are sysprepped. Server templates
-  also have AD DS, DNS, AD CS and the RSAT tools installed but not configured.
+  also have AD DS, DNS and the RSAT tools (AD, DNS, AD CS) installed but not configured. The AD CS role
+  itself is installed by provisioning, on CA hosts only.
 - Windows 11 is installed without the TPM / Secure Boot checks and without a vTPM, so it can be
   linked-cloned.
 - A template that the deployed lab uses cannot be deleted.
