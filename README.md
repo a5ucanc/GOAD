@@ -123,7 +123,7 @@ deployed lab. Plays run in this order:
 |---|---|---|---|
 | common | all Windows hosts | `common` | connect (members, runs with every tag), common |
 | forest | forest root DCs | `forest` | forest |
-| child | child DCs | `child` | child_domain |
+| child | child DCs and CA hosts | `child`, `adcs` | child_domain, ca_feature (AD CS role, beside the promotion) |
 | trust | DCs | `trust` | dc_dns records cleanup, trust |
 | join and content | DCs and members | `join`, `content` | join (members), ad_content (DCs) |
 | foreign members | DCs | `content` | foreign_members (cross-forest group members) |

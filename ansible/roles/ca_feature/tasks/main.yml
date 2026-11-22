@@ -1,0 +1,13 @@
+# Runs in the child play, beside the child promotion, so the slow feature install is off the critical path.
+# Not in the template: dcpromo refuses to run while it is installed. On a member it may be installed before
+# the domain join; the join accepts it.
+- name: Certification authority role
+  ansible.windows.win_feature:
+    name: ADCS-Cert-Authority
+    state: present
+    include_management_tools: true
+  register: ca_feature
+
+- name: Reboot after installing the certification authority role
+  ansible.windows.win_reboot:
+  when: ca_feature is changed and ca_feature.reboot_required

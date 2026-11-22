@@ -45,3 +45,11 @@ def test_inventory_play_groups():
     assert set(children['forest_root']['hosts']) == {'dc01', 'dc03'}
     assert set(children['child_dc']['hosts']) == {'dc02'}
     assert set(children['member']['hosts']) == {'srv02', 'srv03'}
+
+
+def test_ca_host_group():
+    children = render_inventory(load_lab(shipped_lab('2forests')), '192.168.56')['all']['children']
+    assert set(children['ca_host']['hosts']) == {'dc01', 'srv03'}
+    children = render_inventory(load_lab(shipped_lab('1domain')), '192.168.56')['all']['children']
+    assert set(children['ca_host']['hosts']) == {'dc01'}
+    assert not children['child_dc']['hosts']

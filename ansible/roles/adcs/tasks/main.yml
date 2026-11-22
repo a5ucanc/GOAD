@@ -1,15 +1,4 @@
-# The forest and child_domain roles remove ADCS-Cert-Authority from DCs before promotion, so
-# it is installed again here. Member servers keep it from the template.
-- name: Certification authority role
-  ansible.windows.win_feature:
-    name: ADCS-Cert-Authority
-    state: present
-    include_management_tools: true
-  register: ca_feature
-
-- name: Reboot after installing the certification authority role
-  ansible.windows.win_reboot:
-  when: ca_feature is changed and ca_feature.reboot_required
+# The ADCS-Cert-Authority feature comes from the ca_feature role (child play).
 
 # The explicit credential avoids the PSRP double hop on member servers.
 - name: Enterprise root certification authority

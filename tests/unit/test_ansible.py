@@ -19,7 +19,7 @@ PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign memb
 def test_play_order():
     plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     assert [p['name'] for p in plays] == PLAYS
-    assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc', 'dc', 'dc:member', 'dc', 'windows', 'windows']
+    assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc:ca_host', 'dc', 'dc:member', 'dc', 'windows', 'windows']
     assert all(p['gather_facts'] is False for p in plays)
 
 
@@ -190,3 +190,21 @@ def test_promotion_roles_keep_ca_removal():
     for role in ('forest', 'child_domain'):
         text = (ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text()
         assert 'Remove the certification authority role before promotion' in text
+
+
+def test_child_play_hosts_include_ca_hosts():
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'child')
+    assert play['hosts'] == 'child_dc:ca_host' and play['strategy'] == 'free'
+    roles = {r['role']: r for r in play['roles']}
+    assert list(roles) == ['child_domain', 'ca_feature']
+    assert roles['ca_feature']['when'] == 'ca'
+
+
+def test_ca_feature_tagged_adcs():
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'child')
+    assert next(r for r in play['roles'] if r['role'] == 'ca_feature')['tags'] == ['adcs']
+
+
+def test_adcs_role_no_longer_installs_the_feature():
+    assert 'win_feature' not in (ANSIBLE / 'roles' / 'adcs' / 'tasks' / 'main.yml').read_text()
+    assert 'ADCS-Cert-Authority' in (ANSIBLE / 'roles' / 'ca_feature' / 'tasks' / 'main.yml').read_text()

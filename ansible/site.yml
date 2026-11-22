@@ -20,12 +20,17 @@
     - forest
 
 - name: child
-  hosts: child_dc
+  hosts: child_dc:ca_host
   gather_facts: false
-  strategy: linear
+  # Child promotion and the CA feature install are independent: run them side by side.
+  strategy: free
   tags: [child]
   roles:
-    - child_domain
+    - role: child_domain
+      when: inventory_hostname in groups.child_dc
+    - role: ca_feature
+      when: ca
+      tags: [adcs]
 
 - name: trust
   hosts: dc
