@@ -88,6 +88,9 @@
           $Ansible.Changed = $true
       }
   register: secure_channel
+  # A repair restores the login, not lab configuration: an unchanged lab must still re-provision
+  # with changed=0 after a boot race. The result (true when joined) stays in secure_channel.result.
+  changed_when: false
   retries: 30
   delay: 10
   until: secure_channel is succeeded

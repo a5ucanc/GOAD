@@ -237,3 +237,9 @@ def test_trust_refreshes_name_routing_after_creation():
     assert '/dsgetfti:' in script and '/update_tdo' in script
     assert task['loop'] == '{{ goad_domains[domain].trusts }}'
     assert task['when'] == 'inventory_hostname in groups.forest_root'
+
+
+def test_secure_channel_repair_does_not_count_as_a_change():
+    # The repair fixes the login after a member booted before its DC; it changes no lab configuration,
+    # so an unchanged lab still re-provisions with changed=0.
+    assert _task('connect', 'Repair the secure channel of a joined host')['changed_when'] is False
