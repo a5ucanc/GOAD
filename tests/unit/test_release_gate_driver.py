@@ -33,6 +33,9 @@ def fake_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(gate, 'wait_healthy', lambda s, r: 0.0)
     monkeypatch.setattr(gate, 'add_marker', lambda ip, name: None)
     monkeypatch.setattr(gate, 'marker_exists', lambda ip, name: False)
+    # VM folders of the fake lab live under tmp_path, never under the host's real lab_root.
+    monkeypatch.setattr(gate, 'vm_folder', lambda s, host: str(tmp_path / 'vms' / host))
+    monkeypatch.setattr(gate, 'to_wsl', lambda path: __import__('pathlib').Path(path))
     return settings, calls, monkeypatch
 
 
