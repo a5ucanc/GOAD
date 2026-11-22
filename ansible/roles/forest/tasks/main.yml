@@ -1,12 +1,16 @@
 # dcpromo refuses to run while ADCS-Cert-Authority is installed ("Certificate Server is installed").
 # Templates built before it left the template ship it: remove it before promotion. On newer templates
-# this is a no-op. The ca_feature role installs it on CA hosts.
+# this is a no-op. The ca_feature role installs it on CA hosts. win_feature takes minutes even when it has
+# nothing to do, so the CertSvc service (present only with the role) decides whether it runs.
 - name: Check whether the host is a domain controller
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
-      $Ansible.Result = (Get-CimInstance Win32_ComputerSystem).DomainRole -ge 4
+      $Ansible.Result = @{
+          dc = (Get-CimInstance Win32_ComputerSystem).DomainRole -ge 4
+          ca = [bool](Get-Service CertSvc -ErrorAction SilentlyContinue)
+      }
   register: dc_role
   changed_when: false
 
@@ -15,7 +19,7 @@
     name: ADCS-Cert-Authority
     state: absent
   register: ca_removed
-  when: not dc_role.result
+  when: not dc_role.result.dc and dc_role.result.ca
 
 - name: Reboot after removing the certification authority role
   ansible.windows.win_reboot:

@@ -40,3 +40,28 @@
       RemoteAdmin: "{{ goad_domains[goad_domains[domain].trust].netbios }}\\Administrator"
       RemoteAdminPassword: "{{ lab_password }}"
   when: goad_domains[domain].trust is not none
+
+# A new forest trust routes only the names Netlogon recorded when it was created. Names of the other
+# forest's child domains (NORTH\...) may only become routable at Netlogon's next refresh, about
+# 15 minutes later, and settings that name them fail until then. Refresh the trust's routing
+# record (the TDO's forest trust info) from the trusted forest now. Reported changed only when the
+# record changed.
+- name: Refresh forest trust name routing
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Forest)
+      $ErrorActionPreference = 'Stop'
+      $tdo = "CN=$Forest,CN=System,$((Get-ADDomain).DistinguishedName)"
+      function Read-Routing {
+          $value = (Get-ADObject $tdo -Properties msDS-TrustForestTrustInfo).'msDS-TrustForestTrustInfo'
+          if ($value) { [Convert]::ToBase64String([byte[]]$value) } else { '' }
+      }
+      $before = Read-Routing
+      $output = nltest /dsgetfti:$Forest /update_tdo 2>&1 | Out-String
+      if ($LASTEXITCODE -ne 0) { throw "nltest /dsgetfti:$Forest /update_tdo failed: $output" }
+      $Ansible.Changed = (Read-Routing) -ne $before
+      $Ansible.Result = $output
+    parameters:
+      Forest: "{{ item }}"
+  loop: "{{ goad_domains[domain].trusts }}"
+  when: inventory_hostname in groups.forest_root

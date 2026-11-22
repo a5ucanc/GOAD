@@ -208,3 +208,32 @@ def test_ca_feature_tagged_adcs():
 def test_adcs_role_no_longer_installs_the_feature():
     assert 'win_feature' not in (ANSIBLE / 'roles' / 'adcs' / 'tasks' / 'main.yml').read_text()
     assert 'ADCS-Cert-Authority' in (ANSIBLE / 'roles' / 'ca_feature' / 'tasks' / 'main.yml').read_text()
+
+
+def _tasks(role: str) -> list:
+    return yaml.safe_load((ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text())
+
+
+def _task(role: str, name: str) -> dict:
+    return next(t for t in _tasks(role) if t['name'] == name)
+
+
+def test_ca_feature_tasks_run_only_when_certsvc_says_so():
+    # win_feature takes minutes even when it has nothing to do: ask the CertSvc service first.
+    for role in ('forest', 'child_domain'):
+        check = _task(role, 'Check whether the host is a domain controller')
+        assert 'CertSvc' in check['ansible.windows.win_powershell']['script']
+        assert _task(role, 'Remove the certification authority role before promotion')['when'] == \
+            'not dc_role.result.dc and dc_role.result.ca'
+    assert 'CertSvc' in _tasks('ca_feature')[0]['ansible.windows.win_powershell']['script']
+    assert _task('ca_feature', 'Certification authority role')['when'] == 'not ca_installed.result'
+
+
+def test_trust_refreshes_name_routing_after_creation():
+    names = [t['name'] for t in _tasks('trust')]
+    assert names.index('Refresh forest trust name routing') > names.index('Bidirectional forest trust')
+    task = _task('trust', 'Refresh forest trust name routing')
+    script = task['ansible.windows.win_powershell']['script']
+    assert '/dsgetfti:' in script and '/update_tdo' in script
+    assert task['loop'] == '{{ goad_domains[domain].trusts }}'
+    assert task['when'] == 'inventory_hostname in groups.forest_root'
