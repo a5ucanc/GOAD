@@ -78,7 +78,6 @@ def render_inventory(lab: LabDef, ip_range: str) -> Dict[str, Any]:
     children['child_dc'] = group([n for n in dcs if lab.domains[lab.hosts[n].domain].parent])
     children['member'] = group([n for n in names if lab.hosts[n].role in ('server', 'workstation')
                                 and lab.hosts[n].domain])
-    children['ca_host'] = group([n for n in names if lab.hosts[n].ca])
     return {'all': {
         'vars': {'ansible_user': 'Administrator', 'ansible_password': lab.password, 'lab_name': lab.name,
                  'dns_forwarder': lab.dns_forwarder, 'lab_password': lab.password,

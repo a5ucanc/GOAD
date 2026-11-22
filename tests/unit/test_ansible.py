@@ -19,7 +19,7 @@ PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign memb
 def test_play_order():
     plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     assert [p['name'] for p in plays] == PLAYS
-    assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc:ca_host', 'dc', 'dc:member', 'dc', 'windows', 'windows']
+    assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc', 'dc', 'dc:member', 'dc', 'windows', 'windows']
     assert all(p['gather_facts'] is False for p in plays)
 
 
@@ -192,17 +192,17 @@ def test_promotion_roles_keep_ca_removal():
         assert 'Remove the certification authority role before promotion' in text
 
 
-def test_child_play_hosts_include_ca_hosts():
-    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'child')
-    assert play['hosts'] == 'child_dc:ca_host' and play['strategy'] == 'free'
-    roles = {r['role']: r for r in play['roles']}
-    assert list(roles) == ['child_domain', 'ca_feature']
-    assert roles['ca_feature']['when'] == 'ca'
-
-
-def test_ca_feature_tagged_adcs():
-    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'child')
-    assert next(r for r in play['roles'] if r['role'] == 'ca_feature')['tags'] == ['adcs']
+def test_ca_feature_starts_after_the_child_promotion():
+    # Started beside the child promotion, the install slowed the promotion (it replicates from the
+    # parent DC) from 3.6 to 8 minutes: it starts in the join and content play instead.
+    plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
+    child = next(p for p in plays if p['name'] == 'child')
+    assert child['hosts'] == 'child_dc' and child['roles'] == ['child_domain']
+    join = next(p for p in plays if p['name'] == 'join and content')
+    roles = [r['role'] for r in join['roles']]
+    assert roles == ['join', 'ca_feature', 'ad_content']
+    ca = join['roles'][1]
+    assert ca['when'] == 'ca' and ca['tags'] == ['adcs']
 
 
 def test_adcs_role_no_longer_installs_the_feature():

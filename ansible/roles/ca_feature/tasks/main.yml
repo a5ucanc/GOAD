@@ -1,10 +1,10 @@
 # Starts the ADCS-Cert-Authority install and returns at once; the adcs role (post-join play) waits for
 # it. Not in the template: dcpromo refuses to run while it is installed. On a just-promoted DC the
-# install takes up to 9 minutes (3 minutes idle), so it runs through the child, trust and join plays.
+# install takes up to 9 minutes (3 minutes idle), so it runs through the join and content play.
 # It runs as a SYSTEM scheduled task: Ansible async over PSRP fails when the session profile unloads
 # ("Illegal operation attempted on a registry key that has been marked for deletion").
 # The task writes %ProgramData%\goad\ca-feature.json when it ends; the adcs role reads and deletes it.
-# On a member it may be installed before the domain join; the join accepts it.
+# On a member it starts after the domain join.
 - name: Start the certification authority role install
   ansible.windows.win_powershell:
     script: |

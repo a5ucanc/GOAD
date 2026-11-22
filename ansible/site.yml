@@ -20,17 +20,12 @@
     - forest
 
 - name: child
-  hosts: child_dc:ca_host
+  hosts: child_dc
   gather_facts: false
-  # Child promotion and the CA feature install are independent: run them side by side.
-  strategy: free
+  strategy: linear
   tags: [child]
   roles:
-    - role: child_domain
-      when: inventory_hostname in groups.child_dc
-    - role: ca_feature
-      when: ca
-      tags: [adcs]
+    - child_domain
 
 - name: trust
   hosts: dc
@@ -58,6 +53,11 @@
   roles:
     - role: join
       when: inventory_hostname in groups.member
+    # Starts the AD CS role install and returns; the adcs role (post-join) waits for it. Started
+    # here, not beside the child promotion, which it slowed by replicating load on the parent DC.
+    - role: ca_feature
+      when: ca
+      tags: [adcs]
     - role: ad_content
       when: inventory_hostname in groups.dc
 

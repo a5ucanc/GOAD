@@ -123,9 +123,9 @@ deployed lab. Plays run in this order:
 |---|---|---|---|
 | common | all Windows hosts | `common` | connect (members, runs with every tag), common |
 | forest | forest root DCs | `forest` | forest |
-| child | child DCs and CA hosts | `child`, `adcs` | child_domain, ca_feature (AD CS role, beside the promotion) |
+| child | child DCs | `child` | child_domain |
 | trust | DCs | `trust` | dc_dns records cleanup, trust |
-| join and content | DCs and members | `join`, `content` | join (members), ad_content (DCs) |
+| join and content | DCs and members | `join`, `content`, `adcs` | join (members), ca_feature (starts the AD CS role install on CA hosts), ad_content (DCs) |
 | foreign members | DCs | `content` | foreign_members (cross-forest group members) |
 | post-join | all Windows hosts | `laps`, `local_groups`, `adcs` | laps_schema, laps_dc, local_groups, laps_host, adcs |
 | settings | all Windows hosts | `settings` | settings (the lab.yml `settings` catalogue) |
