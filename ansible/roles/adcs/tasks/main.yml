@@ -1,4 +1,4 @@
-# The ADCS-Cert-Authority feature install was started by the ca_feature role (child play) as the
+# The ADCS-Cert-Authority feature install was started by the ca_feature role (join and content play) as the
 # SYSTEM scheduled task goad-ca-feature, which writes %ProgramData%\goad\ca-feature.json when it ends.
 # Polling here is a readiness check, not a fixed wait. A failed install removes the task and its
 # result, so the next run starts it again.

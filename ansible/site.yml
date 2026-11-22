@@ -53,7 +53,7 @@
   roles:
     - role: join
       when: inventory_hostname in groups.member
-    # Starts the AD CS role install and returns; the adcs role (post-join) waits for it. Started
+    # Starts the AD CS role install and returns; the adcs role (settings play) waits for it. Started
     # here, not beside the child promotion, which it slowed by replicating load on the parent DC.
     - role: ca_feature
       when: ca
@@ -73,7 +73,7 @@
   hosts: windows
   gather_facts: false
   strategy: linear
-  tags: [laps, local_groups, adcs]
+  tags: [laps, local_groups]
   roles:
     - role: laps_schema
       when: laps_schema | default(false)
@@ -82,8 +82,6 @@
     - local_groups
     - role: laps_host
       when: laps
-    - role: adcs
-      when: ca
 
 - name: settings
   hosts: windows
@@ -93,4 +91,9 @@
   force_handlers: true
   tags: [settings]
   roles:
+    # Here, not in the linear post-join play, where its wait for the CA role install held every
+    # host. In this free play the other hosts apply their settings meanwhile.
+    - role: adcs
+      when: ca
+      tags: [adcs]
     - settings

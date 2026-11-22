@@ -99,7 +99,16 @@ def test_no_reset_connection():
 def test_post_join_role_order():
     play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'post-join')
     names = [r['role'] if isinstance(r, dict) else r for r in play['roles']]
-    assert names == ['laps_schema', 'laps_dc', 'local_groups', 'laps_host', 'adcs']
+    assert names == ['laps_schema', 'laps_dc', 'local_groups', 'laps_host']
+
+
+def test_settings_play_starts_with_adcs():
+    # post-join is linear: the CA wait there held every host. The settings play is free, so the other
+    # hosts apply their settings while the CA host waits for its role install.
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'settings')
+    assert play['strategy'] == 'free'
+    assert play['roles'][0] == {'role': 'adcs', 'when': 'ca', 'tags': ['adcs']}
+    assert play['roles'][1:] == ['settings']
 
 
 def test_laps_processing_reruns_without_password():

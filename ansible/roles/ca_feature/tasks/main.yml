@@ -1,4 +1,4 @@
-# Starts the ADCS-Cert-Authority install and returns at once; the adcs role (post-join play) waits for
+# Starts the ADCS-Cert-Authority install and returns at once; the adcs role (settings play) waits for
 # it. Not in the template: dcpromo refuses to run while it is installed. On a just-promoted DC the
 # install takes up to 9 minutes (3 minutes idle), so it runs through the join and content play.
 # It runs as a SYSTEM scheduled task: Ansible async over PSRP fails when the session profile unloads
