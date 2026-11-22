@@ -297,3 +297,14 @@ def test_dc_gpo_helper_is_a_function_used_by_signing_settings():
         text = (SETTINGS_TASKS / f'{name}.yml').read_text()
         assert "lookup('ansible.builtin.file', 'dc_gpo.ps1')" in text and 'Set-DcGpoValue' in text
     assert not (ANSIBLE / 'roles' / 'settings' / 'files' / 'set_dc_gpo_value.ps1').exists()
+
+
+def test_join_reboots_in_its_own_task():
+    # microsoft.ad treats a connection failure while it sends shutdown.exe as a started reboot. The join
+    # can drop the PSRP connection (network profile switch): the reboot never ran and the task waited
+    # 600 s for a boot time change. A separate task opens a fresh connection first.
+    tasks = _tasks('join')
+    join = _task('join', 'Join the domain')
+    assert join['microsoft.ad.membership']['reboot'] is False and join['register'] == 'join_result'
+    reboot = tasks[tasks.index(join) + 1]
+    assert 'ansible.windows.win_reboot' in reboot and reboot['when'] == 'join_result.reboot_required'

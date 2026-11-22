@@ -5,7 +5,16 @@
     domain_admin_user: "{{ netbios }}\\Administrator"
     domain_admin_password: "{{ lab_password }}"
     state: domain
-    reboot: true
+    # Not reboot: true. microsoft.ad treats a connection failure while it sends shutdown.exe as a
+    # started reboot; the join can drop the PSRP connection (network profile switch), and the task
+    # then waited 600 s for a reboot that never ran. The next task opens a fresh connection first.
+    reboot: false
+  register: join_result
+
+- name: Reboot after the domain join
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: join_result.reboot_required
 
 # psrp opens a new connection for each task, so the next task already logs in as this user.
 - name: Use the domain Administrator from now on
