@@ -1,25 +1,35 @@
-# Runs in the child play, beside the child promotion, so the slow feature install is off the critical path.
-# Not in the template: dcpromo refuses to run while it is installed. On a member it may be installed before
-# the domain join; the join accepts it.
-# win_feature takes minutes even when the feature is already there: the CertSvc service exists only
-# with the role, so it decides whether the install runs.
-- name: Check whether the certification authority role is installed
+# Starts the ADCS-Cert-Authority install and returns at once; the adcs role (post-join play) waits for
+# it. Not in the template: dcpromo refuses to run while it is installed. On a just-promoted DC the
+# install takes up to 9 minutes (3 minutes idle), so it runs through the child, trust and join plays.
+# It runs as a SYSTEM scheduled task: Ansible async over PSRP fails when the session profile unloads
+# ("Illegal operation attempted on a registry key that has been marked for deletion").
+# The task writes %ProgramData%\goad\ca-feature.json when it ends; the adcs role reads and deletes it.
+# On a member it may be installed before the domain join; the join accepts it.
+- name: Start the certification authority role install
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
-      $Ansible.Result = [bool](Get-Service CertSvc -ErrorAction SilentlyContinue)
-  register: ca_installed
-  changed_when: false
-
-- name: Certification authority role
-  ansible.windows.win_feature:
-    name: ADCS-Cert-Authority
-    state: present
-    include_management_tools: true
-  register: ca_feature
-  when: not ca_installed.result
-
-- name: Reboot after installing the certification authority role
-  ansible.windows.win_reboot:
-  when: ca_feature is changed and ca_feature.reboot_required
+      $name = 'goad-ca-feature'
+      # Installed already (CertSvc exists only with the role), or an install is under way.
+      if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) { return }
+      if (Get-Service CertSvc -ErrorAction SilentlyContinue) { return }
+      $dir = Join-Path $env:ProgramData 'goad'
+      New-Item -ItemType Directory -Force -Path $dir | Out-Null
+      $result = Join-Path $dir 'ca-feature.json'
+      Remove-Item -Force -ErrorAction SilentlyContinue -Path $result
+      $install = @"
+      try {
+          `$r = Install-WindowsFeature ADCS-Cert-Authority -IncludeManagementTools -ErrorAction Stop
+          `$out = @{ Success = [bool]`$r.Success; RestartNeeded = [string]`$r.RestartNeeded; Error = '' }
+      } catch {
+          `$out = @{ Success = `$false; RestartNeeded = 'No'; Error = [string]`$_ }
+      }
+      `$out | ConvertTo-Json | Set-Content -Encoding ascii -Path '$result.tmp'
+      Move-Item -Force -Path '$result.tmp' -Destination '$result'
+      "@
+      $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($install))
+      $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -EncodedCommand $encoded"
+      Register-ScheduledTask -TaskName $name -Action $action -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+      Start-ScheduledTask -TaskName $name
+      $Ansible.Changed = $true

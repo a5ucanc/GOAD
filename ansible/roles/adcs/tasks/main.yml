@@ -1,4 +1,35 @@
-# The ADCS-Cert-Authority feature comes from the ca_feature role (child play).
+# The ADCS-Cert-Authority feature install was started by the ca_feature role (child play) as the
+# SYSTEM scheduled task goad-ca-feature, which writes %ProgramData%\goad\ca-feature.json when it ends.
+# Polling here is a readiness check, not a fixed wait. A failed install removes the task and its
+# result, so the next run starts it again.
+- name: Wait for the certification authority role install
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $name = 'goad-ca-feature'
+      $result = Join-Path $env:ProgramData 'goad\ca-feature.json'
+      $Ansible.Result = @{ restart = $false }
+      if (Test-Path $result) {
+          $r = Get-Content -Raw -Path $result | ConvertFrom-Json
+          Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+          Remove-Item -Force -Path $result
+          if (-not $r.Success) { throw "AD CS role install failed: $($r.Error)" }
+          $Ansible.Result = @{ restart = $r.RestartNeeded -ne 'No' }
+      } elseif (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+          throw 'the AD CS role install is still running'
+      } elseif (-not (Get-Service CertSvc -ErrorAction SilentlyContinue)) {
+          throw 'the AD CS role is not installed and no install is running: run goad lab provision --tags adcs'
+      }
+  register: ca_wait
+  until: ca_wait is succeeded
+  retries: 120
+  delay: 10
+  changed_when: false
+
+- name: Reboot after installing the certification authority role
+  ansible.windows.win_reboot:
+  when: ca_wait.result.restart
 
 # The explicit credential avoids the PSRP double hop on member servers.
 - name: Enterprise root certification authority

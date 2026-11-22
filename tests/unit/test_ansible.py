@@ -226,7 +226,6 @@ def test_ca_feature_tasks_run_only_when_certsvc_says_so():
         assert _task(role, 'Remove the certification authority role before promotion')['when'] == \
             'not dc_role.result.dc and dc_role.result.ca'
     assert 'CertSvc' in _tasks('ca_feature')[0]['ansible.windows.win_powershell']['script']
-    assert _task('ca_feature', 'Certification authority role')['when'] == 'not ca_installed.result'
 
 
 def test_trust_refreshes_name_routing_after_creation():
@@ -252,3 +251,25 @@ def test_defender_feature_runs_only_when_the_service_is_missing():
     assert 'WinDefend' in check['ansible.windows.win_powershell']['script']
     install = next(t for t in tasks if 'ansible.windows.win_feature' in t)
     assert install['when'] == 'defender_missing.result'
+
+
+def test_ca_feature_installs_in_a_system_task_without_waiting():
+    # The install takes up to 9 minutes on a just-promoted DC. A SYSTEM scheduled task lets it run
+    # through the trust and join plays; Ansible async over PSRP fails when the session profile unloads.
+    tasks = _tasks('ca_feature')
+    assert [t['name'] for t in tasks] == ['Start the certification authority role install']
+    script = tasks[0]['ansible.windows.win_powershell']['script']
+    for needle in ('Register-ScheduledTask', "-User 'SYSTEM'", 'Install-WindowsFeature ADCS-Cert-Authority',
+                   'ca-feature.json', 'CertSvc'):
+        assert needle in script, needle
+    assert 'async' not in tasks[0]
+
+
+def test_adcs_waits_for_the_ca_feature_first():
+    tasks = _tasks('adcs')
+    wait = tasks[0]
+    assert wait['name'] == 'Wait for the certification authority role install'
+    assert 'ca-feature.json' in wait['ansible.windows.win_powershell']['script']
+    assert wait['until'] == 'ca_wait is succeeded' and wait['retries'] * wait['delay'] >= 1200
+    assert wait['changed_when'] is False
+    assert tasks[1]['when'] == 'ca_wait.result.restart'
