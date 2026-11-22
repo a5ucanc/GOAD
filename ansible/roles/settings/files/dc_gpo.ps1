@@ -1,11 +1,11 @@
+# Set-DcGpoValue writes one registry value into the Default Domain Controllers Policy, which would
+# otherwise re-apply its own value. Prepended to a setting's script with lookup('file'); returns
+# $true when it changed the policy. Call it on domain controllers only.
+function Set-DcGpoValue {
 param(
     [Parameter(Mandatory)][string]$RegKey,
     [Parameter(Mandatory)][string]$Value
 )
-$ErrorActionPreference = 'Stop'
-$Ansible.Changed = $false
-# Only on domain controllers: Default Domain Controllers Policy re-applies these values
-if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) { return }
 
 Import-Module ActiveDirectory
 $domain = Get-ADDomain
@@ -42,7 +42,7 @@ if (-not $done) {
     if (-not $sectionSeen) { $out.Add('[Registry Values]') }
     $out.Add($wanted); $changed = $true
 }
-if (-not $changed) { return }
+if (-not $changed) { return $false }
 
 Set-Content -Path $inf -Value $out -Encoding Unicode
 # Bump GPO version so the change replicates
@@ -56,4 +56,5 @@ $dn = "CN=$guid,CN=Policies,CN=System,$($domain.DistinguishedName)"
 $obj = Get-ADObject -Identity $dn -Properties versionNumber
 Set-ADObject -Identity $dn -Replace @{ versionNumber = ([int]$obj.versionNumber + 1) }
 gpupdate /force | Out-Null
-$Ansible.Changed = $true
+return $true
+}

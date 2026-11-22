@@ -273,3 +273,27 @@ def test_adcs_waits_for_the_ca_feature_first():
     assert wait['until'] == 'ca_wait is succeeded' and wait['retries'] * wait['delay'] >= 1200
     assert wait['changed_when'] is False
     assert tasks[1]['when'] == 'ca_wait.result.restart'
+
+
+SETTINGS_TASKS = ANSIBLE / 'roles' / 'settings' / 'tasks'
+
+
+@pytest.mark.parametrize('name, count', [('net_nbtns', 1), ('smb_signing', 1), ('ldap_signing', 1),
+                                         ('kerberos_rc4', 1), ('smb_v1', 3)])
+def test_settings_run_one_round_trip(name, count):
+    # Each executed task costs 2-7 s per host; these settings ran 2 to 5 tasks on every run.
+    tasks = yaml.safe_load((SETTINGS_TASKS / f'{name}.yml').read_text())
+    assert len(tasks) == count, [t['name'] for t in tasks]
+    assert not any('loop' in t for t in tasks)
+    if name == 'smb_v1':   # the set task, a reboot only when needed, the set task again after a pending change
+        assert [('ansible.windows.win_reboot' in t) for t in tasks] == [False, True, False]
+        assert tasks[2]['when'] == 'smb_v1_set.result.pending'
+
+
+def test_dc_gpo_helper_is_a_function_used_by_signing_settings():
+    helper = (ANSIBLE / 'roles' / 'settings' / 'files' / 'dc_gpo.ps1').read_text()
+    assert 'function Set-DcGpoValue' in helper and 'param(' not in helper.split('function', 1)[0]
+    for name in ('smb_signing', 'ldap_signing'):
+        text = (SETTINGS_TASKS / f'{name}.yml').read_text()
+        assert "lookup('ansible.builtin.file', 'dc_gpo.ps1')" in text and 'Set-DcGpoValue' in text
+    assert not (ANSIBLE / 'roles' / 'settings' / 'files' / 'set_dc_gpo_value.ps1').exists()

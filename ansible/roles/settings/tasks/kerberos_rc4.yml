@@ -1,22 +1,21 @@
-- name: "Set Kerberos supported encryption types"
-  ansible.windows.win_regedit:
-    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters
-    name: SupportedEncryptionTypes
-    data: "{{ 24 if setting_value == 'disabled' else 28 }}"
-    type: dword
-    state: present
-
+# One round trip: the local Kerberos encryption types and, on a DC, its trust objects.
 # Trust objects have no msDS-SupportedEncryptionTypes by default, so the KDC assumes RC4 for
 # inter-realm referrals. With RC4 disabled the referral would fail: declare the AES types on
 # every trustedDomain object of the DC's domain. The settings play runs on every DC, so both
 # sides of a trust are set. AD refuses LDAP writes of this attribute on trustedDomain objects
 # ("Illegal modify operation"), so the value is read over LDAP and written through LSA with ksetup.
-- name: "Set Kerberos encryption types on trust objects"
+- name: "Set Kerberos encryption types"
   ansible.windows.win_powershell:
     script: |
       param([int]$Wanted)
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
+      $path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters'
+      if ((Get-ItemProperty -Path $path -ErrorAction SilentlyContinue).SupportedEncryptionTypes -ne $Wanted) {
+        if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+        New-ItemProperty -Path $path -Name SupportedEncryptionTypes -Value $Wanted -PropertyType DWord -Force | Out-Null
+        $Ansible.Changed = $true
+      }
       if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) { return }
       Import-Module ActiveDirectory
       $names = @('AES128-CTS-HMAC-SHA1-96', 'AES256-CTS-HMAC-SHA1-96')

@@ -1,39 +1,36 @@
-# A previous change may still wait for a reboot: finish it before changing the feature again.
-- name: "Read SMB1Protocol state"
-  ansible.windows.win_powershell:
-    script: |
-      $Ansible.Changed = $false
-      (Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol).State.ToString()
-  register: smb_v1_state
-  changed_when: false
-
-- name: "Reboot to finish a pending SMB1Protocol change"
-  ansible.windows.win_reboot:
-    reboot_timeout: 600
-  when: smb_v1_state.output[0] is search('Pending')
-
+# One round trip on the usual path. A previous change may still wait for a reboot ("Pending"): the set
+# task then changes nothing and reports pending, the host reboots, and the set task runs again.
+# Disabled and DisabledWithPayloadRemoved are both off.
 - name: "Set SMB1Protocol feature"
   ansible.windows.win_powershell:
-    script: |
+    script: &smb_v1_script |
       param([string]$Wanted)
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       $state = (Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol).State.ToString()
-      # Disabled and DisabledWithPayloadRemoved are both off. Pending states were rebooted above.
-      $restart = $false
+      $Ansible.Result = @{ pending = $state -like '*Pending*'; restart = $false }
+      if ($Ansible.Result.pending) { return }
       if ($Wanted -eq 'enabled' -and $state -notlike 'Enable*') {
-        $restart = (Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -All -NoRestart).RestartNeeded
+        $Ansible.Result.restart = [bool](Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -All -NoRestart).RestartNeeded
         $Ansible.Changed = $true
       } elseif ($Wanted -eq 'disabled' -and $state -notlike 'Disable*') {
-        $restart = (Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart).RestartNeeded
+        $Ansible.Result.restart = [bool](Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart).RestartNeeded
         $Ansible.Changed = $true
       }
-      [bool]$restart
     parameters:
       Wanted: "{{ setting_value }}"
   register: smb_v1_set
 
-- name: "Reboot to apply SMB1Protocol"
+- name: "Reboot for SMB1Protocol"
   ansible.windows.win_reboot:
     reboot_timeout: 600
-  when: smb_v1_set.output[0] | bool
+  when: smb_v1_set.result.pending or smb_v1_set.result.restart
+
+- name: "Set SMB1Protocol feature after the pending change"
+  ansible.windows.win_powershell:
+    script: *smb_v1_script
+    parameters:
+      Wanted: "{{ setting_value }}"
+  register: smb_v1_again
+  failed_when: smb_v1_again.result.pending or smb_v1_again.result.restart
+  when: smb_v1_set.result.pending

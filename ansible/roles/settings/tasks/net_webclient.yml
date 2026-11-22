@@ -1,8 +1,19 @@
+# win_feature takes minutes on a busy servicing stack even with nothing to do. The WebClient service
+# exists only with the WebDAV-Redirector feature, so it decides whether win_feature runs.
+- name: "Check the WebDAV client feature"
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+      $Ansible.Result = [bool](Get-Service WebClient -ErrorAction SilentlyContinue)
+  register: webclient_installed
+  changed_when: false
+
 - name: "Set WebDAV client feature"
   ansible.windows.win_feature:
     name: WebDAV-Redirector
     state: "{{ setting_value }}"
   register: webclient_feature
+  when: webclient_installed.result != (setting_value == 'present')
 
 - name: "Reboot to apply the WebDAV client feature"
   ansible.windows.win_reboot:
