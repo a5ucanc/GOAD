@@ -22,3 +22,8 @@
       Id: 9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2
       Action: "{{ 'Enabled' if setting_value == 'block' else 'Disabled' }}"
     error_action: stop
+  # Defender's WMI provider answers 0x800106ba until WinDefend is up, e.g. right after a reboot.
+  register: asr_lsass
+  retries: 10
+  delay: 15
+  until: asr_lsass is not failed

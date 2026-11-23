@@ -43,3 +43,8 @@
     parameters:
       Wanted: "{{ setting_value }}"
     error_action: stop
+  # Defender's WMI provider answers 0x800106ba until WinDefend is up, e.g. right after a reboot.
+  register: defender_realtime
+  retries: 10
+  delay: 15
+  until: defender_realtime is not failed
