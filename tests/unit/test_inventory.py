@@ -1,5 +1,12 @@
-from goad.lab.definition import load_lab, shipped_lab
+from pathlib import Path
+
+import pytest
+import yaml
+
+from goad.lab.definition import LAB_NAMES, load_lab, shipped_lab
 from goad.lab.inventory import render_inventory
+
+GOLDEN = Path(__file__).parent / 'golden'
 
 
 def test_inventory_groups():
@@ -46,3 +53,9 @@ def test_inventory_play_groups():
     assert set(children['child_dc']['hosts']) == {'dc02'}
     assert set(children['member']['hosts']) == {'srv02', 'srv03'}
 
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_shipped_inventory_unchanged(name):
+    text = yaml.safe_dump(render_inventory(load_lab(shipped_lab(name)), '192.168.56'), sort_keys=False)
+    golden = (GOLDEN / f'inventory-{name}.yml').read_text(encoding='utf-8')
+    assert text == golden

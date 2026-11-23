@@ -1,0 +1,314 @@
+all:
+  vars:
+    ansible_user: Administrator
+    ansible_password: Aa1234567890!
+    lab_name: 1domain
+    dns_forwarder: 1.1.1.1
+    lab_password: Aa1234567890!
+    goad_domains:
+      sevenkingdoms.local:
+        netbios: SEVENKINGDOMS
+        dn: DC=sevenkingdoms,DC=local
+        dc: dc01
+        dc_hostname: kingslanding.sevenkingdoms.local
+        dc_ip: 192.168.56.10
+        parent: null
+        forest_root: sevenkingdoms.local
+        trust: null
+        trusts: []
+        ous:
+        - Vale
+        - IronIslands
+        - Riverlands
+        - Crownlands
+        - Stormlands
+        - Westerlands
+        - Reach
+        - Dorne
+        groups:
+          Lannister:
+            scope: global
+            path: OU=Westerlands,DC=sevenkingdoms,DC=local
+            managed_by: tywin.lannister
+            members: []
+          Baratheon:
+            scope: global
+            path: OU=Stormlands,DC=sevenkingdoms,DC=local
+            managed_by: robert.baratheon
+            members: []
+          Small Council:
+            scope: global
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          DragonStone:
+            scope: global
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          KingsGuard:
+            scope: global
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          DragonRider:
+            scope: global
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          T0-Admins:
+            scope: global
+            path: CN=Users,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          T1-ServerAdmins:
+            scope: global
+            path: CN=Users,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          T2-WorkstationAdmins:
+            scope: global
+            path: CN=Users,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+          AcrossTheNarrowSea:
+            scope: domainlocal
+            path: CN=Users,DC=sevenkingdoms,DC=local
+            managed_by: null
+            members: []
+        users:
+          tywin.lannister:
+            firstname: Tywin
+            surname: Lanister
+            city: Casterly Rock
+            description: Tywin Lanister
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Lannister
+            sensitive: false
+          jaime.lannister:
+            firstname: Jaime
+            surname: Lanister
+            city: King's Landing
+            description: Jaime Lanister
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Lannister
+            sensitive: false
+          cersei.lannister:
+            firstname: Cersei
+            surname: Lanister
+            city: King's Landing
+            description: Cersei Lanister
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Lannister
+            - Baratheon
+            - Domain Admins
+            - Small Council
+            - T0-Admins
+            - Protected Users
+            sensitive: true
+          tyron.lannister:
+            firstname: Tyron
+            surname: Lanister
+            city: King's Landing
+            description: Tyron Lanister
+            path: OU=Westerlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Lannister
+            sensitive: false
+          robert.baratheon:
+            firstname: Robert
+            surname: Baratheon
+            city: King's Landing
+            description: Robert Lanister
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Baratheon
+            - Domain Admins
+            - Small Council
+            - Protected Users
+            - T0-Admins
+            sensitive: true
+          joffrey.baratheon:
+            firstname: Joffrey
+            surname: Baratheon
+            city: King's Landing
+            description: Joffrey Baratheon
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Baratheon
+            - Lannister
+            sensitive: false
+          renly.baratheon:
+            firstname: Renly
+            surname: Baratheon
+            city: King's Landing
+            description: Renly Baratheon
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Baratheon
+            - Small Council
+            sensitive: false
+          stannis.baratheon:
+            firstname: Stannis
+            surname: Baratheon
+            city: King's Landing
+            description: Stannis Baratheon
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Baratheon
+            - Small Council
+            sensitive: false
+          petyer.baelish:
+            firstname: Petyer
+            surname: Baelish
+            city: King's Landing
+            description: Petyer Baelish
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Small Council
+            sensitive: false
+          lord.varys:
+            firstname: Lord
+            surname: Varys
+            city: King's Landing
+            description: Lord Varys
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Small Council
+            sensitive: false
+          maester.pycelle:
+            firstname: Maester
+            surname: Pycelle
+            city: King's Landing
+            description: Maester Pycelle
+            path: OU=Crownlands,DC=sevenkingdoms,DC=local
+            groups:
+            - Small Council
+            sensitive: false
+        laps_hosts: []
+  children:
+    windows:
+      hosts:
+        dc01:
+          ansible_host: 192.168.56.10
+          hostname: kingslanding
+          domain: sevenkingdoms.local
+          netbios: SEVENKINGDOMS
+          goad_settings:
+            net.llmnr: disabled
+            net.nbtns: disabled
+            net.mdns: disabled
+            smb.signing: required
+            smb.v1: disabled
+            kerberos.rc4: disabled
+            ntlm.lmcompat: '5'
+            defender.realtime: 'on'
+            firewall.state: 'on'
+            lsa.ppl: 'on'
+            host.tier: '0'
+            ldap.signing: required
+            ldap.channel_binding: always
+            dc.maq: '0'
+            dc.spooler: disabled
+            dc.strong_cert_binding: '2'
+            dc.cert_mapping: absent
+            adcs.web_enrollment: 'off'
+            adcs.editf_san: 'off'
+            adcs.enforce_encrypt: 'on'
+          laps: false
+          ca: true
+          local_groups: {}
+          dc_dns:
+          - 192.168.56.10
+          dc_forwarder: 1.1.1.1
+          laps_schema: false
+      vars:
+        ansible_connection: psrp
+        ansible_psrp_auth: ntlm
+        ansible_psrp_protocol: http
+    linux:
+      hosts: {}
+      vars:
+        ansible_connection: ssh
+        ansible_user: goad
+    dc:
+      hosts:
+        dc01:
+          ansible_host: 192.168.56.10
+          hostname: kingslanding
+          domain: sevenkingdoms.local
+          netbios: SEVENKINGDOMS
+          goad_settings:
+            net.llmnr: disabled
+            net.nbtns: disabled
+            net.mdns: disabled
+            smb.signing: required
+            smb.v1: disabled
+            kerberos.rc4: disabled
+            ntlm.lmcompat: '5'
+            defender.realtime: 'on'
+            firewall.state: 'on'
+            lsa.ppl: 'on'
+            host.tier: '0'
+            ldap.signing: required
+            ldap.channel_binding: always
+            dc.maq: '0'
+            dc.spooler: disabled
+            dc.strong_cert_binding: '2'
+            dc.cert_mapping: absent
+            adcs.web_enrollment: 'off'
+            adcs.editf_san: 'off'
+            adcs.enforce_encrypt: 'on'
+          laps: false
+          ca: true
+          local_groups: {}
+          dc_dns:
+          - 192.168.56.10
+          dc_forwarder: 1.1.1.1
+          laps_schema: false
+    server:
+      hosts: {}
+    workstation:
+      hosts: {}
+    forest_root:
+      hosts:
+        dc01:
+          ansible_host: 192.168.56.10
+          hostname: kingslanding
+          domain: sevenkingdoms.local
+          netbios: SEVENKINGDOMS
+          goad_settings:
+            net.llmnr: disabled
+            net.nbtns: disabled
+            net.mdns: disabled
+            smb.signing: required
+            smb.v1: disabled
+            kerberos.rc4: disabled
+            ntlm.lmcompat: '5'
+            defender.realtime: 'on'
+            firewall.state: 'on'
+            lsa.ppl: 'on'
+            host.tier: '0'
+            ldap.signing: required
+            ldap.channel_binding: always
+            dc.maq: '0'
+            dc.spooler: disabled
+            dc.strong_cert_binding: '2'
+            dc.cert_mapping: absent
+            adcs.web_enrollment: 'off'
+            adcs.editf_san: 'off'
+            adcs.enforce_encrypt: 'on'
+          laps: false
+          ca: true
+          local_groups: {}
+          dc_dns:
+          - 192.168.56.10
+          dc_forwarder: 1.1.1.1
+          laps_schema: false
+    child_dc:
+      hosts: {}
+    member:
+      hosts: {}
