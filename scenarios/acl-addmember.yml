@@ -16,3 +16,4 @@ fragment:
       - principal: scn-acl-add-attacker
         right: AddMember
         object: group:scn-acl-add-group
+        inherit: all

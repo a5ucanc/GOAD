@@ -140,7 +140,7 @@ def _acls(lab, domain):
 
 
 ACL_CASES = [
-    ('acl-addmember', 'scn-acl-add-attacker', 'AddMember', 'group:scn-acl-add-group', 'none'),
+    ('acl-addmember', 'scn-acl-add-attacker', 'AddMember', 'group:scn-acl-add-group', 'all'),
     ('acl-adminsdholder', 'scn-acl-sdh-attacker', 'GenericAll', 'adminsdholder', 'none'),
     ('acl-forcechangepassword', 'scn-acl-fcp-attacker', 'ForceChangePassword', 'user:scn-acl-fcp-victim', 'none'),
     ('acl-genericall-computer', 'scn-acl-gac-attacker', 'GenericAll', 'computer:dc01', 'none'),
