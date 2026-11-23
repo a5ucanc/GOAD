@@ -2,7 +2,7 @@
 import copy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -25,7 +25,10 @@ class Scenario:
 def load_catalogue(directory: Path = SCENARIO_DIR) -> Dict[str, Scenario]:
     catalogue: Dict[str, Scenario] = {}
     for path in sorted(Path(directory).glob('*.yml')):
-        data = yaml.safe_load(path.read_text(encoding='utf-8'))
+        try:
+            data = yaml.safe_load(path.read_text(encoding='utf-8'))
+        except yaml.YAMLError as e:
+            raise GoadError(f'{path.name}: invalid YAML: {e}')
         if not isinstance(data, dict):
             raise GoadError(f'{path.name}: scenario file must be a mapping')
         extra = sorted(set(data) - _KEYS)
@@ -100,3 +103,75 @@ def substitute(value: Any, values: Dict[str, str]) -> Any:
     if isinstance(value, list):
         return [substitute(v, values) for v in value]
     return copy.deepcopy(value)
+
+
+def merge_fragment(base: Dict[str, Any], fragment: Dict[str, Any], owners: Dict[Tuple[str, ...], str],
+                   who: str, source: str, _path: Tuple[str, ...] = ()) -> None:
+    for key, value in fragment.items():
+        path = _path + (key,)
+        if key not in base:
+            if isinstance(value, dict):
+                base[key] = {}
+                merge_fragment(base[key], value, owners, who, source, path)
+            elif isinstance(value, list):
+                base[key] = []
+                _union(base[key], value)
+            else:
+                base[key] = copy.deepcopy(value)
+                owners[path] = who
+            continue
+        old = base[key]
+        if isinstance(old, dict) and isinstance(value, dict):
+            merge_fragment(old, value, owners, who, source, path)
+        elif isinstance(old, list) and isinstance(value, list):
+            _union(old, value)
+        elif old == value and type(old) is type(value):
+            continue
+        else:
+            dotted = '.'.join(path)
+            owner = owners.get(path)
+            if 'settings' in _path:
+                if owner is None:
+                    base[key] = copy.deepcopy(value)
+                    owners[path] = who
+                    continue
+                raise GoadError(f'{source}: scenario {who} sets {dotted} to {value!r}, scenario {owner} set it to {old!r}')
+            raise GoadError(f'{source}: scenario {who} sets {dotted}, already set by {owner or "lab.yml"}')
+
+
+def _union(base: List[Any], items: List[Any]) -> None:
+    for item in items:
+        if item not in base:
+            base.append(copy.deepcopy(item))
+
+
+def expand(raw: Dict[str, Any], source: str, catalogue: Optional[Dict[str, Scenario]] = None) -> Dict[str, Any]:
+    result = copy.deepcopy(raw)
+    entries = result.get('scenarios')
+    if entries is None or entries == []:
+        return result
+    if not isinstance(entries, list) or not all(isinstance(e, dict) and set(e) == {'name', 'target'} for e in entries):
+        raise GoadError(f'{source}: scenarios must be a list of mappings with exactly the keys name and target')
+    if catalogue is None:
+        catalogue = load_catalogue()
+    owners: Dict[Tuple[str, ...], str] = {}
+    seen = set()
+    hosts = raw.get('hosts') or {}
+    for entry in entries:
+        name, target = entry['name'], entry['target']
+        if name not in catalogue:
+            raise GoadError(f'{source}: unknown scenario {name!r}')
+        if target not in hosts:
+            raise GoadError(f'{source}: unknown host {target!r} in scenario {name}')
+        scenario = catalogue[name]
+        valid = valid_targets(raw, scenario.kind)
+        if target not in valid:
+            choice = f'choose one of {valid}' if valid else 'none in this lab'
+            raise GoadError(f'{source}: scenario {name} needs a {scenario.kind} target: {choice}')
+        who = f'{name}@{target}'
+        if who in seen:
+            raise GoadError(f'{source}: duplicate entry {who}')
+        seen.add(who)
+        fragment = substitute(scenario.fragment, placeholders(raw, target))
+        merge_fragment(result, fragment, owners, who, source)
+    return result

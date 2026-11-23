@@ -18,7 +18,7 @@ LAB_NAMES = ('1domain', '2domains', '2forests')
 ROLES = ('dc', 'server', 'workstation', 'linux')
 _NAME = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 _TOP_REQUIRED = {'name', 'password', 'dns_forwarder', 'domains', 'hosts'}
-_TOP_KEYS = _TOP_REQUIRED | {'settings'}
+_TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios'}
 _DOMAIN_KEYS = {'netbios', 'dc', 'parent', 'trust', 'ous', 'groups', 'users'}
 _DOMAIN_REQUIRED = {'netbios', 'dc'}
 _HOST_KEYS = {'hostname', 'os', 'role', 'domain', 'octet', 'cpus', 'memory', 'laps', 'ca', 'local_groups', 'settings'}
@@ -32,6 +32,12 @@ _BUILTIN_GROUPS = frozenset(n.lower() for n in (
     'Enterprise Admins', 'Schema Admins', 'Protected Users', 'Account Operators', 'Backup Operators',
     'Server Operators', 'Print Operators', 'Remote Desktop Users', 'Group Policy Creator Owners', 'DnsAdmins'))
 _BUILTIN_USERS = frozenset(n.lower() for n in ('Administrator', 'Guest', 'krbtgt'))
+
+
+@dataclass(frozen=True)
+class ScenarioRef:
+    name: str
+    target: str
 
 
 @dataclass(frozen=True)
@@ -95,6 +101,7 @@ class LabDef:
     domains: Dict[str, DomainDef]
     hosts: Dict[str, HostDef]
     settings: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    scenarios: Tuple[ScenarioRef, ...] = ()
 
     def ip(self, host: str, ip_range: str) -> str:
         return f'{ip_range}.{self.hosts[host].octet}'
@@ -266,6 +273,8 @@ def parse_lab(text: str, source: str) -> LabDef:
     except yaml.YAMLError as e:
         raise GoadError(f'{source}: invalid YAML: {e}')
     raw = _mapping(raw, source, 'lab definition')
+    from goad.lab import scenarios as _scenarios  # scenarios imports this module
+    raw = _scenarios.expand(raw, source)
     _check_keys(raw, _TOP_KEYS, _TOP_REQUIRED, source, 'lab definition')
     name = _str(raw['name'], source, 'lab definition', 'name')
     if not _NAME.match(name):
@@ -361,7 +370,8 @@ def parse_lab(text: str, source: str) -> LabDef:
             raise GoadError(f'{source}: unknown settings layer {layer!r}: choose one of {", ".join(SETTING_LAYERS)}')
         layers[layer] = _parse_settings(values, source, f'settings layer {layer}')
 
-    lab = LabDef(name=name, password=password, dns_forwarder=forwarder, domains=domains, hosts=hosts, settings=layers)
+    lab = LabDef(name=name, password=password, dns_forwarder=forwarder, domains=domains, hosts=hosts, settings=layers,
+                 scenarios=tuple(ScenarioRef(e['name'], e['target']) for e in raw.get('scenarios') or []))
     _validate_content(lab, source)
     return lab
 

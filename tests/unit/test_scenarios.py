@@ -2,7 +2,7 @@ import pytest
 import yaml
 
 from goad import GoadError
-from goad.lab.scenarios import KINDS, load_catalogue, placeholders, substitute, valid_targets
+from goad.lab.scenarios import KINDS, Scenario, expand, load_catalogue, placeholders, substitute, valid_targets
 from goad.lab.definition import REPO
 
 
@@ -66,4 +66,115 @@ def test_catalogue_rejects_unknown_key(tmp_path):
 def test_catalogue_rejects_non_mapping_fragment(tmp_path):
     (tmp_path / 'x.yml').write_text('description: d\ntarget: server\nfragment: [1]\n')
     with pytest.raises(GoadError, match='x.yml'):
+        load_catalogue(tmp_path)
+
+
+NORTH = 'north.sevenkingdoms.local'
+
+
+def _sc(fragment, kind='domain'):
+    return Scenario('t', '', kind, fragment)
+
+
+def _user(**kw):
+    u = {'firstname': 'A', 'surname': 'B'}
+    u.update(kw)
+    return {'domains': {'{domain}': {'users': {'new.user': u}}}}
+
+
+def _with(*entries):
+    raw = lab('2domains')
+    raw['scenarios'] = [{'name': n, 'target': t} for n, t in entries]
+    return raw
+
+
+def test_expand_without_scenarios_is_identity():
+    raw = lab('2domains')
+    out = expand(raw, 'x', {})
+    assert out == raw and out is not raw
+    raw['scenarios'] = []
+    assert expand(raw, 'x', {}) == raw
+
+
+def test_expand_adds_user_to_target_domain():
+    out = expand(_with(('t', 'dc02')), 'x', {'t': _sc(_user())})
+    assert out['domains'][NORTH]['users']['new.user']['firstname'] == 'A'
+    assert 'new.user' not in out['domains']['sevenkingdoms.local']['users']
+
+
+def test_expand_does_not_mutate_input():
+    raw = _with(('t', 'dc02'))
+    before = copy_deep(raw)
+    expand(raw, 'x', {'t': _sc(_user())})
+    assert raw == before
+
+
+def copy_deep(x):
+    import copy
+    return copy.deepcopy(x)
+
+
+def test_list_union():
+    frag = {'domains': {'{domain}': {'users': {'arya.stark': {'groups': ['Night Watch', 'Stark']}}}}}
+    cat = {'a': _sc(frag), 'b': _sc(frag)}
+    out = expand(_with(('a', 'dc02'), ('b', 'dc02')), 'x', cat)
+    assert out['domains'][NORTH]['users']['arya.stark']['groups'] == ['Stark', 'Night Watch']
+
+
+def test_setting_overrides_lab_value():
+    raw = _with(('t', 'dc01'))
+    raw['hosts']['dc01']['settings'] = {'adcs.web_enrollment': 'off'}
+    out = expand(raw, 'x', {'t': _sc({'hosts': {'{target}': {'settings': {'adcs.web_enrollment': 'on'}}}})})
+    assert out['hosts']['dc01']['settings']['adcs.web_enrollment'] == 'on'
+
+
+def test_two_scenarios_conflict_on_setting():
+    mk = lambda v: _sc({'hosts': {'{target}': {'settings': {'dc.maq': v}}}})
+    with pytest.raises(GoadError) as e:
+        expand(_with(('a', 'dc01'), ('b', 'dc01')), 'x', {'a': mk(5), 'b': mk(10)})
+    msg = str(e.value)
+    assert 'b@dc01' in msg and 'a@dc01' in msg and 'hosts.dc01.settings.dc.maq' in msg
+
+
+def test_fragment_conflicts_with_lab_object():
+    frag = {'domains': {'sevenkingdoms.local': {'users': {'tywin.lannister': {'description': 'Other'}}}}}
+    with pytest.raises(GoadError, match='already set by lab.yml'):
+        expand(_with(('t', 'dc01')), 'x', {'t': _sc(frag)})
+
+
+def test_same_value_twice_is_fine():
+    frag = {'hosts': {'{target}': {'settings': {'dc.maq': 10}}}}
+    out = expand(_with(('a', 'dc01'), ('b', 'dc01')), 'x', {'a': _sc(frag), 'b': _sc(frag)})
+    assert out['hosts']['dc01']['settings']['dc.maq'] == 10
+
+
+def test_non_settings_conflict_between_entries_names_owner():
+    mk = lambda d: _sc(_user(description=d))
+    with pytest.raises(GoadError, match='already set by a@dc02'):
+        expand(_with(('a', 'dc02'), ('b', 'dc02')), 'x', {'a': mk('x'), 'b': mk('y')})
+
+
+@pytest.mark.parametrize('scenarios, message', [
+    ('nope', 'scenarios must be a list'),
+    ([{'name': 't'}], 'scenarios must be a list'),
+    ([{'name': 't', 'target': 'dc01', 'x': 1}], 'scenarios must be a list'),
+    (['t'], 'scenarios must be a list'),
+    ([{'name': 'zzz', 'target': 'dc01'}], "unknown scenario 'zzz'"),
+    ([{'name': 't', 'target': 'nohost'}], "unknown host 'nohost' in scenario t"),
+    ([{'name': 'srv', 'target': 'dc01'}], 'scenario srv needs a server target: choose one of'),
+    ([{'name': 'tr', 'target': 'dc01'}], 'scenario tr needs a trust target: none in this lab'),
+    ([{'name': 't', 'target': 'dc01'}, {'name': 't', 'target': 'dc01'}], 'duplicate entry t@dc01'),
+])
+def test_expand_errors(scenarios, message):
+    raw = lab('2domains')
+    raw['scenarios'] = scenarios
+    cat = {'t': _sc({}), 'srv': _sc({}, 'server'), 'tr': _sc({}, 'trust')}
+    with pytest.raises(GoadError, match=message) as e:
+        expand(raw, 'SRC', cat)
+    assert str(e.value).startswith('SRC: ')
+
+
+def test_load_catalogue_bad_yaml_names_file(tmp_path):
+    (tmp_path / 'bad.yml').write_text('a: [unclosed\n')
+    with pytest.raises(GoadError, match='bad.yml'):
         load_catalogue(tmp_path)

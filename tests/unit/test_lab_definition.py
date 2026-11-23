@@ -4,7 +4,8 @@ import pytest
 import yaml
 
 from goad import GoadError
-from goad.lab.definition import LAB_NAMES, load_lab, parse_lab, shipped_lab
+from goad.lab import scenarios
+from goad.lab.definition import LAB_NAMES, ScenarioRef, load_lab, parse_lab, shipped_lab
 
 
 def test_shipped_labs_load():
@@ -293,3 +294,18 @@ def test_content_references_resolve():
                (ESSOS + ('groups', 'Dothraki', 'members'), ['viserys', 'sevenkingdoms.local\\tywin.lannister', 'sevenkingdoms.local\\Domain Admins']),
                (SEVEN + ('users',), {'tywin.lannister': TYWIN}))
     assert lab.domains['essos.local'].groups['Dothraki'].managed_by == 'Administrator'
+
+
+def test_parse_lab_records_scenarios(monkeypatch):
+    frag = {'domains': {'{domain}': {'users': {'new.user': {'firstname': 'A', 'surname': 'B'}}}}}
+    cat = {'t': scenarios.Scenario('t', '', 'domain', frag)}
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: cat)
+    text = shipped_lab('2domains').read_text() + 'scenarios:\n  - {name: t, target: dc02}\n'
+    lab = parse_lab(text, 'x')
+    assert lab.scenarios == (ScenarioRef('t', 'dc02'),)
+    assert 'new.user' in lab.domains['north.sevenkingdoms.local'].users
+
+
+def test_shipped_labs_have_no_scenarios():
+    for name in LAB_NAMES:
+        assert load_lab(shipped_lab(name)).scenarios == ()
