@@ -1,5 +1,5 @@
 """goad scenario enable, disable and list: edit the scenarios list of the working lab.yml, then provision or reset."""
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -15,7 +15,10 @@ SOURCE = 'lab.yml'
 
 
 def _load(text: str) -> Dict[str, Any]:
-    raw = yaml.safe_load(text)
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise GoadError(f'{SOURCE}: invalid YAML: {e}')
     if not isinstance(raw, dict):
         raise GoadError(f'{SOURCE}: must be a mapping')
     return raw
@@ -26,7 +29,12 @@ def _dump(raw: Dict[str, Any]) -> str:
 
 
 def _entries(raw: Dict[str, Any]) -> List[Dict[str, str]]:
-    return list(raw.get('scenarios') or [])
+    entries = raw.get('scenarios') or []
+    if not isinstance(entries, list) or not all(isinstance(e, dict) and set(e) == {'name', 'target'}
+                                               and isinstance(e['name'], str) and isinstance(e['target'], str)
+                                               for e in entries):
+        raise GoadError(f'{SOURCE}: scenarios must be a list of mappings with exactly the keys name and target')
+    return list(entries)
 
 
 def add_entry(text: str, name: str, target: Optional[str]) -> Tuple[str, str]:
@@ -58,7 +66,7 @@ def add_entry(text: str, name: str, target: Optional[str]) -> Tuple[str, str]:
 def remove_entry(text: str, name: str, target: Optional[str]) -> Tuple[str, str]:
     raw = _load(text)
     entries = _entries(raw)
-    targets = [e['target'] for e in entries if e.get('name') == name]
+    targets = [e['target'] for e in entries if e['name'] == name]
     if target is None:
         if len(targets) > 1:
             raise GoadError(f'scenario {name} is enabled on {", ".join(targets)}: pass --target')
@@ -66,7 +74,7 @@ def remove_entry(text: str, name: str, target: Optional[str]) -> Tuple[str, str]
             target = targets[0]
     if target not in targets:
         raise GoadError(f'scenario {name} is not enabled' + (f' on {target}' if target else ''))
-    entries = [e for e in entries if not (e.get('name') == name and e.get('target') == target)]
+    entries = [e for e in entries if not (e['name'] == name and e['target'] == target)]
     if entries:
         raw['scenarios'] = entries
     else:
@@ -109,7 +117,7 @@ def contained(old_text: str, new_text: str) -> Optional[str]:
     new_entries = _entries(new_raw)
     for entry in _entries(old_raw):
         if entry not in new_entries:
-            return f'scenarios.{entry.get("name")}@{entry.get("target")}'
+            return f'scenarios.{entry["name"]}@{entry["target"]}'
     old_exp = _strip_settings(scenarios.expand(old_raw, SOURCE))
     new_exp = _strip_settings(scenarios.expand(new_raw, SOURCE))
     old_exp.pop('scenarios', None)
@@ -134,7 +142,12 @@ def pick_snapshot(state: LabState, new_text: str) -> str:
         except GoadError:
             continue   # a record whose lab.yml no longer parses cannot be a reset target
     base = state.snapshot('base')
-    path = contained(base.lab_yml, new_text) if base is not None else None
+    if base is None:
+        raise GoadError('no snapshot qualifies and there is no base snapshot: provision cannot remove content; redeploy')
+    try:
+        path = contained(base.lab_yml, new_text)
+    except GoadError as e:
+        raise GoadError(f'no snapshot qualifies and the base snapshot lab.yml is invalid ({e}): redeploy') from e
     raise GoadError(f'lab.yml dropped {path} since base: provision cannot remove it; redeploy')
 
 
@@ -163,11 +176,10 @@ def enable(settings, runner, name: str, target: Optional[str]) -> str:
     return target
 
 
-def disable(settings, runner, name: str, target: Optional[str], yes: bool, ask=None) -> str:
+def disable(settings, runner, name: str, target: Optional[str], yes: bool,
+            ask: Callable[[str, bool], bool]) -> str:
     from goad.lab import snapshots
     from goad.lab.context import open_lab
-    if ask is None:
-        from goad.cli import confirm as ask
     state = _state(settings)
     path = working_lab_path(settings)
     new_text, target = remove_entry(path.read_text(), name, target)
@@ -180,7 +192,11 @@ def disable(settings, runner, name: str, target: Optional[str], yes: bool, ask=N
     snapshots.reset(lab, snap)
     path.write_text(new_text)
     if scenarios.expand(_load(new_text), SOURCE) != scenarios.expand(_load(record.lab_yml), SOURCE):
-        _provision(settings, runner, new_text, lab.state)
+        try:
+            _provision(settings, runner, new_text, lab.state)
+        except GoadError as e:
+            raise GoadError(f'{e}: lab reset to {snap}; scenario {name}@{target} removed from lab.yml: '
+                            f'run goad lab provision') from e
     return snap
 
 
@@ -194,13 +210,13 @@ def listing(text: Optional[str]) -> List[Tuple[str, str, str, str, str]]:
             valid = enabled = ''
         else:
             valid = ', '.join(scenarios.valid_targets(raw, scenario.kind))
-            enabled = ', '.join(e['target'] for e in _entries(raw) if e.get('name') == name)
+            enabled = ', '.join(e['target'] for e in _entries(raw) if e['name'] == name)
         rows.append((name, scenario.kind, scenario.description, valid, enabled))
     return rows
 
 
 def scenario_accounts(text: str) -> List[Tuple[str, str, str]]:
-    """(NETBIOS\\user, password, scope) for each user a scenario fragment names."""
+    """(NETBIOS\\user, password, scope) for each user a scenario fragment adds (absent from the lab before expansion)."""
     raw = _load(text)
     entries = _entries(raw)
     if not entries:
@@ -213,7 +229,10 @@ def scenario_accounts(text: str) -> List[Tuple[str, str, str]]:
         fragment = scenarios.substitute(catalogue[name].fragment, scenarios.placeholders(raw, target))
         for domain, content in (fragment.get('domains') or {}).items():
             info = expanded['domains'][domain]
+            existing = ((raw.get('domains') or {}).get(domain) or {}).get('users') or {}
             for user in (content or {}).get('users') or {}:
+                if user in existing:
+                    continue
                 password = (info['users'][user] or {}).get('password') or expanded['password']
                 rows.append((f'{info["netbios"]}\\{user}', password, f'scenario {name}@{target}'))
     return rows

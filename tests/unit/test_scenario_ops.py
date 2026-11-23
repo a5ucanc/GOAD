@@ -219,10 +219,12 @@ def test_listing():
     assert scenario_ops.listing(None)[0][3:] == ('', '')
 
 
-def test_scenario_accounts_password():
-    raw = yaml.safe_load(with_entries(('newuser', 'dc02')))
-    raw['domains'][NORTH]['users']['scn.user'] = {'firstname': 'S', 'surname': 'U', 'password': 'P@ss1'}
-    text = yaml.safe_dump(raw, sort_keys=False)
+def test_scenario_accounts_password(monkeypatch):
+    cat = dict(CATALOGUE)
+    cat['newuser'] = Scenario('newuser', '', 'domain', {'domains': {'{domain}': {'users': {
+        'scn.user': {'firstname': 'S', 'surname': 'U', 'password': 'P@ss1'}}}}})
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: cat)
+    text = with_entries(('newuser', 'dc02'))
     assert scenario_ops.scenario_accounts(text) == [('NORTH\\scn.user', 'P@ss1', 'scenario newuser@dc02')]
 
 
@@ -230,3 +232,49 @@ def test_creds_lists_scenario_users(lab, settings):
     _set_working(settings, with_entries(('newuser', 'dc02')))
     rows = lifecycle.creds(lab, laps=lambda *a: 'x')
     assert rows[-1] == lifecycle.Credential('NORTH\\scn.user', 'Aa1234567890!', 'scenario newuser@dc02')
+
+
+def test_scenario_accounts_skips_existing_users(monkeypatch):
+    cat = dict(CATALOGUE)
+    cat['spnuser'] = Scenario('spnuser', '', 'domain', {'domains': {'{domain}': {'users': {
+        'hodor': {'description': 'Brainless Giant'}, 'new.one': {'firstname': 'N', 'surname': 'O'}}}}})
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: cat)
+    assert scenario_ops.scenario_accounts(with_entries(('spnuser', 'dc02'))) == [
+        ('NORTH\\new.one', 'Aa1234567890!', 'scenario spnuser@dc02')]
+
+
+@pytest.mark.parametrize('entry', [{'name': 'newuser'}, {'target': 'dc02'}, 'newuser'])
+def test_malformed_entry_is_goad_error(entry):
+    raw = yaml.safe_load(base_text())
+    raw['scenarios'] = [entry]
+    text = yaml.safe_dump(raw, sort_keys=False)
+    for call in (lambda: scenario_ops.remove_entry(text, 'newuser', None), lambda: scenario_ops.listing(text),
+                 lambda: scenario_ops.add_entry(text, 'newuser', 'dc01')):
+        with pytest.raises(GoadError, match='scenarios must be a list of mappings'):
+            call()
+
+
+def test_pick_snapshot_without_usable_base():
+    dropped = _drop_user(base_text())
+    with pytest.raises(GoadError, match='no base snapshot'):
+        scenario_ops.pick_snapshot(_state(('s1', base_text())), dropped)
+    with pytest.raises(GoadError, match='base snapshot lab.yml is invalid'):
+        scenario_ops.pick_snapshot(_state(('base', 'name: [')), dropped)
+
+
+def test_disable_provision_failure_after_reset(settings, fake, deployed, calls, monkeypatch):
+    _set_working(settings, with_entries(('newuser', 'dc02'), ('srvset', 'srv02')))
+
+    def boom(*a, **k):
+        raise GoadError('ansible-playbook failed')
+    monkeypatch.setattr('goad.lab.provision.provision', boom)
+    with pytest.raises(GoadError) as e:
+        scenario_ops.disable(settings, fake, 'newuser', None, yes=True, ask=lambda q, y: True)
+    assert str(e.value) == ('ansible-playbook failed: lab reset to base; scenario newuser@dc02 removed from lab.yml: '
+                            'run goad lab provision')
+    assert yaml.safe_load(working_lab_path(settings).read_text())['scenarios'] == [{'name': 'srvset', 'target': 'srv02'}]
+
+
+def test_disable_requires_ask():
+    import inspect
+    assert inspect.signature(scenario_ops.disable).parameters['ask'].default is inspect.Parameter.empty
