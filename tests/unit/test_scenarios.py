@@ -159,6 +159,8 @@ def test_non_settings_conflict_between_entries_names_owner():
     ([{'name': 't'}], 'scenarios must be a list'),
     ([{'name': 't', 'target': 'dc01', 'x': 1}], 'scenarios must be a list'),
     (['t'], 'scenarios must be a list'),
+    ([{'name': 't', 'target': 5}], 'scenarios must be a list'),
+    ([{'name': ['t'], 'target': 'dc01'}], 'scenarios must be a list'),
     ([{'name': 'zzz', 'target': 'dc01'}], "unknown scenario 'zzz'"),
     ([{'name': 't', 'target': 'nohost'}], "unknown host 'nohost' in scenario t"),
     ([{'name': 'srv', 'target': 'dc01'}], 'scenario srv needs a server target: choose one of'),
@@ -178,3 +180,12 @@ def test_load_catalogue_bad_yaml_names_file(tmp_path):
     (tmp_path / 'bad.yml').write_text('a: [unclosed\n')
     with pytest.raises(GoadError, match='bad.yml'):
         load_catalogue(tmp_path)
+
+
+def test_equal_setting_records_owner_so_later_value_conflicts():
+    raw = _with(('a', 'dc01'), ('b', 'dc01'))
+    raw['hosts']['dc01']['settings'] = {'dc.maq': 5}
+    mk = lambda v: _sc({'hosts': {'{target}': {'settings': {'dc.maq': v}}}})
+    with pytest.raises(GoadError) as e:
+        expand(raw, 'x', {'a': mk(5), 'b': mk(10)})
+    assert 'a@dc01' in str(e.value) and 'b@dc01' in str(e.value)

@@ -126,6 +126,8 @@ def merge_fragment(base: Dict[str, Any], fragment: Dict[str, Any], owners: Dict[
         elif isinstance(old, list) and isinstance(value, list):
             _union(old, value)
         elif old == value and type(old) is type(value):
+            if 'settings' in _path:
+                owners.setdefault(path, who)
             continue
         else:
             dotted = '.'.join(path)
@@ -150,7 +152,8 @@ def expand(raw: Dict[str, Any], source: str, catalogue: Optional[Dict[str, Scena
     entries = result.get('scenarios')
     if entries is None or entries == []:
         return result
-    if not isinstance(entries, list) or not all(isinstance(e, dict) and set(e) == {'name', 'target'} for e in entries):
+    if not isinstance(entries, list) or not all(isinstance(e, dict) and set(e) == {'name', 'target'}
+                                           and isinstance(e['name'], str) and isinstance(e['target'], str) for e in entries):
         raise GoadError(f'{source}: scenarios must be a list of mappings with exactly the keys name and target')
     if catalogue is None:
         catalogue = load_catalogue()
