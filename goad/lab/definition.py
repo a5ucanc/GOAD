@@ -651,8 +651,12 @@ def _validate_adcs(lab: LabDef, source: str) -> None:
             what = f'template {tname} in host {hname}'
             for principal in t.enroll:
                 _check_principal(lab, h.domain, principal, source, what)
-            if t.issuance_group is not None and t.issuance_group.lower() not in {n.lower() for n in d.groups} | _BUILTIN_GROUPS:
-                raise GoadError(f'{source}: issuance group {t.issuance_group!r} in {what}: not a group of {h.domain}')
+            # msDS-OIDToGroupLink accepts only an empty universal group; built-ins are not universal or not empty.
+            if t.issuance_group is not None:
+                g = next((g for n, g in d.groups.items() if n.lower() == t.issuance_group.lower()), None)
+                if g is None or g.scope != 'universal':
+                    raise GoadError(f'{source}: issuance group {t.issuance_group!r} in {what}: '
+                                    f'not a universal group defined in groups of {h.domain}')
         for principal, right in h.ca_acl:
             _check_principal(lab, h.domain, principal, source, f'ca_acl {principal} {right} in host {hname}')
 
