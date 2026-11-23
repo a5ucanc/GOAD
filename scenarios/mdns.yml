@@ -1,0 +1,7 @@
+description: "mDNS enabled on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        net.mdns: enabled

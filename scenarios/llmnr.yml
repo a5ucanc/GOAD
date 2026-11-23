@@ -1,0 +1,8 @@
+description: "LLMNR and NBT-NS enabled on a host"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        net.llmnr: enabled
+        net.nbtns: enabled

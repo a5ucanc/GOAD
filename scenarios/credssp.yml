@@ -1,0 +1,7 @@
+description: "WinRM CredSSP server role enabled on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        winrm.credssp: server

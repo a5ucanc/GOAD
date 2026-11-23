@@ -1,0 +1,7 @@
+description: "Kerberos RC4 allowed"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        kerberos.rc4: enabled

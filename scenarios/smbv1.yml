@@ -1,0 +1,7 @@
+description: "SMBv1 enabled on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        smb.v1: enabled

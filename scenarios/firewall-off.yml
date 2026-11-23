@@ -1,0 +1,7 @@
+description: "Windows firewall off on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        firewall.state: 'off'

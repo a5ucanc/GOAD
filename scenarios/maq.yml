@@ -1,0 +1,7 @@
+description: "Machine account quota 10: any domain user can create computer accounts"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        dc.maq: 10

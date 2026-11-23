@@ -1,0 +1,7 @@
+description: "SMB signing not required on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        smb.signing: optional

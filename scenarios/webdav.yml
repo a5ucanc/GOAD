@@ -1,0 +1,7 @@
+description: "WebDAV client (WebClient service) installed and running on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        net.webclient: present

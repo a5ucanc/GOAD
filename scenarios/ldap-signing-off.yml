@@ -1,0 +1,7 @@
+description: "DC does not require LDAP signing"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        ldap.signing: none

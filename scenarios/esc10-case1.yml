@@ -1,0 +1,7 @@
+description: "KDC weak certificate binding (StrongCertificateBindingEnforcement 0, ESC10 case 1)"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        dc.strong_cert_binding: 0

@@ -1,0 +1,7 @@
+description: "ADCS web enrollment over HTTP with NTLM, no EPA"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        adcs.web_enrollment: 'on'

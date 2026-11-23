@@ -1,0 +1,7 @@
+description: "Defender real-time protection off on a member server"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        defender.realtime: 'off'

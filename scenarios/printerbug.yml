@@ -1,0 +1,7 @@
+description: "Print Spooler running on the DC (PrinterBug coercion)"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        dc.spooler: enabled

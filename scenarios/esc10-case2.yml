@@ -1,0 +1,7 @@
+description: "Schannel maps certificates by UPN (CertificateMappingMethods 0x4, ESC10 case 2)"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        dc.cert_mapping: '0x4'

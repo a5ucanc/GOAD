@@ -1,0 +1,7 @@
+description: "SID history accepted on the forest trust"
+target: trust
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        trust.sid_history: enabled

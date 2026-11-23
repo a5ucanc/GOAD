@@ -1,0 +1,7 @@
+description: "DC accepts LM and NTLMv1 (LmCompatibilityLevel 2)"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        ntlm.lmcompat: 2

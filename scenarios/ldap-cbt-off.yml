@@ -1,0 +1,7 @@
+description: "DC does not enforce LDAPS channel binding"
+target: domain
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        ldap.channel_binding: never

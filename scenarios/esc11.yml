@@ -1,0 +1,7 @@
+description: "CA accepts unencrypted ICertPassage requests (IF_ENFORCEENCRYPTICERTREQUEST off, ESC11)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      settings:
+        adcs.enforce_encrypt: 'off'
