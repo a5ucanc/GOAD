@@ -340,3 +340,12 @@ def test_join_reboots_in_its_own_task():
     assert join['microsoft.ad.membership']['reboot'] is False and join['register'] == 'join_result'
     reboot = tasks[tasks.index(join) + 1]
     assert 'ansible.windows.win_reboot' in reboot and reboot['when'] == 'join_result.reboot_required'
+
+
+def test_computer_delegation_runs_after_join():
+    # The join and content play is free: a DC may reach ad_content before a member has joined,
+    # so computer-account delegation runs in the linear foreign members play that follows it.
+    plays = {p['name']: p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text())}
+    assert 'ad_computers' in plays['foreign members']['roles']
+    accounts = (ANSIBLE / 'roles' / 'ad_content' / 'tasks' / 'accounts.yml').read_text()
+    assert 'Computer delegation' not in accounts

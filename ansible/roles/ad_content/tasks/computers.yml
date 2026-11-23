@@ -1,0 +1,14 @@
+# Run by the ad_computers role in the foreign members play: computer accounts exist only after the
+# members joined, which the free join and content play does not guarantee while ad_content runs.
+- name: Computer delegation
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'delegation.ps1') }}"
+    parameters:
+      Kind: computer
+      Name: "{{ item.key }}"
+      Unconstrained: "{{ item.value.unconstrained }}"
+      Constrained: "{{ item.value.constrained }}"
+      ProtocolTransition: "{{ item.value.protocol_transition }}"
+  loop: "{{ goad_domains[domain].computers | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

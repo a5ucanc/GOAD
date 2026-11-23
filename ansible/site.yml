@@ -68,6 +68,8 @@
   tags: [content]
   roles:
     - foreign_members
+    # Members have joined by now (join and content is free, so not while ad_content runs).
+    - ad_computers
 
 - name: post-join
   hosts: windows

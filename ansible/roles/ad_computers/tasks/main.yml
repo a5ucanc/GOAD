@@ -1,0 +1,5 @@
+# Delegation of member computer accounts, after every member has joined (see ad_content computers.yml).
+- name: Computer delegation
+  ansible.builtin.include_role:
+    name: ad_content
+    tasks_from: computers
