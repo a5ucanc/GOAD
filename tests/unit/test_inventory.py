@@ -59,3 +59,33 @@ def test_shipped_inventory_unchanged(name):
     text = yaml.safe_dump(render_inventory(load_lab(shipped_lab(name)), '192.168.56'), sort_keys=False)
     golden = (GOLDEN / f'inventory-{name}.yml').read_text(encoding='utf-8')
     assert text == golden
+
+
+def test_inventory_emits_user_extras_only_when_set():
+    import copy
+    from tests.unit.test_lab_definition import BASE
+    data = copy.deepcopy(BASE)
+    essos = data['domains']['essos.local']
+    essos['groups']['Khals'] = {'scope': 'global', 'groups': ['Administrators']}
+    essos['users'] = {
+        'plain': {'firstname': 'P', 'surname': 'P'},
+        'svc': {'firstname': 'S', 'surname': 'V', 'password': 'Bb1!', 'spns': ['HTTP/svc.essos.local'],
+                'preauth': False, 'delegation': {'constrained': ['CIFS/meereen'], 'protocol_transition': True}},
+        'unc': {'firstname': 'U', 'surname': 'N', 'delegation': {'unconstrained': True}}}
+    data['hosts']['srv03']['delegation'] = {'constrained': ['HTTP/meereen.essos.local']}
+    from goad.lab.definition import parse_lab
+    domains = render_inventory(parse_lab(yaml.safe_dump(data), 'lab.yml'), '192.168.56')['all']['vars']['goad_domains']
+    users = domains['essos.local']['users']
+    for key in ('password', 'spns', 'preauth', 'delegation'):
+        assert key not in users['plain']
+    assert users['svc']['password'] == 'Bb1!' and users['svc']['spns'] == ['HTTP/svc.essos.local']
+    assert users['svc']['preauth'] is False
+    assert users['svc']['delegation'] == {'unconstrained': False, 'constrained': ['CIFS/meereen'],
+                                          'protocol_transition': True}
+    assert users['unc']['delegation'] == {'unconstrained': True, 'constrained': [], 'protocol_transition': False}
+    assert 'password' not in users['unc'] and 'preauth' not in users['unc']
+    assert domains['essos.local']['groups']['Khals']['member_of'] == ['Administrators']
+    assert 'member_of' not in domains['essos.local']['groups']['Dothraki']
+    assert domains['essos.local']['computers'] == {
+        'braavos': {'unconstrained': False, 'constrained': ['HTTP/meereen.essos.local'], 'protocol_transition': False}}
+    assert 'computers' not in domains['sevenkingdoms.local'] and 'computers' not in domains['north.sevenkingdoms.local']

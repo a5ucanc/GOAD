@@ -21,11 +21,14 @@ _TOP_REQUIRED = {'name', 'password', 'dns_forwarder', 'domains', 'hosts'}
 _TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios'}
 _DOMAIN_KEYS = {'netbios', 'dc', 'parent', 'trust', 'ous', 'groups', 'users'}
 _DOMAIN_REQUIRED = {'netbios', 'dc'}
-_HOST_KEYS = {'hostname', 'os', 'role', 'domain', 'octet', 'cpus', 'memory', 'laps', 'ca', 'local_groups', 'settings'}
+_HOST_KEYS = {'hostname', 'os', 'role', 'domain', 'octet', 'cpus', 'memory', 'laps', 'ca', 'local_groups', 'settings',
+              'delegation'}
 _HOST_REQUIRED = {'hostname', 'os', 'role', 'octet', 'cpus', 'memory'}
-_GROUP_KEYS = {'scope', 'ou', 'managed_by', 'members'}
-_USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'sensitive'}
+_GROUP_KEYS = {'scope', 'ou', 'managed_by', 'members', 'groups'}
+_USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'sensitive',
+              'password', 'spns', 'preauth', 'delegation'}
 _USER_REQUIRED = {'firstname', 'surname'}
+_DELEGATION_KEYS = {'unconstrained', 'constrained', 'protocol_transition'}
 # AD built-ins a lab may name without defining them (AD names are case-insensitive).
 _BUILTIN_GROUPS = frozenset(n.lower() for n in (
     'Administrators', 'Domain Admins', 'Domain Users', 'Domain Computers', 'Domain Controllers', 'Domain Guests',
@@ -38,6 +41,13 @@ _BUILTIN_USERS = frozenset(n.lower() for n in ('Administrator', 'Guest', 'krbtgt
 class ScenarioRef:
     name: str
     target: str
+
+
+@dataclass(frozen=True)
+class DelegationDef:
+    unconstrained: bool = False
+    constrained: Tuple[str, ...] = ()
+    protocol_transition: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +64,7 @@ class HostDef:
     ca: bool = False
     local_groups: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
     settings: Dict[str, str] = field(default_factory=dict)
+    delegation: Optional[DelegationDef] = None
 
     @property
     def family(self) -> str:
@@ -67,6 +78,7 @@ class GroupDef:
     ou: Optional[str] = None
     managed_by: Optional[str] = None
     members: Tuple[str, ...] = ()
+    groups: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,6 +91,10 @@ class UserDef:
     ou: Optional[str] = None
     groups: Tuple[str, ...] = ()
     sensitive: bool = False
+    password: Optional[str] = None
+    spns: Tuple[str, ...] = ()
+    preauth: bool = True
+    delegation: Optional[DelegationDef] = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +230,25 @@ def _str_list(value: Any, source: str, what: str, key: str) -> Tuple[str, ...]:
     return tuple(value)
 
 
+def _parse_delegation(value: Any, source: str, what: str) -> DelegationDef:
+    d = _mapping(value, source, f'delegation of {what}')
+    _check_keys(d, _DELEGATION_KEYS, set(), source, f'delegation of {what}')
+    unconstrained = _bool(d['unconstrained'], source, what, 'unconstrained') if 'unconstrained' in d else False
+    constrained: Tuple[str, ...] = ()
+    if 'constrained' in d:
+        constrained = _str_list(d['constrained'], source, what, 'constrained')
+        if not constrained:
+            raise GoadError(f'{source}: {"constrained"!r} in {what} must list at least one SPN')
+    if unconstrained == bool(constrained):
+        raise GoadError(f'{source}: {"delegation"!r} in {what} needs exactly one of unconstrained: true or constrained: [<spn>...]')
+    transition = False
+    if 'protocol_transition' in d:
+        if not constrained:
+            raise GoadError(f'{source}: {"protocol_transition"!r} in {what} is allowed only with constrained')
+        transition = _bool(d['protocol_transition'], source, what, 'protocol_transition')
+    return DelegationDef(unconstrained=unconstrained, constrained=constrained, protocol_transition=transition)
+
+
 def _parse_settings(value: Any, source: str, what: str) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for key, raw_value in _mapping(value, source, what).items():
@@ -249,7 +284,9 @@ def _parse_domain_content(dname: str, d: Dict[str, Any], source: str, what: str)
         if ou is not None and ou not in ous:
             raise GoadError(f'{source}: unknown ou {ou!r} in {gwhat}: not in ous of {dname}')
         members = _str_list(g['members'], source, gwhat, 'members') if 'members' in g else ()
-        groups[gname] = GroupDef(name=gname, scope=scope, ou=ou, managed_by=_opt_str(g, 'managed_by', source, gwhat), members=members)
+        member_of = _str_list(g['groups'], source, gwhat, 'groups') if 'groups' in g else ()
+        groups[gname] = GroupDef(name=gname, scope=scope, ou=ou, managed_by=_opt_str(g, 'managed_by', source, gwhat),
+                                 members=members, groups=member_of)
     users: Dict[str, UserDef] = {}
     for uname, u in _mapping(d.get('users', {}), source, f'users of {what}').items():
         uwhat = f'user {uname} in {what}'
@@ -263,7 +300,11 @@ def _parse_domain_content(dname: str, d: Dict[str, Any], source: str, what: str)
             surname=_str(u['surname'], source, uwhat, 'surname'),
             city=_opt_str(u, 'city', source, uwhat), description=_opt_str(u, 'description', source, uwhat), ou=ou,
             groups=_str_list(u['groups'], source, uwhat, 'groups') if 'groups' in u else (),
-            sensitive=_bool(u['sensitive'], source, uwhat, 'sensitive') if 'sensitive' in u else False)
+            sensitive=_bool(u['sensitive'], source, uwhat, 'sensitive') if 'sensitive' in u else False,
+            password=_opt_str(u, 'password', source, uwhat),
+            spns=_str_list(u['spns'], source, uwhat, 'spns') if 'spns' in u else (),
+            preauth=_bool(u['preauth'], source, uwhat, 'preauth') if 'preauth' in u else True,
+            delegation=_parse_delegation(u['delegation'], source, uwhat) if 'delegation' in u else None)
     return ous, groups, users
 
 
@@ -336,10 +377,16 @@ def parse_lab(text: str, source: str) -> LabDef:
                 raise GoadError(f'{source}: {"local_groups"!r} in {what} is for Windows hosts only')
             for lname, members in _mapping(h['local_groups'], source, f'local_groups of {what}').items():
                 local_groups[lname] = _str_list(members, source, what, 'local_groups')
+        delegation = None
+        if 'delegation' in h:
+            if not (role in ('server', 'workstation') and domain is not None):
+                raise GoadError(f'{source}: {"delegation"!r} in {what} needs a Windows server or workstation with a domain')
+            delegation = _parse_delegation(h['delegation'], source, what)
         host_settings = _parse_settings(h['settings'], source, f'settings of {what}') if 'settings' in h else {}
         hosts[hname] = HostDef(
             name=hname, hostname=hostname, os=os_name, role=role, domain=domain, octet=octet, **sizes,
-            laps=laps, ca=ca, local_groups=local_groups, settings=host_settings)
+            laps=laps, ca=ca, local_groups=local_groups, settings=host_settings,
+            delegation=delegation)
     if not hosts:
         raise GoadError(f'{source}: hosts must not be empty')
 
@@ -389,6 +436,11 @@ def _validate_references(lab: LabDef, source: str) -> None:
                 if gname.lower() not in groups:
                     raise GoadError(f'{source}: user {uname} in domain {dname} names unknown group {gname!r}: not in groups of {dname} or the AD built-in groups')
         for gname, g in d.groups.items():
+            for parent in g.groups:
+                if parent.lower() == gname.lower():
+                    raise GoadError(f'{source}: group {gname} in domain {dname} names itself in groups')
+                if parent.lower() not in groups:
+                    raise GoadError(f'{source}: group {gname} in domain {dname} names unknown group {parent!r}: not in groups of {dname} or the AD built-in groups')
             if g.managed_by is not None and g.managed_by.lower() not in _principals(d):
                 raise GoadError(f'{source}: group {gname} in domain {dname} has unknown managed_by {g.managed_by!r}: not a user or group of {dname}')
             for member in g.members:

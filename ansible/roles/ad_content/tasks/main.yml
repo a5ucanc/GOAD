@@ -24,7 +24,7 @@
     city: "{{ item.value.city }}"
     description: "{{ item.value.description }}"
     path: "{{ item.value.path }}"
-    password: "{{ lab_password }}"
+    password: "{{ item.value.password | default(lab_password) }}"
     update_password: on_create
     password_never_expires: true
     groups:
@@ -48,6 +48,10 @@
   loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.sensitive') | list }}"
   loop_control:
     label: "{{ item.key }}"
+
+# SPNs, pre-auth, delegation and group nesting from lab.yml (scenario primitives).
+- name: Account attributes
+  ansible.builtin.include_tasks: accounts.yml
 
 # Members of other domains are added by the foreign_members role.
 - name: Group managers and same-domain members

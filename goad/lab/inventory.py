@@ -4,9 +4,30 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from goad.lab.definition import LabDef
+from goad.lab.definition import DelegationDef, LabDef, UserDef
 from goad.settings import Settings
 from goad.state import inventory_path
+
+
+def _delegation(d: DelegationDef) -> Dict[str, Any]:
+    return {'unconstrained': d.unconstrained, 'constrained': list(d.constrained),
+            'protocol_transition': d.protocol_transition}
+
+
+def _user(u: UserDef, path: str) -> Dict[str, Any]:
+    """Keys added for scenarios are emitted only when not at their default, so older inventories stay unchanged."""
+    e: Dict[str, Any] = {'firstname': u.firstname, 'surname': u.surname, 'city': u.city,
+                         'description': u.description, 'path': path, 'groups': list(u.groups),
+                         'sensitive': u.sensitive}
+    if u.password is not None:
+        e['password'] = u.password
+    if u.spns:
+        e['spns'] = list(u.spns)
+    if not u.preauth:
+        e['preauth'] = False
+    if u.delegation is not None:
+        e['delegation'] = _delegation(u.delegation)
+    return e
 
 
 def _domains(lab: LabDef, ip_range: str) -> Dict[str, Any]:
@@ -23,15 +44,19 @@ def _domains(lab: LabDef, ip_range: str) -> Dict[str, Any]:
             members = [{'name': name, 'domain': dom} for dom, name in (lab.split_member(fqdn, m) for m in g.members)]
             groups[gname] = {'scope': g.scope, 'path': path(g.ou), 'managed_by': g.managed_by,
                              'members': members}
-        users = {uname: {'firstname': u.firstname, 'surname': u.surname, 'city': u.city,
-                         'description': u.description, 'path': path(u.ou), 'groups': list(u.groups),
-                         'sensitive': u.sensitive} for uname, u in d.users.items()}
+            if g.groups:
+                groups[gname]['member_of'] = list(g.groups)
+        users = {uname: _user(u, path(u.ou)) for uname, u in d.users.items()}
         dc = lab.hosts[d.dc]
         out[fqdn] = {
             'netbios': d.netbios, 'dn': dn, 'dc': d.dc, 'dc_hostname': f'{dc.hostname}.{fqdn}',
             'dc_ip': lab.ip(d.dc, ip_range), 'parent': d.parent, 'forest_root': root, 'trust': d.trust,
             'trusts': lab.trusts(fqdn), 'ous': list(d.ous), 'groups': groups, 'users': users,
             'laps_hosts': [h.hostname for h in lab.hosts.values() if h.laps and h.domain == fqdn]}
+        computers = {h.hostname: _delegation(h.delegation) for h in lab.hosts.values()
+                     if h.delegation is not None and h.domain == fqdn}
+        if computers:
+            out[fqdn]['computers'] = computers
     return out
 
 

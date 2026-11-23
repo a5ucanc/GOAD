@@ -309,3 +309,65 @@ def test_parse_lab_records_scenarios(monkeypatch):
 def test_shipped_labs_have_no_scenarios():
     for name in LAB_NAMES:
         assert load_lab(shipped_lab(name)).scenarios == ()
+
+
+SVC = {'firstname': 'S', 'surname': 'V'}
+
+
+def test_user_and_host_primitives_parse():
+    from goad.lab.definition import DelegationDef
+    lab = _lab((ESSOS + ('users',), {
+        'svc.kerb': {**SVC, 'password': 'Bb1!', 'spns': ['MSSQLSvc/svc-kerb.essos.local:1433']},
+        'asrep': {**SVC, 'preauth': False},
+        'svc.any': {**SVC, 'delegation': {'constrained': ['CIFS/meereen.essos.local', 'CIFS/meereen'],
+                                          'protocol_transition': True}},
+        'svc.unc': {**SVC, 'delegation': {'unconstrained': True}}}),
+        (ESSOS + ('groups', 'Dothraki', 'groups'), ['Administrators', 'Khals']),
+        (ESSOS + ('groups', 'Khals'), {'scope': 'global'}),
+        (SRV03 + ('delegation',), {'constrained': ['HTTP/meereen.essos.local']}))
+    users = lab.domains['essos.local'].users
+    assert users['svc.kerb'].password == 'Bb1!' and users['svc.kerb'].spns == ('MSSQLSvc/svc-kerb.essos.local:1433',)
+    assert users['svc.kerb'].preauth is True and users['svc.kerb'].delegation is None
+    assert users['asrep'].preauth is False and users['asrep'].password is None and users['asrep'].spns == ()
+    assert users['svc.any'].delegation == DelegationDef(constrained=('CIFS/meereen.essos.local', 'CIFS/meereen'),
+                                                        protocol_transition=True)
+    assert users['svc.unc'].delegation == DelegationDef(unconstrained=True)
+    assert lab.domains['essos.local'].groups['Dothraki'].groups == ('Administrators', 'Khals')
+    assert lab.domains['essos.local'].groups['Khals'].groups == ()
+    assert lab.hosts['srv03'].delegation == DelegationDef(constrained=('HTTP/meereen.essos.local',))
+    assert lab.hosts['srv02'].delegation is None
+
+
+U = ESSOS + ('users', 'u')
+
+
+@pytest.mark.parametrize('patches, message', [
+    ([(U, {**SVC, 'delegation': {'unconstrained': True, 'constrained': ['CIFS/x']}})],
+     r"delegation.*user u.*exactly one of"),
+    ([(U, {**SVC, 'delegation': {}})], r"delegation.*user u.*exactly one of"),
+    ([(U, {**SVC, 'delegation': {'unconstrained': False}})], r"delegation.*user u.*exactly one of"),
+    ([(U, {**SVC, 'delegation': {'unconstrained': True, 'protocol_transition': True}})],
+     r"protocol_transition.*user u.*only with constrained"),
+    ([(U, {**SVC, 'delegation': {'constrained': []}})], r"constrained.*user u"),
+    ([(U, {**SVC, 'delegation': {'constrained': 'CIFS/x'}})], r"constrained.*user u"),
+    ([(U, {**SVC, 'delegation': {'constrained': ['CIFS/x'], 'protocol_transition': 'yes'}})],
+     r"protocol_transition.*user u"),
+    ([(U, {**SVC, 'delegation': {'constrained': ['CIFS/x'], 'colour': 1}})], r"unknown key 'colour'.*user u"),
+    ([(U, {**SVC, 'delegation': 'unconstrained'})], r"delegation.*user u.*mapping"),
+    ([(U, {**SVC, 'password': ''})], r"password.*user u"),
+    ([(U, {**SVC, 'spns': 'HTTP/x'})], r"spns.*user u"),
+    ([(U, {**SVC, 'preauth': 'no'})], r"preauth.*user u"),
+    ([(('hosts', 'dc03', 'delegation'), {'unconstrained': True})], r"delegation.*host dc03"),
+    ([(('hosts', 'ws'), {'hostname': 'ws', 'os': 'win11', 'role': 'workstation', 'octet': 40, 'cpus': 1,
+                         'memory': 1024, 'delegation': {'unconstrained': True}})], r"delegation.*host ws"),
+    ([(SRV03 + ('delegation',), {'unconstrained': True, 'constrained': ['HTTP/x']})],
+     r"delegation.*host srv03.*exactly one of"),
+    ([(SRV03 + ('delegation',), {'unconstrained': True, 'protocol_transition': False})],
+     r"protocol_transition.*host srv03"),
+    ([(G + ('groups',), ['Khals'])], r"group Dothraki in domain essos.local names unknown group 'Khals'"),
+    ([(G + ('groups',), ['Dothraki'])], r"group Dothraki in domain essos.local.*itself"),
+    ([(G + ('groups',), 'Administrators')], r"groups.*group Dothraki"),
+])
+def test_primitives_rejected(patches, message):
+    with pytest.raises(GoadError, match=message):
+        _lab(*patches)

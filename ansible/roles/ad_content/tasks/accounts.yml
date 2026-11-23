@@ -1,0 +1,109 @@
+# Account attributes set after the users exist. Each task loops only over the entries that carry
+# the attribute, so a lab without them runs nothing here. Add only: nothing is removed.
+- name: User SPNs
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.key }}"
+      Spns: "{{ item.value.spns }}"
+    script: |
+      param([string]$Name, [string[]]$Spns)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $u = Get-ADUser -Identity $Name -Properties servicePrincipalName
+      foreach ($spn in $Spns) {
+          if (@($u.servicePrincipalName) -notcontains $spn) {
+              Set-ADUser -Identity $u -ServicePrincipalNames @{Add = $spn}
+              $Ansible.Changed = $true
+          }
+      }
+  loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.spns', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Users without Kerberos pre-authentication
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.key }}"
+    script: |
+      param([string]$Name)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $u = Get-ADUser -Identity $Name -Properties DoesNotRequirePreAuth
+      if (-not $u.DoesNotRequirePreAuth) {
+          Set-ADAccountControl -Identity $u -DoesNotRequirePreAuth $true
+          $Ansible.Changed = $true
+      }
+  loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.preauth', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# Ported from main's constrained-deleg-any, constrained-deleg-kerb, unconstrained-user and
+# unconstrained-computer scenarios (add mode). Unconstrained sets TRUSTED_FOR_DELEGATION; constrained
+# adds msDS-AllowedToDelegateTo values, and protocol_transition sets TRUSTED_TO_AUTH_FOR_DELEGATION.
+- name: User delegation
+  ansible.windows.win_powershell: &delegation
+    parameters:
+      Kind: user
+      Name: "{{ item.key }}"
+      Unconstrained: "{{ item.value.delegation.unconstrained }}"
+      Constrained: "{{ item.value.delegation.constrained }}"
+      ProtocolTransition: "{{ item.value.delegation.protocol_transition }}"
+    script: |
+      param([string]$Kind, [string]$Name, [bool]$Unconstrained, [string[]]$Constrained, [bool]$ProtocolTransition)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $props = 'msDS-AllowedToDelegateTo', 'userAccountControl'
+      if ($Kind -eq 'computer') {
+          $o = Get-ADComputer -Identity "$Name$" -Properties $props
+      } else {
+          $o = Get-ADUser -Identity $Name -Properties $props
+      }
+      if ($Unconstrained -and -not ($o.userAccountControl -band 0x80000)) {
+          Set-ADAccountControl -Identity $o -TrustedForDelegation $true
+          $Ansible.Changed = $true
+      }
+      if ($ProtocolTransition -and -not ($o.userAccountControl -band 0x1000000)) {
+          Set-ADAccountControl -Identity $o -TrustedToAuthForDelegation $true
+          $Ansible.Changed = $true
+      }
+      foreach ($t in $Constrained) {
+          if (@($o.'msDS-AllowedToDelegateTo') -notcontains $t) {
+              Set-ADObject -Identity $o.DistinguishedName -Add @{'msDS-AllowedToDelegateTo' = $t}
+              $Ansible.Changed = $true
+          }
+      }
+  loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.delegation', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Computer delegation
+  ansible.windows.win_powershell:
+    <<: *delegation
+    parameters:
+      Kind: computer
+      Name: "{{ item.key }}"
+      Unconstrained: "{{ item.value.unconstrained }}"
+      Constrained: "{{ item.value.constrained }}"
+      ProtocolTransition: "{{ item.value.protocol_transition }}"
+  loop: "{{ goad_domains[domain].computers | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# Parents are same-domain groups (created above) or built-ins such as Administrators.
+- name: Group nesting
+  ansible.windows.win_powershell:
+    parameters:
+      Name: "{{ item.0.key }}"
+      Parent: "{{ item.1 }}"
+    script: |
+      param([string]$Name, [string]$Parent)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $parentDn = (Get-ADGroup -Identity $Parent).DistinguishedName
+      if (@((Get-ADGroup -Identity $Name -Properties MemberOf).MemberOf) -notcontains $parentDn) {
+          Add-ADGroupMember -Identity $Parent -Members (Get-ADGroup -Identity $Name)
+          $Ansible.Changed = $true
+      }
+  loop: "{{ goad_domains[domain].groups | dict2items | selectattr('value.member_of', 'defined') | list | subelements('value.member_of') }}"
+  loop_control:
+    label: "{{ item.0.key }} in {{ item.1 }}"
