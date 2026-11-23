@@ -1,0 +1,10 @@
+description: "Anonymous read on the domain root (anonymous RPC/SAMR enumeration)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      acls:
+      - principal: 'NT AUTHORITY\ANONYMOUS LOGON'
+        right: ReadAll
+        object: domain
+        inherit: all

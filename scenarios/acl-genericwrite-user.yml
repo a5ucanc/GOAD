@@ -1,0 +1,20 @@
+description: "User with GenericWrite on another user"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-gwu-attacker:
+          firstname: scn
+          surname: acl-gwu-attacker
+          description: "Attacker: User with GenericWrite on another user"
+          password: "Aa1234567890!"
+        scn-acl-gwu-victim:
+          firstname: scn
+          surname: acl-gwu-victim
+          description: "Victim of acl-genericwrite-user"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-acl-gwu-attacker
+        right: GenericWrite
+        object: user:scn-acl-gwu-victim

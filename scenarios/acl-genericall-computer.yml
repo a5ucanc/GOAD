@@ -1,0 +1,15 @@
+description: "User with GenericAll on a domain controller computer object"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-gac-attacker:
+          firstname: scn
+          surname: acl-gac-attacker
+          description: "Holds GenericAll on a domain controller"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-acl-gac-attacker
+        right: GenericAll
+        object: computer:{dc}

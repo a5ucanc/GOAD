@@ -1,0 +1,22 @@
+description: "User with GenericAll on a group that is local administrator of a member server"
+target: server
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-gag-attacker:
+          firstname: scn
+          surname: acl-gag-attacker
+          description: "Holds GenericAll on a local-admin group"
+          password: "Aa1234567890!"
+      groups:
+        scn-acl-gag-group:
+          scope: domainlocal
+      acls:
+      - principal: scn-acl-gag-attacker
+        right: GenericAll
+        object: group:scn-acl-gag-group
+  hosts:
+    '{target}':
+      local_groups:
+        Administrators: ['{netbios}\scn-acl-gag-group']

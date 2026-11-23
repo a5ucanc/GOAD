@@ -1,0 +1,20 @@
+description: "Group with a member from the trusted forest that has GenericAll on a domain controller"
+target: trust
+fragment:
+  domains:
+    '{domain}':
+      groups:
+        scn-foreign-group:
+          scope: domainlocal
+          members: ['{other_forest}\scn-foreign-user']
+      acls:
+      - principal: scn-foreign-group
+        right: GenericAll
+        object: computer:{dc}
+    '{other_forest}':
+      users:
+        scn-foreign-user:
+          firstname: scn
+          surname: foreign-user
+          description: "Member of a foreign group with GenericAll on a domain controller"
+          password: "Aa1234567890!"

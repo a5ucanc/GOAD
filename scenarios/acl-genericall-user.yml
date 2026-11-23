@@ -1,0 +1,20 @@
+description: "User with GenericAll on another user"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-gau-attacker:
+          firstname: scn
+          surname: acl-gau-attacker
+          description: "Attacker: User with GenericAll on another user"
+          password: "Aa1234567890!"
+        scn-acl-gau-victim:
+          firstname: scn
+          surname: acl-gau-victim
+          description: "Victim of acl-genericall-user"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-acl-gau-attacker
+        right: GenericAll
+        object: user:scn-acl-gau-victim

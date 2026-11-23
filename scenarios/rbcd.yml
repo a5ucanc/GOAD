@@ -1,0 +1,19 @@
+description: "User with GenericWrite on a member server computer account (resource-based constrained delegation)"
+target: server
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-rbcd-attacker:
+          firstname: scn
+          surname: rbcd-attacker
+          description: "Holds GenericWrite on a member server computer"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-rbcd-attacker
+        right: GenericWrite
+        object: computer:{target}
+  hosts:
+    '{dc}':
+      settings:
+        dc.maq: 10

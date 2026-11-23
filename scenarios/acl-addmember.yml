@@ -1,0 +1,18 @@
+description: "User that can write the member attribute of a group (AddMember)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-add-attacker:
+          firstname: scn
+          surname: acl-add-attacker
+          description: "Attacker: User that can write the member attribute of a group (AddMember)"
+          password: "Aa1234567890!"
+      groups:
+        scn-acl-add-group:
+          scope: global
+      acls:
+      - principal: scn-acl-add-attacker
+        right: AddMember
+        object: group:scn-acl-add-group

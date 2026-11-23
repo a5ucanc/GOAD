@@ -1,0 +1,21 @@
+description: "User with WriteProperty (all properties) on another user"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-wp-attacker:
+          firstname: scn
+          surname: acl-wp-attacker
+          description: "Attacker: User with WriteProperty (all properties) on another user"
+          password: "Aa1234567890!"
+        scn-acl-wp-victim:
+          firstname: scn
+          surname: acl-wp-victim
+          description: "Victim of acl-writeproperty"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-acl-wp-attacker
+        right: WriteProperty
+        object: user:scn-acl-wp-victim
+        inherit: all

@@ -1,0 +1,22 @@
+description: "User with WriteDacl on an OU (inheritable control over its objects)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      ous: [scn-acl-wdo]
+      users:
+        scn-acl-wdo-attacker:
+          firstname: scn
+          surname: acl-wdo-attacker
+          description: "Holds WriteDacl on OU scn-acl-wdo"
+          password: "Aa1234567890!"
+        scn-acl-wdo-victim:
+          firstname: scn
+          surname: acl-wdo-victim
+          description: "Victim inside OU scn-acl-wdo"
+          password: "Aa1234567890!"
+          ou: scn-acl-wdo
+      acls:
+      - principal: scn-acl-wdo-attacker
+        right: WriteDacl
+        object: ou:scn-acl-wdo

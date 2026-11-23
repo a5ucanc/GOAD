@@ -1,0 +1,18 @@
+description: "User with WriteOwner on a group"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-wo-attacker:
+          firstname: scn
+          surname: acl-wo-attacker
+          description: "Attacker: User with WriteOwner on a group"
+          password: "Aa1234567890!"
+      groups:
+        scn-acl-wo-group:
+          scope: global
+      acls:
+      - principal: scn-acl-wo-attacker
+        right: WriteOwner
+        object: group:scn-acl-wo-group

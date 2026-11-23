@@ -1,0 +1,17 @@
+description: "User that can edit a GPO linked to the domain root"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-gpo-attacker:
+          firstname: scn
+          surname: gpo-attacker
+          description: "Can edit GPO scn-gpo-abuse"
+          password: "Aa1234567890!"
+      gpos:
+        scn-gpo-abuse: {link: domain}
+      acls:
+      - principal: scn-gpo-attacker
+        right: GenericWrite
+        object: gpo:scn-gpo-abuse

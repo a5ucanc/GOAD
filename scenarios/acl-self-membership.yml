@@ -1,0 +1,18 @@
+description: "User that can add itself to a group (Self-Membership)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-sm-attacker:
+          firstname: scn
+          surname: acl-sm-attacker
+          description: "Attacker: User that can add itself to a group (Self-Membership)"
+          password: "Aa1234567890!"
+      groups:
+        scn-acl-sm-group:
+          scope: global
+      acls:
+      - principal: scn-acl-sm-attacker
+        right: SelfMembership
+        object: group:scn-acl-sm-group

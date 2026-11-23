@@ -1,0 +1,15 @@
+description: "User with GenericAll on AdminSDHolder (persistence on every protected object)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-sdh-attacker:
+          firstname: scn
+          surname: acl-sdh-attacker
+          description: "Holds GenericAll on AdminSDHolder"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-acl-sdh-attacker
+        right: GenericAll
+        object: adminsdholder

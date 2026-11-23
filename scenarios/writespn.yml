@@ -1,0 +1,20 @@
+description: "User that can write the servicePrincipalName of another user (targeted kerberoast)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-wspn-attacker:
+          firstname: scn
+          surname: wspn-attacker
+          description: "Attacker: User that can write the servicePrincipalName of another user (targeted kerberoast)"
+          password: "Aa1234567890!"
+        scn-wspn-victim:
+          firstname: scn
+          surname: wspn-victim
+          description: "Victim of writespn"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-wspn-attacker
+        right: WriteSPN
+        object: user:scn-wspn-victim

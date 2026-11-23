@@ -1,0 +1,20 @@
+description: "User with WriteDacl on another user"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-acl-wdu-attacker:
+          firstname: scn
+          surname: acl-wdu-attacker
+          description: "Attacker: User with WriteDacl on another user"
+          password: "Aa1234567890!"
+        scn-acl-wdu-victim:
+          firstname: scn
+          surname: acl-wdu-victim
+          description: "Victim of acl-writedacl-user"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-acl-wdu-attacker
+        right: WriteDacl
+        object: user:scn-acl-wdu-victim

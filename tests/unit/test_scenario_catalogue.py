@@ -10,6 +10,10 @@ NAMES = {
     'esc6', 'esc8', 'esc10-case1', 'esc10-case2', 'esc11',
     'kerberoast', 'asrep-roast', 'unconstrained-user', 'constrained-deleg-any', 'unconstrained-computer',
     'constrained-deleg-kerb', 'local-admin',
+    'acl-addmember', 'acl-adminsdholder', 'acl-forcechangepassword', 'acl-genericall-computer',
+    'acl-genericall-group', 'acl-genericall-user', 'acl-genericwrite-user', 'acl-self-membership',
+    'acl-writedacl-ou', 'acl-writedacl-user', 'acl-writeowner', 'acl-writeproperty', 'anonymous-rpc',
+    'writespn', 'rbcd', 'foreign-group-acl', 'gpo-abuse',
 }
 
 # name -> (target kind, [(setting key, vulnerable value)]); values as effective_settings reports them
@@ -129,3 +133,70 @@ def test_local_admin():
     lab, target = _enabled('local-admin')
     assert 'NORTH\\scn-local-admin' in lab.hosts[target].local_groups['Administrators']
     assert _user(lab, 'north.sevenkingdoms.local', 'scn-local-admin').password == 'Aa1234567890!'
+
+
+def _acls(lab, domain):
+    return {(a.principal, a.right, a.object, a.inherit) for a in lab.domains[domain].acls}
+
+
+ACL_CASES = [
+    ('acl-addmember', 'scn-acl-add-attacker', 'AddMember', 'group:scn-acl-add-group', 'none'),
+    ('acl-adminsdholder', 'scn-acl-sdh-attacker', 'GenericAll', 'adminsdholder', 'none'),
+    ('acl-forcechangepassword', 'scn-acl-fcp-attacker', 'ForceChangePassword', 'user:scn-acl-fcp-victim', 'none'),
+    ('acl-genericall-computer', 'scn-acl-gac-attacker', 'GenericAll', 'computer:dc01', 'none'),
+    ('acl-genericall-user', 'scn-acl-gau-attacker', 'GenericAll', 'user:scn-acl-gau-victim', 'none'),
+    ('acl-genericwrite-user', 'scn-acl-gwu-attacker', 'GenericWrite', 'user:scn-acl-gwu-victim', 'none'),
+    ('acl-self-membership', 'scn-acl-sm-attacker', 'SelfMembership', 'group:scn-acl-sm-group', 'none'),
+    ('acl-writedacl-ou', 'scn-acl-wdo-attacker', 'WriteDacl', 'ou:scn-acl-wdo', 'none'),
+    ('acl-writedacl-user', 'scn-acl-wdu-attacker', 'WriteDacl', 'user:scn-acl-wdu-victim', 'none'),
+    ('acl-writeowner', 'scn-acl-wo-attacker', 'WriteOwner', 'group:scn-acl-wo-group', 'none'),
+    ('acl-writeproperty', 'scn-acl-wp-attacker', 'WriteProperty', 'user:scn-acl-wp-victim', 'all'),
+    ('writespn', 'scn-wspn-attacker', 'WriteSPN', 'user:scn-wspn-victim', 'none'),
+    ('anonymous-rpc', 'NT AUTHORITY\\ANONYMOUS LOGON', 'ReadAll', 'domain', 'all'),
+    ('gpo-abuse', 'scn-gpo-attacker', 'GenericWrite', 'gpo:scn-gpo-abuse', 'none'),
+]
+
+
+@pytest.mark.parametrize('name,principal,right,obj,inherit', ACL_CASES)
+def test_acl_scenarios_grant_ace_in_target_domain(name, principal, right, obj, inherit):
+    lab, target = _enabled(name)
+    domain = lab.hosts[target].domain
+    assert (principal, right, obj, inherit) in _acls(lab, domain)
+    base = parse_lab(_text('2forests'), '2forests')
+    assert all(_acls(lab, d) == _acls(base, d) for d in lab.domains if d != domain)
+
+
+def test_acl_writedacl_ou():
+    lab, _ = _enabled('acl-writedacl-ou')
+    d = lab.domains['sevenkingdoms.local']
+    assert 'scn-acl-wdo' in d.ous and d.users['scn-acl-wdo-victim'].ou == 'scn-acl-wdo'
+
+
+def test_acl_genericall_group():
+    lab, target = _enabled('acl-genericall-group')
+    domain = lab.hosts[target].domain
+    assert lab.domains[domain].groups['scn-acl-gag-group'].scope == 'domainlocal'
+    assert any(m.endswith('\\scn-acl-gag-group') for m in lab.hosts[target].local_groups['Administrators'])
+    assert ('scn-acl-gag-attacker', 'GenericAll', 'group:scn-acl-gag-group', 'none') in _acls(lab, domain)
+
+
+def test_rbcd():
+    lab, target = _enabled('rbcd')
+    domain = lab.hosts[target].domain
+    assert ('scn-rbcd-attacker', 'GenericWrite', f'computer:{target}', 'none') in _acls(lab, domain)
+    assert lab.effective_settings(lab.domains[domain].dc)['dc.maq'] == '10'
+
+
+def test_foreign_group_acl():
+    lab, target = _enabled('foreign-group-acl')
+    domain = lab.hosts[target].domain
+    other = next(d for d in lab.domains if d != domain and lab.forest_root(d) != lab.forest_root(domain))
+    g = lab.domains[domain].groups['scn-foreign-group']
+    assert g.scope == 'domainlocal' and g.members == (f'{other}\\scn-foreign-user',)
+    assert 'scn-foreign-user' in lab.domains[other].users
+    assert ('scn-foreign-group', 'GenericAll', f'computer:{target}', 'none') in _acls(lab, domain)
+
+
+def test_gpo_abuse_defines_gpo():
+    lab, _ = _enabled('gpo-abuse')
+    assert lab.domains['sevenkingdoms.local'].gpos['scn-gpo-abuse'].link == 'domain'

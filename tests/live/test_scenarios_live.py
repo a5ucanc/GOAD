@@ -44,6 +44,37 @@ def _ad_computer(name: str, expr: str) -> str:
             f"{expr}")
 
 
+EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
+MEMBER_GUID = 'bf9679c0-0de6-11d0-a285-00aa003049e2'
+SPN_GUID = 'f3a64788-5306-11d1-a9c5-0000f80367c1'
+RESET_PWD_GUID = '00299570-246d-11d0-a768-00aa006e0529'
+
+
+def _ace(who: str, dn: str, rights: str, guid: str = EMPTY_GUID, inherit: str = 'None') -> str:
+    """True when an Allow ACE for who (NETBIOS-qualified account) with the rights and object type is on the object.
+    dn is a PowerShell expression that gives the object's DN or $null; $null (object absent) reads False."""
+    return ("Import-Module ActiveDirectory; $d = (Get-ADDomain).DistinguishedName; "
+            f"$dn = {dn}; if (-not $dn) {{ $false }} else {{ try {{ "
+            "$r = [DirectoryServices.ActiveDirectoryRights]'" + rights + "'; "
+            "[bool]((Get-Acl -Path ('AD:' + $dn) -ErrorAction Stop).Access | Where-Object { "
+            f"$_.IdentityReference.Value -like '{who}' -and $_.AccessControlType -eq 'Allow' -and "
+            f"($_.ActiveDirectoryRights -band $r) -eq $r -and $_.ObjectType -eq [guid]'{guid}' -and "
+            f"$_.InheritanceType -eq '{inherit}' }}) }} catch {{ $false }} }}")
+
+
+def _sam(name: str) -> str:
+    return f"(Get-ADObject -LDAPFilter '(sAMAccountName={name})').DistinguishedName"
+
+
+def _acl_user(who: str, victim: str, rights: str, guid: str = EMPTY_GUID, inherit: str = 'None') -> str:
+    return _ace(f'*\\{who}', _sam(victim), rights, guid, inherit)
+
+
+GPO_PERMISSION = ("Import-Module GroupPolicy; $p = Get-GPPermission -Name 'scn-gpo-abuse' -TargetName "
+                  "'scn-gpo-attacker' -TargetType User -ErrorAction SilentlyContinue; "
+                  "if ($null -eq $p) { 'absent' } else { $p.Permission }")
+
+
 PROBES: Dict[str, Tuple[str, str, str]] = {
     'credssp': ('srv02', '(Get-Item WSMan:\\localhost\\Service\\Auth\\CredSSP).Value', 'true'),
     'defender-off': ('srv02', '(Get-MpPreference).DisableRealtimeMonitoring', 'True'),
@@ -82,6 +113,27 @@ PROBES: Dict[str, Tuple[str, str, str]] = {
                                'HTTP/winterfell,HTTP/winterfell.north.sevenkingdoms.local'),
     'local-admin': ('srv02', "[bool](Get-LocalGroupMember Administrators | Where-Object Name -like '*\\scn-local-admin')", 'True'),
     'webdav': ('srv02', '[bool](Get-Service WebClient -ErrorAction SilentlyContinue)', 'True'),
+    'acl-addmember': ('dc01', _acl_user('scn-acl-add-attacker', 'scn-acl-add-group', 'WriteProperty', MEMBER_GUID), 'True'),
+    'acl-adminsdholder': ('dc01', _ace('*\\scn-acl-sdh-attacker', '"CN=AdminSDHolder,CN=System,$d"', 'GenericAll'), 'True'),
+    'acl-forcechangepassword': ('dc01', _acl_user('scn-acl-fcp-attacker', 'scn-acl-fcp-victim', 'ExtendedRight',
+                                                   RESET_PWD_GUID), 'True'),
+    'acl-genericall-computer': ('dc01', _ace('*\\scn-acl-gac-attacker', _sam('kingslanding$'), 'GenericAll'), 'True'),
+    'acl-genericall-group': ('dc02', _acl_user('scn-acl-gag-attacker', 'scn-acl-gag-group', 'GenericAll'), 'True'),
+    'acl-genericall-user': ('dc01', _acl_user('scn-acl-gau-attacker', 'scn-acl-gau-victim', 'GenericAll'), 'True'),
+    'acl-genericwrite-user': ('dc01', _acl_user('scn-acl-gwu-attacker', 'scn-acl-gwu-victim', 'GenericWrite'), 'True'),
+    'acl-self-membership': ('dc01', _acl_user('scn-acl-sm-attacker', 'scn-acl-sm-group', 'Self', MEMBER_GUID), 'True'),
+    'acl-writedacl-ou': ('dc01', _ace('*\\scn-acl-wdo-attacker',
+                                     '(Get-ADOrganizationalUnit -LDAPFilter "(ou=scn-acl-wdo)").DistinguishedName',
+                                     'WriteDacl'), 'True'),
+    'acl-writedacl-user': ('dc01', _acl_user('scn-acl-wdu-attacker', 'scn-acl-wdu-victim', 'WriteDacl'), 'True'),
+    'acl-writeowner': ('dc01', _acl_user('scn-acl-wo-attacker', 'scn-acl-wo-group', 'WriteOwner'), 'True'),
+    'acl-writeproperty': ('dc01', _acl_user('scn-acl-wp-attacker', 'scn-acl-wp-victim', 'WriteProperty',
+                                            inherit='All'), 'True'),
+    'anonymous-rpc': ('dc01', _ace('NT AUTHORITY\\ANONYMOUS LOGON', '$d', 'ReadProperty', inherit='All'), 'True'),
+    'writespn': ('dc01', _acl_user('scn-wspn-attacker', 'scn-wspn-victim', 'Self', SPN_GUID), 'True'),
+    'rbcd': ('dc02', _ace('*\\scn-rbcd-attacker', _sam('castelblack$'), 'GenericWrite'), 'True'),
+    'foreign-group-acl': ('dc01', _ace('*\\scn-foreign-group', _sam('kingslanding$'), 'GenericAll'), 'True'),
+    'gpo-abuse': ('dc01', GPO_PERMISSION, 'GpoEditDeleteModifySecurity'),
 }
 
 SETTING_SCENARIOS = [
@@ -182,3 +234,28 @@ ACCOUNT_SCENARIOS = [
 
 def test_account_scenarios_live():
     run_step(ACCOUNT_SCENARIOS)
+
+
+ACL_SCENARIOS = [
+    'acl-addmember',
+    'acl-adminsdholder',
+    'acl-forcechangepassword',
+    'acl-genericall-computer',
+    'acl-genericall-group',
+    'acl-genericall-user',
+    'acl-genericwrite-user',
+    'acl-self-membership',
+    'acl-writedacl-ou',
+    'acl-writedacl-user',
+    'acl-writeowner',
+    'acl-writeproperty',
+    'anonymous-rpc',
+    'writespn',
+    'rbcd',
+    'foreign-group-acl',
+    'gpo-abuse',
+]
+
+
+def test_acl_scenarios_live():
+    run_step(ACL_SCENARIOS)
