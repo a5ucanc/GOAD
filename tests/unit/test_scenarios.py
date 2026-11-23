@@ -189,3 +189,35 @@ def test_equal_setting_records_owner_so_later_value_conflicts():
     with pytest.raises(GoadError) as e:
         expand(raw, 'x', {'a': mk(5), 'b': mk(10)})
     assert 'a@dc01' in str(e.value) and 'b@dc01' in str(e.value)
+
+
+def _merge_expand(first, second):
+    # {target} and {dc} both substitute to dc02, so the two keys collide
+    frag = {'hosts': {'{target}': first, '{dc}': second}}
+    return expand(_with(('t', 'dc02')), 'x', {'t': _sc(frag)})
+
+
+def test_key_collision_list_union():
+    out = _merge_expand({'tags': ['x']}, {'tags': ['y']})
+    assert out['hosts']['dc02']['tags'] == ['x', 'y']
+
+
+def test_key_collision_equal_scalar_fine():
+    out = _merge_expand({'note': 'A'}, {'note': 'A'})
+    assert out['hosts']['dc02']['note'] == 'A'
+
+
+def test_key_collision_conflicting_scalar_raises():
+    with pytest.raises(GoadError, match='conflict'):
+        _merge_expand({'note': 'A'}, {'note': 'Z'})
+
+
+def test_key_collision_mismatched_container_raises():
+    with pytest.raises(GoadError, match='conflict'):
+        _merge_expand({'tags': ['x']}, {'tags': 'x'})
+
+
+def test_setting_str_equal_is_not_a_conflict():
+    mk = lambda v: _sc({'hosts': {'{target}': {'settings': {'dc.strong_cert_binding': v}}}})
+    out = expand(_with(('a', 'dc01'), ('b', 'dc01')), 'x', {'a': mk('0'), 'b': mk(0)})
+    assert str(out['hosts']['dc01']['settings']['dc.strong_cert_binding']) == '0'

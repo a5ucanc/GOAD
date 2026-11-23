@@ -101,6 +101,8 @@ def _merge_values(a: Any, b: Any) -> Any:
         return out
     if isinstance(a, list) and isinstance(b, list):
         return a + [v for v in b if v not in a]
+    if isinstance(a, (dict, list)) or isinstance(b, (dict, list)) or a != b or type(a) is not type(b):
+        raise GoadError(f'conflict: keys substituting to one key give different values {a!r} and {b!r}')
     return b
 
 
@@ -141,7 +143,7 @@ def merge_fragment(base: Dict[str, Any], fragment: Dict[str, Any], owners: Dict[
             merge_fragment(old, value, owners, who, source, path)
         elif isinstance(old, list) and isinstance(value, list):
             _union(old, value)
-        elif old == value and type(old) is type(value):
+        elif (old == value and type(old) is type(value)) or ('settings' in _path and str(old) == str(value)):
             if 'settings' in _path:
                 owners.setdefault(path, who)
             continue

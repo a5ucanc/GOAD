@@ -130,6 +130,14 @@ def test_constrained_deleg_kerb():
     assert not d.protocol_transition and not d.unconstrained
 
 
+def test_unconstrained_and_constrained_deleg_on_one_server():
+    text = _text('2domains')
+    text = text.rstrip('\n') + ('\nscenarios:\n- {name: unconstrained-computer, target: srv02}\n'
+                               '- {name: constrained-deleg-kerb, target: srv02}\n')
+    d = parse_lab(text, '2domains').hosts['srv02'].delegation
+    assert d.unconstrained and d.constrained and not d.protocol_transition
+
+
 def test_local_admin():
     lab, target = _enabled('local-admin')
     assert 'NORTH\\scn-local-admin' in lab.hosts[target].local_groups['Administrators']

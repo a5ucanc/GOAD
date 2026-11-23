@@ -91,6 +91,18 @@ def test_creds(lab):
     assert {c.password for c in rows} == {'Aa1234567890!'}
 
 
+def test_creds_skips_scenario_rows_when_catalogue_fails(lab, monkeypatch):
+    from goad.state import working_lab_path
+    path = working_lab_path(lab.settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('name: x\n')
+
+    def boom(text):
+        raise GoadError('unknown scenario gone')
+    monkeypatch.setattr(lifecycle_module, 'scenario_accounts', boom)
+    assert [c.account for c in creds(lab)].count('.\\Administrator') == 3
+
+
 def test_creds_laps_row(lab_2forests):
     rows = creds(lab_2forests, laps=lambda ip, pw, host: f'{ip}/{host}')
     row = next(r for r in rows if r.scope == 'local srv03 (LAPS)')

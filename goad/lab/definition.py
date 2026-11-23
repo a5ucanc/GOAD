@@ -291,8 +291,8 @@ def _parse_delegation(value: Any, source: str, what: str) -> DelegationDef:
         constrained = _str_list(d['constrained'], source, what, 'constrained')
         if not constrained:
             raise GoadError(f'{source}: {"constrained"!r} in {what} must list at least one SPN')
-    if unconstrained == bool(constrained):
-        raise GoadError(f'{source}: {"delegation"!r} in {what} needs exactly one of unconstrained: true or constrained: [<spn>...]')
+    if not unconstrained and not constrained:
+        raise GoadError(f'{source}: {"delegation"!r} in {what} needs at least one of unconstrained: true or constrained: [<spn>...]')
     transition = False
     if 'protocol_transition' in d:
         if not constrained:

@@ -338,14 +338,21 @@ def test_user_and_host_primitives_parse():
     assert lab.hosts['srv02'].delegation is None
 
 
+def test_delegation_unconstrained_with_constrained():
+    lab = _lab((SRV03 + ('delegation',), {'unconstrained': True, 'constrained': ['HTTP/x'], 'protocol_transition': True}),
+               (ESSOS + ('users', 'u'), {**SVC, 'delegation': {'unconstrained': True, 'constrained': ['CIFS/x']}}))
+    d = lab.hosts['srv03'].delegation
+    assert d.unconstrained and d.constrained == ('HTTP/x',) and d.protocol_transition
+    u = lab.domains['essos.local'].users['u'].delegation
+    assert u.unconstrained and u.constrained == ('CIFS/x',)
+
+
 U = ESSOS + ('users', 'u')
 
 
 @pytest.mark.parametrize('patches, message', [
-    ([(U, {**SVC, 'delegation': {'unconstrained': True, 'constrained': ['CIFS/x']}})],
-     r"delegation.*user u.*exactly one of"),
-    ([(U, {**SVC, 'delegation': {}})], r"delegation.*user u.*exactly one of"),
-    ([(U, {**SVC, 'delegation': {'unconstrained': False}})], r"delegation.*user u.*exactly one of"),
+    ([(U, {**SVC, 'delegation': {}})], r"delegation.*user u.*at least one of"),
+    ([(U, {**SVC, 'delegation': {'unconstrained': False}})], r"delegation.*user u.*at least one of"),
     ([(U, {**SVC, 'delegation': {'unconstrained': True, 'protocol_transition': True}})],
      r"protocol_transition.*user u.*only with constrained"),
     ([(U, {**SVC, 'delegation': {'constrained': []}})], r"constrained.*user u"),
@@ -360,8 +367,6 @@ U = ESSOS + ('users', 'u')
     ([(('hosts', 'dc03', 'delegation'), {'unconstrained': True})], r"delegation.*host dc03"),
     ([(('hosts', 'ws'), {'hostname': 'ws', 'os': 'win11', 'role': 'workstation', 'octet': 40, 'cpus': 1,
                          'memory': 1024, 'delegation': {'unconstrained': True}})], r"delegation.*host ws"),
-    ([(SRV03 + ('delegation',), {'unconstrained': True, 'constrained': ['HTTP/x']})],
-     r"delegation.*host srv03.*exactly one of"),
     ([(SRV03 + ('delegation',), {'unconstrained': True, 'protocol_transition': False})],
      r"protocol_transition.*host srv03"),
     ([(G + ('groups',), ['Khals'])], r"group Dothraki in domain essos.local names unknown group 'Khals'"),

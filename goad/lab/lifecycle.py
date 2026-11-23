@@ -93,7 +93,10 @@ def creds(lab: Lab, laps: Callable[[str, str, str], str] = laps_password) -> Lis
             rows.append(Credential('goad', password, f'ssh {name}'))
     path = working_lab_path(lab.settings)
     if path.is_file():
-        rows.extend(Credential(*row) for row in scenario_accounts(path.read_text()))
+        try:
+            rows.extend(Credential(*row) for row in scenario_accounts(path.read_text()))
+        except GoadError:
+            pass  # a scenario in lab.yml may have left the catalogue: show the rest of the credentials
     return rows
 
 
