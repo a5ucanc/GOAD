@@ -1,9 +1,9 @@
 """Run by hand on the VMware host with the 2forests lab deployed and its current snapshot base:
 pytest -m live tests/live/test_scenarios_live.py -s. It resets to base at start and end, never destroys.
 
-PROBES maps a scenario name to (host key, PowerShell that prints one value, value when enabled). The host
-key is the scenario's default target in 2forests: the first host of the kind in lab.yml order (dc01 for
-domain, ca and trust, srv02 for server). Later tasks add entries and call run_step."""
+PROBES maps a scenario name to (host key the probe runs on, PowerShell that prints one value, value when enabled). The host
+key is the host the probe runs on, which need not be the target: AD objects of a member server are read on
+its domain DC (dc02 for srv02). Default targets in 2forests: dc01 for domain, ca and trust, srv02 for server. Later tasks add entries and call run_step."""
 import time
 from typing import Dict, List, Tuple
 
@@ -39,9 +39,8 @@ def _ad_user(name: str, expr: str) -> str:
             f"if ($null -eq $u) {{ 'absent' }} else {{ {expr} }}")
 
 
-def _own_computer(expr: str) -> str:
-    # ADSI works on a domain member without RSAT; $c is the computer's own AD entry
-    return ("$c = ([adsisearcher]\"(&(objectClass=computer)(sAMAccountName=$env:COMPUTERNAME$))\").FindOne().Properties; "
+def _ad_computer(name: str, expr: str) -> str:
+    return (f"$c = Get-ADComputer -Identity '{name}' -Properties TrustedForDelegation, 'msDS-AllowedToDelegateTo'; "
             f"{expr}")
 
 
@@ -76,10 +75,10 @@ PROBES: Dict[str, Tuple[str, str, str]] = {
     'asrep-roast': ('dc01', _ad_user('asrep_user', '$u.DoesNotRequirePreAuth'), 'True'),
     'unconstrained-user': ('dc01', _ad_user('scn-unconst-svc', '$u.TrustedForDelegation'), 'True'),
     'constrained-deleg-any': ('dc01', _ad_user('scn-cdany-svc',
-                                               "($u.TrustedToAuthForDelegation, ($u.'msDS-AllowedToDelegateTo' | Sort-Object) -join ',') -join ';'"),
+                                               "'{0};{1}' -f $u.TrustedToAuthForDelegation, (($u.'msDS-AllowedToDelegateTo' | Sort-Object) -join ',')"),
                               'True;CIFS/kingslanding,CIFS/kingslanding.sevenkingdoms.local'),
-    'unconstrained-computer': ('srv02', _own_computer("[bool]($c.useraccountcontrol[0] -band 0x80000)"), 'True'),
-    'constrained-deleg-kerb': ('srv02', _own_computer("@($c['msds-allowedtodelegateto'] | Sort-Object) -join ','"),
+    'unconstrained-computer': ('dc02', _ad_computer('castelblack', '$c.TrustedForDelegation'), 'True'),
+    'constrained-deleg-kerb': ('dc02', _ad_computer('castelblack', "(@($c.'msDS-AllowedToDelegateTo') | Sort-Object) -join ','"),
                                'HTTP/winterfell,HTTP/winterfell.north.sevenkingdoms.local'),
     'local-admin': ('srv02', "[bool](Get-LocalGroupMember Administrators | Where-Object Name -like '*\\scn-local-admin')", 'True'),
     'webdav': ('srv02', '[bool](Get-Service WebClient -ErrorAction SilentlyContinue)', 'True'),
@@ -140,8 +139,6 @@ def run_step(names: List[str]) -> None:
     ips = {key: host.ip for key, host in state.hosts.items()}
     base_text = state.snapshot('base').lab_yml
     targets = {name: scenario_ops.add_entry(base_text, name, None)[1] for name in names}
-    for name in names:
-        assert targets[name] == PROBES[name][0], f'{name}: default target {targets[name]}, probe host {PROBES[name][0]}'
     middle = names[len(names) // 2]
     try:
         _reset_base(settings)

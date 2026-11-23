@@ -75,3 +75,57 @@ def test_setting_scenarios_change_effective_settings(name, pairs):
         want = str(value)
         assert lab.effective_settings(target)[key] == want
         assert base.effective_settings(target).get(key) != want
+
+
+def _enabled(name):
+    text = _text('2forests')
+    raw = yaml.safe_load(text)
+    target = valid_targets(raw, load_catalogue()[name].kind)[0]
+    return parse_lab(_with(text, name, target), '2forests'), target
+
+
+def _user(lab, domain, user):
+    return next(u for u in lab.domains[domain].users if u.name == user) if isinstance(
+        lab.domains[domain].users, (list, tuple)) else lab.domains[domain].users[user]
+
+
+def test_kerberoast_spn():
+    lab, _ = _enabled('kerberoast')
+    assert _user(lab, 'sevenkingdoms.local', 'svc_kerb').spns == ('MSSQLSvc/svc-kerb.sevenkingdoms.local:1433',)
+
+
+def test_asrep_roast_preauth_off():
+    lab, _ = _enabled('asrep-roast')
+    assert _user(lab, 'sevenkingdoms.local', 'asrep_user').preauth is False
+
+
+def test_unconstrained_user():
+    lab, _ = _enabled('unconstrained-user')
+    u = _user(lab, 'sevenkingdoms.local', 'scn-unconst-svc')
+    assert u.spns == ('HTTP/scn-unconst.sevenkingdoms.local',) and u.delegation.unconstrained
+
+
+def test_constrained_deleg_any():
+    lab, _ = _enabled('constrained-deleg-any')
+    u = _user(lab, 'sevenkingdoms.local', 'scn-cdany-svc')
+    assert u.spns == ('HTTP/scn-cdany.sevenkingdoms.local',)
+    assert u.delegation.constrained == ('CIFS/kingslanding.sevenkingdoms.local', 'CIFS/kingslanding')
+    assert u.delegation.protocol_transition and not u.delegation.unconstrained
+
+
+def test_unconstrained_computer():
+    lab, target = _enabled('unconstrained-computer')
+    assert lab.hosts[target].delegation.unconstrained
+
+
+def test_constrained_deleg_kerb():
+    lab, target = _enabled('constrained-deleg-kerb')
+    d = lab.hosts[target].delegation
+    assert d.constrained == ('HTTP/winterfell.north.sevenkingdoms.local', 'HTTP/winterfell')
+    assert not d.protocol_transition and not d.unconstrained
+
+
+def test_local_admin():
+    lab, target = _enabled('local-admin')
+    assert 'NORTH\\scn-local-admin' in lab.hosts[target].local_groups['Administrators']
+    assert _user(lab, 'north.sevenkingdoms.local', 'scn-local-admin').password == 'Aa1234567890!'
