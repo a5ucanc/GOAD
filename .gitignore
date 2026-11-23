@@ -5,7 +5,8 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .superpowers/
-.claude/settings.local.json
+.claude/
+docs/superpowers/
 packer/**/packer_cache/
 packer/**/*.auto.pkrvars.hcl
 packer_cache/
