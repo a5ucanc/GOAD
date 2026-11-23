@@ -1,6 +1,6 @@
 """goad-v2: one VMware Workstation Active Directory lab, built with Packer and Ansible."""
 
-__version__ = '2.0.0.dev0'
+__version__ = '2.0.0'
 
 
 class GoadError(Exception):

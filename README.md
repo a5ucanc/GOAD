@@ -15,7 +15,8 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 | Part | State |
 |------|-------|
 | Host checks, VM templates (`goad check`, `goad template ...`) | available |
-| Labs `1domain`, `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | next |
+| Labs `1domain`, `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | available |
+| Release gate (2domains) | accepted 2026-11-23 with one deploy 40 s over the limit, see docs/release-gate/ |
 | Scenarios and extensions | later, ported one at a time |
 
 ## Host requirements
@@ -152,6 +153,34 @@ goad lab provision --tags laps,adcs      # a tag selects whole plays; the connec
 
 Every command works without a terminal. A prompt that cannot be answered fails with exit code 2 and
 asks for `--yes`. Errors exit 1.
+
+## Release gate
+
+The core counts as done when one run of the gate on `2domains` passes all four limits. Each limit is
+strict: a sample equal to the limit fails.
+
+| Check | Limit | Count |
+|---|---|---|
+| Whole-lab snapshot | under 120 s | 3 |
+| Reset to `base`, until every host answers | under 300 s | 5 in a row |
+| Deploy from already-built templates | under 2100 s | 3 in a row |
+| `goad template test` for `win2022`, `win2025`, `win11`, `ubuntu2404` | passes | 1 each |
+
+Every command must succeed on its first call: a deploy that needs a resume fails the gate.
+
+Run it by hand on the VMware host with all four templates built, 16 GB of free RAM and no lab
+deployed:
+
+```
+pytest -m live -k gate -s
+```
+
+It takes 2 to 4 hours and writes a timed report to `~/.goad/logs/release-gate-<YYYYmmdd-HHMMSS>.md`.
+Committed reports are in `docs/release-gate/`.
+
+The 2026-11-22 run failed by one sample: the first deploy took 2140 s, the other two 1917 s and
+1900 s. The maintainer accepted that result on 2026-11-23. Scenario and extension porting starts
+only after an accepted gate run.
 
 ## Development
 

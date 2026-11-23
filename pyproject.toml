@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "goad"
-version = "2.0.0.dev0"
+version = "2.0.0"
 description = "Deploy and maintain one Active Directory lab on VMware Workstation with Packer and Ansible"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
