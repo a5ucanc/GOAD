@@ -8,8 +8,9 @@ from goad.host.paths import to_wsl
 from goad.lab.context import Lab, vm_folder
 from goad.lab.power import start_all, stop_all
 from goad.lab.remote import laps_password
+from goad.lab.scenario_ops import scenario_accounts
 from goad.settings import Settings
-from goad.state import delete_state, load_state
+from goad.state import delete_state, load_state, working_lab_path
 from goad.vmware.parallel import run_parallel
 from goad.vmware.vmrun import Vmrun, VmrunError, norm_vmx
 
@@ -90,6 +91,9 @@ def creds(lab: Lab, laps: Callable[[str, str, str], str] = laps_password) -> Lis
                 rows.append(Credential('.\\Administrator', password, f'local {name}'))
         else:
             rows.append(Credential('goad', password, f'ssh {name}'))
+    path = working_lab_path(lab.settings)
+    if path.is_file():
+        rows.extend(Credential(*row) for row in scenario_accounts(path.read_text()))
     return rows
 
 

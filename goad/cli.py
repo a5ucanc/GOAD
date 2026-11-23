@@ -191,11 +191,25 @@ def _snapshot_list(args, ctx) -> int:
     from rich.table import Table
 
     from goad.lab import snapshots
-    table = Table('Name', 'Taken', 'Label', 'Missing on')
+    table = Table('Name', 'Taken', 'Label', 'Scenarios', 'Missing on')
     for row in snapshots.list_snapshots(_open(ctx, need_definition=False)):
-        table.add_row(row.record.name, row.record.taken_at, row.record.label, ', '.join(row.missing_on))
+        table.add_row(row.record.name, row.record.taken_at, row.record.label, _recorded_scenarios(row.record.lab_yml),
+                      ', '.join(row.missing_on))
     Console().print(table)
     return 0
+
+
+def _recorded_scenarios(lab_yml: str) -> str:
+    """name@target items of a snapshot's raw lab.yml, without expansion."""
+    import yaml
+    try:
+        raw = yaml.safe_load(lab_yml)
+    except yaml.YAMLError:
+        return ''
+    entries = raw.get('scenarios') if isinstance(raw, dict) else None
+    if not isinstance(entries, list):
+        return ''
+    return ', '.join(f'{e.get("name")}@{e.get("target")}' for e in entries if isinstance(e, dict))
 
 
 def _snapshot_delete(args, ctx) -> int:
@@ -216,6 +230,44 @@ def _creds(args, ctx) -> int:
     for row in lifecycle.creds(_open(ctx)):
         table.add_row(row.account, row.password, row.scope)
     Console().print(table)
+    return 0
+
+
+def _scenario_list(args, ctx) -> int:
+    from rich.table import Table
+
+    from goad.lab import scenario_ops
+    from goad.state import load_state, working_lab_path
+    path = working_lab_path(ctx.settings)
+    text = path.read_text() if load_state(ctx.settings) is not None and path.is_file() else None
+    table = Table('Name', 'Kind', 'Description', 'Valid targets', 'Enabled on')
+    for row in scenario_ops.listing(text):
+        table.add_row(*row)
+    Console().print(table)
+    return 0
+
+
+def _scenario_enable(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
+    from goad.lab import scenario_ops
+    with keep_host_awake():
+        target = scenario_ops.enable(ctx.settings, ctx.runner, args.name, args.target)
+    Console().print(f'scenario {args.name} enabled on {target}')
+    return 0
+
+
+def _scenario_disable(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
+    from goad.lab import scenario_ops
+    from goad.state import load_state, working_lab_path
+    # resolve the target first, so the message names it even when --target was not given
+    state = load_state(ctx.settings)
+    if state is None:
+        raise GoadError('no lab deployed: run goad lab deploy <lab>')
+    _, target = scenario_ops.remove_entry(working_lab_path(ctx.settings).read_text(), args.name, args.target)
+    with keep_host_awake():
+        snap = scenario_ops.disable(ctx.settings, ctx.runner, args.name, target, args.yes, ask=confirm)
+    Console().print(f'scenario {args.name} disabled on {target} (lab reset to {snap})')
     return 0
 
 
@@ -254,6 +306,9 @@ HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = 
     ('snapshot', 'take'): _snapshot_take,
     ('snapshot', 'list'): _snapshot_list,
     ('snapshot', 'delete'): _snapshot_delete,
+    ('scenario', 'list'): _scenario_list,
+    ('scenario', 'enable'): _scenario_enable,
+    ('scenario', 'disable'): _scenario_disable,
     ('creds',): _creds,
     ('vm', 'start'): _vm_start,
     ('vm', 'stop'): _vm_stop,
@@ -272,7 +327,7 @@ def _ip_range(value: str) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='goad', description='Deploy and maintain one Active Directory lab on VMware Workstation.')
     parser.add_argument('--version', action='version', version=f'goad {__version__}')
-    groups = parser.add_subparsers(dest='group', required=True, metavar='{check,template,lab,snapshot,creds,vm}')
+    groups = parser.add_subparsers(dest='group', required=True, metavar='{check,template,lab,snapshot,scenario,creds,vm}')
 
     check = groups.add_parser('check', help='check the host: VMware, Packer, lab network, disk, CA certificates')
     check.set_defaults(command=('check',))
@@ -322,6 +377,20 @@ def build_parser() -> argparse.ArgumentParser:
     snap_delete.add_argument('name')
     snap_delete.add_argument('--yes', action='store_true', help='do not ask for confirmation')
     snap_delete.set_defaults(command=('snapshot', 'delete'))
+
+    scenario = groups.add_parser('scenario', help='list, enable and disable vulnerability scenarios')
+    scen_actions = scenario.add_subparsers(dest='action', required=True)
+    scen_actions.add_parser('list', help='list scenarios, their valid targets and where they are enabled') \
+        .set_defaults(command=('scenario', 'list'))
+    scen_enable = scen_actions.add_parser('enable', help='add a scenario to lab.yml and provision it')
+    scen_enable.add_argument('name')
+    scen_enable.add_argument('--target', help='host key; default: the first valid target')
+    scen_enable.set_defaults(command=('scenario', 'enable'))
+    scen_disable = scen_actions.add_parser('disable', help='remove a scenario: reset to a snapshot, replay the rest')
+    scen_disable.add_argument('name')
+    scen_disable.add_argument('--target', help='host key; needed when the scenario is enabled on several hosts')
+    scen_disable.add_argument('--yes', action='store_true', help='do not ask for confirmation')
+    scen_disable.set_defaults(command=('scenario', 'disable'))
 
     groups.add_parser('creds', help='show lab accounts and passwords').set_defaults(command=('creds',))
 

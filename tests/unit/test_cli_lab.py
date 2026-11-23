@@ -160,3 +160,31 @@ def test_provision_prints_elapsed(cli, deployed, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(provision_module, 'provision', lambda *a, **k: True)
     assert main(['lab', 'provision']) == 0
     assert re.search(r'provisioned in \d+ s', capsys.readouterr().out)
+
+
+def test_scenario_disable_needs_yes(cli, settings, deployed, monkeypatch, capsys):
+    from goad.lab import scenarios
+    from goad.lab.scenarios import Scenario
+    frag = {'domains': {'{domain}': {'users': {'scn.user': {'firstname': 'S', 'surname': 'U'}}}}}
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: {'newuser': Scenario('newuser', '', 'domain', frag)})
+    raw = yaml.safe_load(working_lab_path(settings).read_text())
+    raw['scenarios'] = [{'name': 'newuser', 'target': 'dc02'}]
+    text = yaml.safe_dump(raw, sort_keys=False)
+    working_lab_path(settings).write_text(text)
+    resets = []
+    monkeypatch.setattr('goad.lab.snapshots.reset', lambda *a, **k: resets.append(a))
+    monkeypatch.setattr('sys.stdin.isatty', lambda: False)
+    assert main(['scenario', 'disable', 'newuser']) == 2
+    assert 'confirmation needed' in capsys.readouterr().err
+    assert resets == [] and working_lab_path(settings).read_text() == text
+
+
+def test_snapshot_list_shows_scenarios(cli, settings, deployed, capsys):
+    from goad.state import SnapshotRecord
+    deployed.snapshots.append(SnapshotRecord('pre', '2026-11-21T01:00:00Z', '',
+                                             'scenarios:\n- {name: esc1, target: dc01}\n- {name: kerb, target: dc02}\n'))
+    save_state(settings, deployed)
+    cli.respond(lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 2\nbase\npre\n', ''))
+    assert main(['snapshot', 'list']) == 0
+    out = flat(capsys.readouterr().out)
+    assert 'Scenarios' in out and 'esc1@dc01, kerb@dc02' in out
