@@ -61,7 +61,28 @@ PROBES: Dict[str, Tuple[str, str, str]] = {
     'webdav': ('srv02', '[bool](Get-Service WebClient -ErrorAction SilentlyContinue)', 'True'),
 }
 
-SETTING_SCENARIOS = list(PROBES)
+SETTING_SCENARIOS = [
+    'credssp',
+    'defender-off',
+    'esc10-case1',
+    'esc10-case2',
+    'esc11',
+    'esc6',
+    'esc8',
+    'firewall-off',
+    'ldap-cbt-off',
+    'ldap-signing-off',
+    'llmnr',
+    'maq',
+    'mdns',
+    'ntlm-downgrade',
+    'printerbug',
+    'rc4',
+    'sid-history',
+    'smb-signing-off',
+    'smbv1',
+    'webdav',
+]
 
 
 def _require_2forests_on_base(settings):
@@ -106,6 +127,8 @@ def run_step(names: List[str]) -> None:
         for name in names:
             assert main(['scenario', 'enable', name]) == 0
         print(f'enable {len(names)} scenarios: {time.monotonic() - start:.0f} s')
+        for host in ips.values():
+            wait_logon(host, 'Administrator')
         for name in names:
             assert _read(ips, name) == PROBES[name][2], name
         start = time.monotonic()
