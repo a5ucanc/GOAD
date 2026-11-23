@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from goad.lab.definition import DelegationDef, LabDef, UserDef
+from goad.lab.definition import WELL_KNOWN_PRINCIPALS, AclDef, DelegationDef, LabDef, UserDef
 from goad.settings import Settings
 from goad.state import inventory_path
 
@@ -28,6 +28,19 @@ def _user(u: UserDef, path: str) -> Dict[str, Any]:
     if u.delegation is not None:
         e['delegation'] = _delegation(u.delegation)
     return e
+
+
+def _acl(lab: LabDef, fqdn: str, a: AclDef) -> Dict[str, Any]:
+    """An ACE as ace.ps1 takes it: a principal another domain owns as <NETBIOS>\\<name>, which LSA
+    resolves across trusts, and a computer by its sAMAccountName."""
+    principal = a.principal
+    if principal not in WELL_KNOWN_PRINCIPALS and '\\' in principal:
+        dom, name = lab.split_member(fqdn, principal)
+        principal = f'{lab.domains[dom].netbios}\\{name}'
+    name = a.target
+    if a.kind == 'computer':
+        name = f'{lab.hosts[name].hostname}$'
+    return {'principal': principal, 'right': a.right, 'inherit': a.inherit, 'kind': a.kind, 'name': name}
 
 
 def _domains(lab: LabDef, ip_range: str) -> Dict[str, Any]:
@@ -57,6 +70,10 @@ def _domains(lab: LabDef, ip_range: str) -> Dict[str, Any]:
                      if h.delegation is not None and h.domain == fqdn}
         if computers:
             out[fqdn]['computers'] = computers
+        if d.gpos:
+            out[fqdn]['gpos'] = {name: {'link': g.link} for name, g in d.gpos.items()}
+        if d.acls:
+            out[fqdn]['acls'] = [_acl(lab, fqdn, a) for a in d.acls]
     return out
 
 

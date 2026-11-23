@@ -19,7 +19,7 @@ ROLES = ('dc', 'server', 'workstation', 'linux')
 _NAME = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 _TOP_REQUIRED = {'name', 'password', 'dns_forwarder', 'domains', 'hosts'}
 _TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios'}
-_DOMAIN_KEYS = {'netbios', 'dc', 'parent', 'trust', 'ous', 'groups', 'users'}
+_DOMAIN_KEYS = {'netbios', 'dc', 'parent', 'trust', 'ous', 'groups', 'users', 'acls', 'gpos'}
 _DOMAIN_REQUIRED = {'netbios', 'dc'}
 _HOST_KEYS = {'hostname', 'os', 'role', 'domain', 'octet', 'cpus', 'memory', 'laps', 'ca', 'local_groups', 'settings',
               'delegation'}
@@ -29,6 +29,18 @@ _USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'se
               'password', 'spns', 'preauth', 'delegation'}
 _USER_REQUIRED = {'firstname', 'surname'}
 _DELEGATION_KEYS = {'unconstrained', 'constrained', 'protocol_transition'}
+_ACL_KEYS = {'principal', 'right', 'object', 'inherit'}
+_ACL_REQUIRED = {'principal', 'right', 'object'}
+_GPO_KEYS = {'link'}
+ACL_RIGHTS = ('GenericAll', 'GenericWrite', 'WriteDacl', 'WriteOwner', 'WriteProperty', 'ForceChangePassword',
+              'AddMember', 'SelfMembership', 'WriteSPN', 'ReadAll')
+# Object kinds that name an object (<kind>:<name>) and those that stand alone.
+ACL_NAMED_KINDS = ('user', 'group', 'computer', 'ou', 'gpo', 'template')
+ACL_BARE_KINDS = ('domain', 'adminsdholder')
+ACL_INHERIT = ('none', 'all')
+_GPO_RIGHTS = ('GenericAll', 'GenericWrite')
+# Identities outside the lab domains an ACE may grant to.
+WELL_KNOWN_PRINCIPALS = ('NT AUTHORITY\\ANONYMOUS LOGON', 'Everyone')
 # AD built-ins a lab may name without defining them (AD names are case-insensitive).
 _BUILTIN_GROUPS = frozenset(n.lower() for n in (
     'Administrators', 'Domain Admins', 'Domain Users', 'Domain Computers', 'Domain Controllers', 'Domain Guests',
@@ -98,6 +110,28 @@ class UserDef:
 
 
 @dataclass(frozen=True)
+class AclDef:
+    principal: str
+    right: str
+    object: str
+    inherit: str = 'none'
+
+    @property
+    def kind(self) -> str:
+        return self.object.partition(':')[0]
+
+    @property
+    def target(self) -> str:
+        return self.object.partition(':')[2]
+
+
+@dataclass(frozen=True)
+class GpoDef:
+    name: str
+    link: str = 'domain'
+
+
+@dataclass(frozen=True)
 class DomainDef:
     name: str
     netbios: str
@@ -107,6 +141,8 @@ class DomainDef:
     ous: Tuple[str, ...] = ()
     groups: Dict[str, GroupDef] = field(default_factory=dict)
     users: Dict[str, UserDef] = field(default_factory=dict)
+    acls: Tuple[AclDef, ...] = ()
+    gpos: Dict[str, GpoDef] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -308,6 +344,39 @@ def _parse_domain_content(dname: str, d: Dict[str, Any], source: str, what: str)
     return ous, groups, users
 
 
+def _parse_acls(d: Dict[str, Any], source: str, what: str) -> Tuple[AclDef, ...]:
+    """Shape only; the objects and principals are checked against the whole lab in _validate_acls."""
+    raw = d.get('acls', [])
+    if not isinstance(raw, list):
+        raise GoadError(f'{source}: {"acls"!r} in {what} must be a list')
+    acls = []
+    for i, a in enumerate(raw):
+        awhat = f'acl {i + 1} of {what}'
+        a = _mapping(a, source, awhat)
+        _check_keys(a, _ACL_KEYS, _ACL_REQUIRED, source, awhat)
+        acls.append(AclDef(principal=_str(a['principal'], source, awhat, 'principal'),
+                           right=_str(a['right'], source, awhat, 'right'),
+                           object=_str(a['object'], source, awhat, 'object'),
+                           inherit=_str(a['inherit'], source, awhat, 'inherit') if 'inherit' in a else 'none'))
+    return tuple(acls)
+
+
+def _parse_gpos(dname: str, d: Dict[str, Any], ous: Tuple[str, ...], source: str, what: str) -> Dict[str, GpoDef]:
+    gpos: Dict[str, GpoDef] = {}
+    for gname, g in _mapping(d.get('gpos', {}), source, f'gpos of {what}').items():
+        gwhat = f'gpo {gname} in {what}'
+        g = _mapping(g if g is not None else {}, source, gwhat)
+        _check_keys(g, _GPO_KEYS, set(), source, gwhat)
+        link = _str(g['link'], source, gwhat, 'link') if 'link' in g else 'domain'
+        kind, sep, ou = link.partition(':')
+        if link != 'domain' and not (kind == 'ou' and sep and ou):
+            raise GoadError(f'{source}: invalid link {link!r} in {gwhat}: use domain or ou:<name>')
+        if kind == 'ou' and ou not in ous:
+            raise GoadError(f'{source}: unknown ou {ou!r} in link of {gwhat}: not in ous of {dname}')
+        gpos[gname] = GpoDef(name=gname, link=link)
+    return gpos
+
+
 def parse_lab(text: str, source: str) -> LabDef:
     try:
         raw = yaml.safe_load(text)
@@ -328,13 +397,15 @@ def parse_lab(text: str, source: str) -> LabDef:
         what = f'domain {dname}'
         d = _mapping(d, source, what)
         _check_keys(d, _DOMAIN_KEYS, _DOMAIN_REQUIRED, source, what)
+        ous, groups, users = _parse_domain_content(dname, d, source, what)
         domains[dname] = DomainDef(
             name=dname,
             netbios=_str(d['netbios'], source, what, 'netbios'),
             dc=_str(d['dc'], source, what, 'dc'),
             parent=_str(d['parent'], source, what, 'parent') if 'parent' in d else None,
             trust=_str(d['trust'], source, what, 'trust') if 'trust' in d else None,
-            **dict(zip(('ous', 'groups', 'users'), _parse_domain_content(dname, d, source, what))))
+            ous=ous, groups=groups, users=users,
+            acls=_parse_acls(d, source, what), gpos=_parse_gpos(dname, d, ous, source, what))
     if not domains:
         raise GoadError(f'{source}: domains must not be empty')
 
@@ -453,8 +524,51 @@ def _validate_references(lab: LabDef, source: str) -> None:
                     raise GoadError(f'{source}: unknown member {member!r} of group {gname} in domain {dname}: not a user or group of {fqdn}')
 
 
+def _validate_acls(lab: LabDef, source: str) -> None:
+    for dname, d in lab.domains.items():
+        users = {n.lower() for n in d.users} | _BUILTIN_USERS
+        groups = {n.lower() for n in d.groups} | _BUILTIN_GROUPS
+        for a in d.acls:
+            what = f'acl {a.principal} {a.right} {a.object} in domain {dname}'
+            if a.right not in ACL_RIGHTS:
+                raise GoadError(f'{source}: unknown right {a.right!r} in {what}: choose one of {", ".join(ACL_RIGHTS)}')
+            if a.inherit not in ACL_INHERIT:
+                raise GoadError(f'{source}: invalid inherit {a.inherit!r} in {what}: choose none or all')
+            kind, sep, name = a.object.partition(':')
+            if kind not in ACL_NAMED_KINDS + ACL_BARE_KINDS:
+                raise GoadError(f'{source}: unknown object kind {kind!r} in {what}: choose one of {", ".join(ACL_NAMED_KINDS + ACL_BARE_KINDS)}')
+            if kind in ACL_NAMED_KINDS and not name:
+                raise GoadError(f'{source}: object {a.object!r} in {what} must be {kind}:<name>')
+            if kind in ACL_BARE_KINDS and sep:
+                raise GoadError(f'{source}: object {a.object!r} in {what} takes no name: use {kind}')
+            if kind == 'user' and name.lower() not in users:
+                raise GoadError(f'{source}: unknown user {name!r} in {what}: not a user of {dname} or an AD built-in')
+            if kind == 'group' and name.lower() not in groups:
+                raise GoadError(f'{source}: unknown group {name!r} in {what}: not a group of {dname} or an AD built-in')
+            if kind == 'computer' and (name not in lab.hosts or lab.hosts[name].domain != dname):
+                raise GoadError(f'{source}: computer {name!r} in {what} is not a host of {dname}')
+            if kind == 'ou' and name not in d.ous:
+                raise GoadError(f'{source}: unknown ou {name!r} in {what}: not in ous of {dname}')
+            if kind == 'gpo':
+                if name not in d.gpos:
+                    raise GoadError(f'{source}: unknown gpo {name!r} in {what}: not in gpos of {dname}')
+                if a.right not in _GPO_RIGHTS:
+                    raise GoadError(f'{source}: right {a.right!r} on gpo in {what}: only GenericAll or GenericWrite')
+                # GPO permissions are set by name with Set-GPPermission, which needs the account's type.
+                if '\\' in a.principal or a.principal.lower() not in _principals(d):
+                    raise GoadError(f'{source}: principal {a.principal!r} on gpo in {what} must be a user or group of {dname}')
+            # template: checked against the CA's cert_templates once that primitive exists.
+            if a.principal in WELL_KNOWN_PRINCIPALS:
+                continue
+            fqdn, pname = lab.split_member(dname, a.principal)
+            if fqdn not in lab.domains or not pname or pname.lower() not in _principals(lab.domains[fqdn]):
+                raise GoadError(f'{source}: unknown principal {a.principal!r} in {what}: use a user or group of {dname}, '
+                                f'<fqdn>\\<name> of a lab domain, or one of {", ".join(WELL_KNOWN_PRINCIPALS)}')
+
+
 def _validate_content(lab: LabDef, source: str) -> None:
     _validate_references(lab, source)
+    _validate_acls(lab, source)
     for dname, d in lab.domains.items():
         if d.parent and d.trust:
             raise GoadError(f'{source}: {"trust"!r} in domain {dname} is not allowed on a child domain (has parent)')

@@ -371,3 +371,74 @@ U = ESSOS + ('users', 'u')
 def test_primitives_rejected(patches, message):
     with pytest.raises(GoadError, match=message):
         _lab(*patches)
+
+
+ACL_USERS = {'attacker': SVC, 'victim': SVC}
+
+
+def _acl_lab(*acls, gpos=None, extra=()):
+    patches = [(ESSOS + ('users',), dict(ACL_USERS)), (ESSOS + ('ous',), ['Vale']), (ESSOS + ('acls',), list(acls)),
+               (SEVEN + ('users',), {'tywin.lannister': TYWIN})]
+    if gpos is not None:
+        patches.append((ESSOS + ('gpos',), gpos))
+    return _lab(*patches, *extra)
+
+
+def test_acl_and_gpo_primitives_parse():
+    from goad.lab.definition import AclDef, GpoDef
+    lab = _acl_lab(
+        {'principal': 'attacker', 'right': 'GenericAll', 'object': 'user:victim'},
+        {'principal': 'attacker', 'right': 'AddMember', 'object': 'group:Dothraki'},
+        {'principal': 'attacker', 'right': 'WriteDacl', 'object': 'ou:Vale', 'inherit': 'all'},
+        {'principal': 'attacker', 'right': 'GenericWrite', 'object': 'gpo:scn-gpo'},
+        {'principal': 'attacker', 'right': 'GenericAll', 'object': 'computer:srv03'},
+        {'principal': 'attacker', 'right': 'GenericAll', 'object': 'adminsdholder'},
+        {'principal': 'NT AUTHORITY\\ANONYMOUS LOGON', 'right': 'ReadAll', 'object': 'domain', 'inherit': 'all'},
+        {'principal': 'Everyone', 'right': 'ReadAll', 'object': 'domain'},
+        {'principal': 'sevenkingdoms.local\\tywin.lannister', 'right': 'ForceChangePassword', 'object': 'user:victim'},
+        {'principal': 'Domain Users', 'right': 'WriteSPN', 'object': 'user:Administrator'},
+        {'principal': 'attacker', 'right': 'GenericAll', 'object': 'template:ESC4'},
+        gpos={'scn-gpo': {}, 'vale-gpo': {'link': 'ou:Vale'}})
+    d = lab.domains['essos.local']
+    assert d.acls[0] == AclDef(principal='attacker', right='GenericAll', object='user:victim', inherit='none')
+    assert d.acls[2].inherit == 'all' and len(d.acls) == 11
+    assert d.gpos == {'scn-gpo': GpoDef(name='scn-gpo', link='domain'), 'vale-gpo': GpoDef(name='vale-gpo', link='ou:Vale')}
+    assert lab.domains['sevenkingdoms.local'].acls == () and lab.domains['sevenkingdoms.local'].gpos == {}
+
+
+def _ace(**kw):
+    return {'principal': 'attacker', 'right': 'GenericAll', 'object': 'user:victim', **kw}
+
+
+@pytest.mark.parametrize('acls, gpos, message', [
+    ([_ace(right='FullControl')], None, r"unknown right 'FullControl'.*domain essos.local"),
+    ([_ace(object='printer:x')], None, r"unknown object kind 'printer'.*domain essos.local"),
+    ([_ace(object='user:')], None, r"object 'user:'.*domain essos.local"),
+    ([_ace(object='domain:x')], None, r"object 'domain:x'.*domain essos.local"),
+    ([_ace(object='user:nobody')], None, r"unknown user 'nobody'.*domain essos.local"),
+    ([_ace(object='group:nobody')], None, r"unknown group 'nobody'.*domain essos.local"),
+    ([_ace(object='computer:srv02')], None, r"computer 'srv02'.*not a host of essos.local"),
+    ([_ace(object='computer:nope')], None, r"computer 'nope'.*not a host of essos.local"),
+    ([_ace(object='ou:Nowhere')], None, r"unknown ou 'Nowhere'.*domain essos.local"),
+    ([_ace(object='gpo:nope')], None, r"unknown gpo 'nope'.*domain essos.local"),
+    ([_ace(object='gpo:g', right='WriteDacl')], {'g': {}}, r"gpo.*only GenericAll or GenericWrite"),
+    ([_ace(inherit='descendents')], None, r"inherit 'descendents'.*none or all"),
+    ([_ace(principal='nobody')], None, r"unknown principal 'nobody'.*domain essos.local"),
+    ([_ace(principal='westeros.local\\x')], None, r"unknown principal 'westeros.local\\\\x'"),
+    ([_ace(principal='sevenkingdoms.local\\nobody')], None, r"unknown principal 'sevenkingdoms.local\\\\nobody'"),
+    ([_ace(principal='NT AUTHORITY\\SYSTEM')], None, r"unknown principal 'NT AUTHORITY\\\\SYSTEM'"),
+    ([_ace(object='gpo:g', principal='Everyone')], {'g': {}}, r"principal 'Everyone' on gpo.*must be a user or group of essos.local"),
+    ([_ace(colour=1)], None, r"unknown key 'colour'.*acl"),
+    ([{'principal': 'attacker', 'right': 'GenericAll'}], None, r"missing key 'object'.*acl"),
+    ('nope', None, r"acls.*domain essos.local.*list"),
+    ([], {'g': {'link': 'ou:Nowhere'}}, r"unknown ou 'Nowhere' in link of gpo g in domain essos.local: not in ous of essos.local"),
+    ([], {'g': {'link': 'site'}}, r"invalid link 'site' in gpo g.*domain or ou:<name>"),
+    ([], {'g': {'colour': 1}}, r"unknown key 'colour'.*gpo g"),
+    ([], ['g'], r"gpos.*domain essos.local.*mapping"),
+])
+def test_acl_and_gpo_rejected(acls, gpos, message):
+    with pytest.raises(GoadError, match=message):
+        if acls == 'nope':
+            _lab((ESSOS + ('acls',), 'nope'))
+        else:
+            _acl_lab(*acls, gpos=gpos)

@@ -1,0 +1,50 @@
+# ACEs from lab.yml acls, last in the content tags: they name users, groups, OUs, GPOs and the
+# computer accounts of joined members. Add only: nothing is removed. Template ACEs are set by the
+# adcs role once the template exists.
+- name: ACEs
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'ace.ps1') }}"
+    parameters:
+      Principal: "{{ item.principal }}"
+      Kind: "{{ item.kind }}"
+      Name: "{{ item.name }}"
+      Right: "{{ item.right }}"
+      Inherit: "{{ item.inherit }}"
+  loop: "{{ goad_domains[domain].acls | default([]) | rejectattr('kind', 'in', ['template', 'gpo']) | list }}"
+  loop_control:
+    label: "{{ item.principal }} {{ item.right }} {{ item.kind }}:{{ item.name }}"
+  register: ad_acls_aces
+
+# A GPO's rights live on both its AD object and its SYSVOL folder; Set-GPPermission sets both.
+- name: GPO permissions
+  ansible.windows.win_powershell:
+    parameters:
+      Gpo: "{{ item.name }}"
+      Principal: "{{ item.principal }}"
+    script: |
+      param([string]$Gpo, [string]$Principal)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module GroupPolicy
+      $o = Get-ADObject -LDAPFilter "(sAMAccountName=$Principal)"
+      if (-not $o) { throw "principal $Principal not found" }
+      $type = if ($o.ObjectClass -eq 'group') { 'Group' } else { 'User' }
+      $perm = Get-GPPermission -Name $Gpo -TargetName $Principal -TargetType $type -ErrorAction SilentlyContinue
+      if (-not $perm -or $perm.Permission -ne 'GpoEditDeleteModifySecurity') {
+          Set-GPPermission -Name $Gpo -PermissionLevel GpoEditDeleteModifySecurity -TargetName $Principal -TargetType $type | Out-Null
+          $Ansible.Changed = $true
+      }
+  loop: "{{ goad_domains[domain].acls | default([]) | selectattr('kind', 'equalto', 'gpo') | list }}"
+  loop_control:
+    label: "{{ item.principal }} on {{ item.name }}"
+
+# SDProp copies the AdminSDHolder ACL to protected accounts hourly; trigger it now.
+- name: Run SDProp after an AdminSDHolder change
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $true
+      $root = [ADSI]"LDAP://RootDSE"
+      $root.Put("runProtectAdminGroupsTask", 1)
+      $root.SetInfo()
+  when: ad_acls_aces.results | default([]) | selectattr('changed') | map(attribute='item.kind') | select('equalto', 'adminsdholder') | list | length > 0

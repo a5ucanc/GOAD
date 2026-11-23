@@ -70,6 +70,8 @@
     - foreign_members
     # Members have joined by now (join and content is free, so not while ad_content runs).
     - ad_computers
+    # Last: ACEs name users, groups, OUs, GPOs and joined computer accounts.
+    - ad_acls
 
 - name: post-join
   hosts: windows

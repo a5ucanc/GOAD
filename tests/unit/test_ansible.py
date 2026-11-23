@@ -346,6 +346,48 @@ def test_computer_delegation_runs_after_join():
     # The join and content play is free: a DC may reach ad_content before a member has joined,
     # so computer-account delegation runs in the linear foreign members play that follows it.
     plays = {p['name']: p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text())}
-    assert 'ad_computers' in plays['foreign members']['roles']
+    assert plays['foreign members']['roles'] == ['foreign_members', 'ad_computers', 'ad_acls']
     accounts = (ANSIBLE / 'roles' / 'ad_content' / 'tasks' / 'accounts.yml').read_text()
     assert 'Computer delegation' not in accounts
+
+
+def test_preauth_task_skips_entries_that_keep_preauth():
+    task = next(t for t in _tasks_file('ad_content', 'accounts') if 'pre-authentication' in t['name'])
+    assert "rejectattr('value.preauth')" in task['loop']
+
+
+def _tasks_file(role: str, name: str) -> list:
+    return yaml.safe_load((ANSIBLE / 'roles' / role / 'tasks' / f'{name}.yml').read_text())
+
+
+def test_gpos_created_last_in_ad_content():
+    tasks = _tasks_file('ad_content', 'main')
+    assert tasks[-1]['ansible.builtin.include_tasks'] == 'gpos.yml'
+    gpos = _tasks_file('ad_content', 'gpos')
+    assert len(gpos) == 1 and "goad_domains[domain].gpos | default({})" in gpos[0]['loop']
+    script = gpos[0]['ansible.windows.win_powershell']['script']
+    assert 'New-GPO' in script and 'New-GPLink' in script and 'Set-GPPermission' not in script
+
+
+def test_ad_acls_tasks():
+    tasks = _tasks_file('ad_acls', 'main')
+    by_name = {t['name']: t for t in tasks}
+    aces = by_name['ACEs']
+    assert "lookup('ansible.builtin.file', 'ace.ps1')" in aces['ansible.windows.win_powershell']['script']
+    assert set(aces['ansible.windows.win_powershell']['parameters']) == {'Principal', 'Kind', 'Name', 'Right', 'Inherit'}
+    assert "goad_domains[domain].acls | default([])" in aces['loop']
+    assert "'template'" in aces['loop'] and "'gpo'" in aces['loop']
+    gpo = by_name['GPO permissions']
+    assert 'GpoEditDeleteModifySecurity' in gpo['ansible.windows.win_powershell']['script']
+    assert "selectattr('kind', 'equalto', 'gpo')" in gpo['loop']
+    sdprop = by_name['Run SDProp after an AdminSDHolder change']
+    assert 'runProtectAdminGroupsTask' in sdprop['ansible.windows.win_powershell']['script']
+    assert "'adminsdholder'" in sdprop['when']
+    ace = (ANSIBLE / 'roles' / 'ad_acls' / 'files' / 'ace.ps1').read_text()
+    for guid in ('bf9679c0-0de6-11d0-a285-00aa003049e2', 'f3a64788-5306-11d1-a9c5-0000f80367c1',
+                 '00299570-246d-11d0-a768-00aa006e0529'):
+        assert guid in ace
+    for text in ('CN=AdminSDHolder,CN=System,', 'CN=Certificate Templates,CN=Public Key Services,CN=Services,',
+                 'GenericExecute', 'ReadProperty'):
+        assert text in ace
+    assert 'RemoveAccessRule' not in ace

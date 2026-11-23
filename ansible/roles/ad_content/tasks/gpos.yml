@@ -1,0 +1,21 @@
+# GPOs from lab.yml gpos, created empty and linked to the domain root or an OU. Ported from main's
+# gpo-abuse scenario; edit rights come from acls (ad_acls role). Add only: nothing is removed.
+- name: GPOs
+  ansible.windows.win_powershell:
+    parameters:
+      Gpo: "{{ item.key }}"
+      Target: "{{ goad_domains[domain].dn if item.value.link == 'domain' else 'OU=' ~ item.value.link[3:] ~ ',' ~ goad_domains[domain].dn }}"
+    script: |
+      param([string]$Gpo, [string]$Target)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module GroupPolicy
+      $g = Get-GPO -Name $Gpo -ErrorAction SilentlyContinue
+      if (-not $g) { $g = New-GPO -Name $Gpo -Comment 'GOAD lab.yml gpo'; $Ansible.Changed = $true }
+      if (-not ((Get-GPInheritance -Target $Target).GpoLinks | Where-Object DisplayName -eq $Gpo)) {
+          New-GPLink -Name $Gpo -Target $Target | Out-Null
+          $Ansible.Changed = $true
+      }
+  loop: "{{ goad_domains[domain].gpos | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }} -> {{ item.value.link }}"

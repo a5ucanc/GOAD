@@ -89,3 +89,29 @@ def test_inventory_emits_user_extras_only_when_set():
     assert domains['essos.local']['computers'] == {
         'braavos': {'unconstrained': False, 'constrained': ['HTTP/meereen.essos.local'], 'protocol_transition': False}}
     assert 'computers' not in domains['sevenkingdoms.local'] and 'computers' not in domains['north.sevenkingdoms.local']
+
+
+def test_inventory_emits_acls_and_gpos_only_when_set():
+    import copy
+    from tests.unit.test_lab_definition import BASE
+    from goad.lab.definition import parse_lab
+    data = copy.deepcopy(BASE)
+    essos = data['domains']['essos.local']
+    essos['ous'] = ['Vale']
+    essos['users'] = {'attacker': {'firstname': 'A', 'surname': 'T'}}
+    data['domains']['sevenkingdoms.local']['users'] = {'tywin': {'firstname': 'T', 'surname': 'L'}}
+    essos['gpos'] = {'scn-gpo': {}, 'vale-gpo': {'link': 'ou:Vale'}}
+    essos['acls'] = [
+        {'principal': 'attacker', 'right': 'GenericAll', 'object': 'computer:srv03'},
+        {'principal': 'sevenkingdoms.local\\tywin', 'right': 'WriteDacl', 'object': 'ou:Vale', 'inherit': 'all'},
+        {'principal': 'Everyone', 'right': 'ReadAll', 'object': 'domain'},
+        {'principal': 'attacker', 'right': 'GenericWrite', 'object': 'gpo:scn-gpo'}]
+    domains = render_inventory(parse_lab(yaml.safe_dump(data), 'lab.yml'), '192.168.56')['all']['vars']['goad_domains']
+    assert domains['essos.local']['acls'] == [
+        {'principal': 'attacker', 'right': 'GenericAll', 'inherit': 'none', 'kind': 'computer', 'name': 'braavos$'},
+        {'principal': 'SEVENKINGDOMS\\tywin', 'right': 'WriteDacl', 'inherit': 'all', 'kind': 'ou', 'name': 'Vale'},
+        {'principal': 'Everyone', 'right': 'ReadAll', 'inherit': 'none', 'kind': 'domain', 'name': ''},
+        {'principal': 'attacker', 'right': 'GenericWrite', 'inherit': 'none', 'kind': 'gpo', 'name': 'scn-gpo'}]
+    assert domains['essos.local']['gpos'] == {'scn-gpo': {'link': 'domain'}, 'vale-gpo': {'link': 'ou:Vale'}}
+    for fqdn in ('sevenkingdoms.local', 'north.sevenkingdoms.local'):
+        assert 'acls' not in domains[fqdn] and 'gpos' not in domains[fqdn]

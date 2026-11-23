@@ -65,3 +65,7 @@
   loop: "{{ goad_domains[domain].groups | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
+
+# Last: GPOs link to OUs created above. Their edit rights are acls (ad_acls role).
+- name: GPOs
+  ansible.builtin.include_tasks: gpos.yml

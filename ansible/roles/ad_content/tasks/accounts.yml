@@ -33,7 +33,7 @@
           Set-ADAccountControl -Identity $u -DoesNotRequirePreAuth $true
           $Ansible.Changed = $true
       }
-  loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.preauth', 'defined') | list }}"
+  loop: "{{ goad_domains[domain].users | dict2items | selectattr('value.preauth', 'defined') | rejectattr('value.preauth') | list }}"
   loop_control:
     label: "{{ item.key }}"
 
