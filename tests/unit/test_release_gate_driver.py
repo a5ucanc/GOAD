@@ -64,3 +64,28 @@ def test_marker_left_after_reset_fails_the_gate_and_destroys_the_lab(fake_gate):
     assert 'Result: FAIL' in text
     assert calls.count(['lab', 'reset']) == 1 and calls[-1] == ['lab', 'destroy']
     assert load_state(settings) is None
+
+
+def test_reset_sample_includes_the_wait_until_every_host_answers(fake_gate):
+    # The spec limit is "reset under 5 minutes until every host answers": the health wait is timed too.
+    settings, calls, monkeypatch = fake_gate
+    clock = [0.0]
+    monkeypatch.setattr(gate.time, 'monotonic', lambda: clock[0])
+    fake_main = gate.main
+
+    def main(argv):
+        if argv[:2] == ['lab', 'reset']:
+            clock[0] += 100
+        return fake_main(argv)
+
+    def wait_healthy(s, r):
+        clock[0] += 200
+        return 200.0
+
+    monkeypatch.setattr(gate, 'main', main)
+    monkeypatch.setattr(gate, 'wait_healthy', wait_healthy)
+    with pytest.raises(AssertionError):
+        gate.test_release_gate()
+    text = report_text(settings)
+    assert '- reset 300 s ok reset 1/5' in text
+    assert 'Result: FAIL' in text

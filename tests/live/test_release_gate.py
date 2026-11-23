@@ -8,7 +8,7 @@ first call. The report (~/.goad/logs/release-gate-<stamp>.md) is rewritten after
 import subprocess
 import time
 from datetime import datetime, timezone
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import pytest
 
@@ -45,11 +45,14 @@ def test_release_gate():
         run.samples.append(sample)
         write_report(run, report)
 
-    def timed(kind: str, note: str, argv: List[str]) -> bool:
+    def timed(kind: str, note: str, argv: List[str], until: Optional[Callable[[], None]] = None) -> bool:
+        """Time main(argv), and until() after it when given: a limit like "until every host answers"."""
         start = time.monotonic()
         try:
             code = main(argv)
             failure = f'{note}: exit {code}'
+            if code == 0 and until is not None:
+                until()
         except Exception as e:  # main turns GoadError into an exit code; anything else is a failure too
             code, failure = 1, f'{note}: {type(e).__name__}: {e}'
         ok = code == 0
@@ -76,7 +79,6 @@ def test_release_gate():
 
     def reset_checks(marker: str) -> Callable[[], None]:
         def checks() -> None:
-            healthy()
             state = load_state(settings)
             assert not marker_exists(state.hosts['dc01'].ip, marker), f'{marker} still in AD after reset'
             assert working_lab_path(settings).read_text() == state.snapshot('base').lab_yml, \
@@ -110,7 +112,7 @@ def test_release_gate():
                     note, marker = f'reset {n}/{RESETS}', f'gate-marker-{n}'
                     if not check('reset', f'{note} setup', lambda: edit_before_reset(marker, n)):
                         return
-                    if not timed('reset', note, ['lab', 'reset']) or not check('reset', note, reset_checks(marker)):
+                    if not timed('reset', note, ['lab', 'reset'], until=healthy) or not check('reset', note, reset_checks(marker)):
                         return
             if main(['lab', 'destroy', '--yes']) != 0:
                 record(Sample('deploy', 0.0, False, f'destroy {i}/{DEPLOYS}: exit non-zero'))
