@@ -11,6 +11,7 @@ import pytest
 
 from goad.cli import main
 from goad.lab import scenario_ops
+from goad.lab.definition import parse_lab
 from goad.settings import load_settings
 from goad.state import load_state
 from tests.live.helpers import psrp, wait_logon
@@ -202,16 +203,27 @@ def _require_2forests_on_base(settings):
     return state
 
 
-def _reset_base(settings) -> None:
+def _logins(state) -> Dict[str, Tuple[str, str]]:
+    """host key -> (ip, domain admin login). Members' local Administrator password is managed by LAPS, so
+    every host is reached as the Administrator of its own domain."""
+    lab = parse_lab(state.snapshot('base').lab_yml, 'base lab.yml')
+    return {key: (host.ip, f'{lab.domains[lab.hosts[key].domain].netbios}\\Administrator')
+            for key, host in state.hosts.items()}
+
+
+def _wait_all(logins: Dict[str, Tuple[str, str]]) -> None:
+    for ip, user in logins.values():
+        wait_logon(ip, user)
+
+
+def _reset_base(logins: Dict[str, Tuple[str, str]]) -> None:
     assert main(['lab', 'reset', 'base']) == 0
-    state = load_state(settings)
-    for key, host in state.hosts.items():
-        wait_logon(host.ip, 'Administrator')
+    _wait_all(logins)
 
 
-def _read(ips: Dict[str, str], name: str) -> str:
+def _read(logins: Dict[str, Tuple[str, str]], name: str) -> str:
     host, script, _ = PROBES[name]
-    return psrp(ips[host], 'Administrator', script)
+    return psrp(*logins[host], script)
 
 
 def run_step(names: List[str]) -> None:
@@ -219,33 +231,31 @@ def run_step(names: List[str]) -> None:
     probe is back to the base value (read before enabling) and the others still match, reset to base."""
     settings = load_settings()
     state = _require_2forests_on_base(settings)
-    ips = {key: host.ip for key, host in state.hosts.items()}
+    logins = _logins(state)
     base_text = state.snapshot('base').lab_yml
     targets = {name: scenario_ops.add_entry(base_text, name, None)[1] for name in names}
     middle = names[len(names) // 2]
     try:
-        _reset_base(settings)
-        base = {name: _read(ips, name) for name in names}
+        _reset_base(logins)
+        base = {name: _read(logins, name) for name in names}
         assert base[middle] != PROBES[middle][2], f'{middle}: base value {base[middle]!r} already the enabled value'
         start = time.monotonic()
         for name in names:
             assert main(['scenario', 'enable', name]) == 0
         print(f'enable {len(names)} scenarios: {time.monotonic() - start:.0f} s')
-        for host in ips.values():
-            wait_logon(host, 'Administrator')
+        _wait_all(logins)
         for name in names:
-            assert _read(ips, name) == PROBES[name][2], name
+            assert _read(logins, name) == PROBES[name][2], name
         start = time.monotonic()
         assert main(['scenario', 'disable', middle, '--target', targets[middle], '--yes']) == 0
         print(f'disable {middle}: {time.monotonic() - start:.0f} s')
-        for host in ips.values():
-            wait_logon(host, 'Administrator')
-        assert _read(ips, middle) == base[middle], middle
+        _wait_all(logins)
+        assert _read(logins, middle) == base[middle], middle
         for name in names:
             if name != middle:
-                assert _read(ips, name) == PROBES[name][2], name
+                assert _read(logins, name) == PROBES[name][2], name
     finally:
-        _reset_base(settings)
+        _reset_base(logins)
 
 
 def test_setting_scenarios_live():
