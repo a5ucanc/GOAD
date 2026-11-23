@@ -127,8 +127,8 @@ deployed lab. Plays run in this order:
 | trust | DCs | `trust` | dc_dns records cleanup, trust |
 | join and content | DCs and members | `join`, `content`, `adcs` | join (members), ca_feature (starts the AD CS role install on CA hosts), ad_content (DCs) |
 | foreign members | DCs | `content` | foreign_members (cross-forest group members) |
-| post-join | all Windows hosts | `laps`, `local_groups`, `adcs` | laps_schema, laps_dc, local_groups, laps_host, adcs |
-| settings | all Windows hosts | `settings` | settings (the lab.yml `settings` catalogue) |
+| post-join | all Windows hosts | `laps`, `local_groups` | laps_schema, laps_dc, local_groups, laps_host |
+| settings | all Windows hosts | `settings`, `adcs` | adcs (CA hosts: waits for the AD CS role install, then the CA), settings (the lab.yml `settings` catalogue) |
 
 ```bash
 goad lab provision                       # every play
