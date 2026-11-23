@@ -1,0 +1,29 @@
+description: "Template without the security extension, plus GenericWrite on a user (ESC9)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        ESC9:
+          json: ESC9.json
+          enroll: ['Domain Users']
+    '{dc}':
+      settings:
+        dc.strong_cert_binding: 0
+  domains:
+    '{domain}':
+      users:
+        scn-esc9-attacker:
+          firstname: scn
+          surname: esc9-attacker
+          description: "Attacker: GenericWrite on the ESC9 victim"
+          password: "Aa1234567890!"
+        scn-esc9-victim:
+          firstname: scn
+          surname: esc9-victim
+          description: "Victim of esc9"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-esc9-attacker
+        right: GenericWrite
+        object: user:scn-esc9-victim

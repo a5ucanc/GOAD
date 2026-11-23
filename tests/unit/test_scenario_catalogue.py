@@ -14,6 +14,7 @@ NAMES = {
     'acl-genericall-group', 'acl-genericall-user', 'acl-genericwrite-user', 'acl-self-membership',
     'acl-writedacl-ou', 'acl-writedacl-user', 'acl-writeowner', 'acl-writeproperty', 'anonymous-rpc',
     'writespn', 'rbcd', 'foreign-group-acl', 'gpo-abuse',
+    'esc1', 'esc2', 'esc3', 'esc4', 'esc7', 'esc9', 'esc13', 'esc15',
 }
 
 # name -> (target kind, [(setting key, vulnerable value)]); values as effective_settings reports them
@@ -200,3 +201,52 @@ def test_foreign_group_acl():
 def test_gpo_abuse_defines_gpo():
     lab, _ = _enabled('gpo-abuse')
     assert lab.domains['sevenkingdoms.local'].gpos['scn-gpo-abuse'].link == 'domain'
+
+
+def test_adcs_templates_land_on_ca():
+    for name, templates in [('esc1', {'ESC1': 'ESC1.json'}), ('esc2', {'ESC2': 'ESC2.json'}),
+                            ('esc3', {'ESC3-CRA': 'ESC3-CRA.json', 'ESC3': 'ESC3.json'}),
+                            ('esc4', {'ESC4': 'ESC4.json'}), ('esc9', {'ESC9': 'ESC9.json'}),
+                            ('esc13', {'ESC13': 'ESC13.json'})]:
+        lab, target = _enabled(name)
+        got = lab.hosts[target].cert_templates
+        assert templates.items() <= {n: t.json for n, t in got.items()}.items(), name
+        assert all(got[n].enroll == ('Domain Users',) for n in templates), name
+
+
+def test_esc4_acl_on_template():
+    lab, target = _enabled('esc4')
+    assert ('scn-esc4-user', 'GenericAll', 'template:ESC4', 'none') in _acls(lab, lab.hosts[target].domain)
+
+
+def test_esc7_ca_acl():
+    lab, target = _enabled('esc7')
+    assert ('scn-esc7-user', 'ManageCA') in lab.hosts[target].ca_acl
+    assert 'scn-esc7-user' in lab.domains[lab.hosts[target].domain].users
+
+
+def test_esc9_acl_and_binding():
+    lab, target = _enabled('esc9')
+    domain = lab.hosts[target].domain
+    assert ('scn-esc9-attacker', 'GenericWrite', 'user:scn-esc9-victim', 'none') in _acls(lab, domain)
+    assert lab.effective_settings(lab.domains[domain].dc)['dc.strong_cert_binding'] == '0'
+
+
+def test_esc13_issuance_group():
+    lab, target = _enabled('esc13')
+    domain = lab.hosts[target].domain
+    assert lab.hosts[target].cert_templates['ESC13'].issuance_group == 'scn-esc13-group'
+    assert lab.domains[domain].groups['scn-esc13-group'].scope == 'universal'
+
+
+def test_esc15_builtin_webserver():
+    lab, target = _enabled('esc15')
+    t = lab.hosts[target].cert_templates['WebServer']
+    assert t.builtin and t.json is None and t.enroll == ('Domain Users',)
+
+
+def test_substitute_merges_colliding_keys():
+    from goad.lab.scenarios import substitute
+    out = substitute({'hosts': {'{target}': {'a': {'x': 1}}, '{dc}': {'a': {'y': 2}, 'b': 3}}},
+                     {'{target}': 'dc01', '{dc}': 'dc01'})
+    assert out == {'hosts': {'dc01': {'a': {'x': 1, 'y': 2}, 'b': 3}}}

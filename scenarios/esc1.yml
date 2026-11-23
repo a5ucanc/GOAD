@@ -1,0 +1,9 @@
+description: "Certificate template where the enrollee supplies the subject, enrollable by Domain Users (ESC1)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        ESC1:
+          json: ESC1.json
+          enroll: ['Domain Users']

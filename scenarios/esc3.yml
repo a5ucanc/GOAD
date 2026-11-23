@@ -1,0 +1,12 @@
+description: "Enrollment agent template plus a template that accepts enrollment agents (ESC3)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        ESC3-CRA:
+          json: ESC3-CRA.json
+          enroll: ['Domain Users']
+        ESC3:
+          json: ESC3.json
+          enroll: ['Domain Users']

@@ -1,0 +1,16 @@
+description: "Low-privileged user with ManageCA on the CA (ESC7)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      ca_acl:
+      - principal: scn-esc7-user
+        right: ManageCA
+  domains:
+    '{domain}':
+      users:
+        scn-esc7-user:
+          firstname: scn
+          surname: esc7-user
+          description: "Low-privileged user with ManageCA on the CA"
+          password: "Aa1234567890!"

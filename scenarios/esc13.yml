@@ -1,0 +1,17 @@
+description: "Template with an issuance policy linked to a privileged group (ESC13)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        ESC13:
+          json: ESC13.json
+          enroll: ['Domain Users']
+          issuance_policy:
+            group: scn-esc13-group
+  domains:
+    '{domain}':
+      groups:
+        scn-esc13-group:
+          scope: universal
+          groups: [Administrators]

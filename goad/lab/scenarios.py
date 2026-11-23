@@ -93,13 +93,29 @@ def placeholders(raw: Dict[str, Any], target: str) -> Dict[str, str]:
     return values
 
 
+def _merge_values(a: Any, b: Any) -> Any:
+    if isinstance(a, dict) and isinstance(b, dict):
+        out = dict(a)
+        for k, v in b.items():
+            out[k] = _merge_values(out[k], v) if k in out else v
+        return out
+    if isinstance(a, list) and isinstance(b, list):
+        return a + [v for v in b if v not in a]
+    return b
+
+
 def substitute(value: Any, values: Dict[str, str]) -> Any:
     if isinstance(value, str):
         for key, repl in values.items():
             value = value.replace(key, repl)
         return value
     if isinstance(value, dict):
-        return {substitute(k, values): substitute(v, values) for k, v in value.items()}
+        out: Dict[Any, Any] = {}
+        for k, v in value.items():
+            k, v = substitute(k, values), substitute(v, values)
+            # two keys can substitute to one ({target} and {dc} on a CA that is the DC): merge, never overwrite
+            out[k] = _merge_values(out[k], v) if k in out else v
+        return out
     if isinstance(value, list):
         return [substitute(v, values) for v in value]
     return copy.deepcopy(value)

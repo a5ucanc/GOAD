@@ -74,6 +74,28 @@ GPO_PERMISSION = ("Import-Module GroupPolicy; $p = Get-GPPermission -Name 'scn-g
                   "'scn-gpo-attacker' -TargetType User -ErrorAction SilentlyContinue; "
                   "if ($null -eq $p) { 'absent' } else { $p.Permission }")
 
+ENROLL_GUID = '0e10c968-78fb-11d2-90d4-00c04f79dc55'
+
+
+def _templates(*names: str) -> str:
+    """True when every template is published on the CA (certutil lists 'name: display name' lines)."""
+    checks = ' -and '.join(f"($t -match '(?m)^{n}:')" for n in names)
+    return f"$t = certutil -CATemplates | Out-String; [bool]({checks})"
+
+
+CA_KEY = "'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\CertSvc\\Configuration'"
+ESC7_PROBE = (f"$c = {CA_KEY}; $k = Join-Path $c (Get-ItemProperty -Path $c).Active; "
+              "try { $sd = [Security.AccessControl.RawSecurityDescriptor]::new([byte[]](Get-ItemProperty -Path $k).Security, 0); "
+              "$sid = (New-Object Security.Principal.NTAccount 'SEVENKINGDOMS\\scn-esc7-user').Translate("
+              "[Security.Principal.SecurityIdentifier]); "
+              "[bool]@($sd.DiscretionaryAcl | Where-Object { $_.AceQualifier -eq 'AccessAllowed' -and "
+              "$_.SecurityIdentifier -eq $sid -and ($_.AccessMask -band 1) -eq 1 }).Count } catch { $false }")
+ESC13_PROBE = ("Import-Module ActiveDirectory; $o = Get-ADObject -SearchBase "
+               "\"CN=OID,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\" "
+               "-LDAPFilter '(displayName=IssuancePolicyESC13)' -Properties 'msDS-OIDToGroupLink'; "
+               "[bool]($o.'msDS-OIDToGroupLink' -like 'CN=scn-esc13-group,*')")
+ESC15_DN = "\"CN=WebServer,CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\""
+
 
 PROBES: Dict[str, Tuple[str, str, str]] = {
     'credssp': ('srv02', '(Get-Item WSMan:\\localhost\\Service\\Auth\\CredSSP).Value', 'true'),
@@ -135,6 +157,14 @@ PROBES: Dict[str, Tuple[str, str, str]] = {
     'rbcd': ('dc02', _ace('*\\scn-rbcd-attacker', _sam('castelblack$'), 'GenericWrite'), 'True'),
     'foreign-group-acl': ('dc01', _ace('*\\scn-foreign-group', _sam('kingslanding$'), 'GenericAll'), 'True'),
     'gpo-abuse': ('dc01', GPO_PERMISSION, 'GpoEditDeleteModifySecurity'),
+    'esc1': ('dc01', _templates('ESC1'), 'True'),
+    'esc2': ('dc01', _templates('ESC2'), 'True'),
+    'esc3': ('dc01', _templates('ESC3-CRA', 'ESC3'), 'True'),
+    'esc4': ('dc01', _templates('ESC4'), 'True'),
+    'esc7': ('dc01', ESC7_PROBE, 'True'),
+    'esc9': ('dc01', _templates('ESC9'), 'True'),
+    'esc13': ('dc01', ESC13_PROBE, 'True'),
+    'esc15': ('dc01', _ace('*\\Domain Users', ESC15_DN, 'ExtendedRight', ENROLL_GUID), 'True'),
 }
 
 SETTING_SCENARIOS = [
@@ -260,3 +290,10 @@ ACL_SCENARIOS = [
 
 def test_acl_scenarios_live():
     run_step(ACL_SCENARIOS)
+
+
+ADCS_SCENARIOS = ['esc1', 'esc2', 'esc3', 'esc4', 'esc7', 'esc9', 'esc13', 'esc15']
+
+
+def test_adcs_scenarios_live():
+    run_step(ADCS_SCENARIOS)

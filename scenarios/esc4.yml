@@ -1,0 +1,21 @@
+description: "Certificate template writable by a low-privileged user (ESC4)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        ESC4:
+          json: ESC4.json
+          enroll: ['Domain Users']
+  domains:
+    '{domain}':
+      users:
+        scn-esc4-user:
+          firstname: scn
+          surname: esc4-user
+          description: "Low-privileged user with GenericAll on template ESC4"
+          password: "Aa1234567890!"
+      acls:
+      - principal: scn-esc4-user
+        right: GenericAll
+        object: template:ESC4

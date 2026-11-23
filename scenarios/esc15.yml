@@ -1,0 +1,9 @@
+description: "Domain Users can enroll in the schema v1 Web Server template (ESC15)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        WebServer:
+          builtin: true
+          enroll: ['Domain Users']

@@ -1,0 +1,9 @@
+description: "Certificate template with the Any Purpose EKU, enrollable by Domain Users (ESC2)"
+target: ca
+fragment:
+  hosts:
+    '{target}':
+      cert_templates:
+        ESC2:
+          json: ESC2.json
+          enroll: ['Domain Users']
