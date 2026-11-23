@@ -127,9 +127,9 @@ goad scenario enable kerberoast                     # --target dc01 to pick a ho
 goad scenario disable kerberoast --target dc01      # --target needed if enabled on several hosts; --yes skips the prompt
 ```
 
-- The list of enabled scenarios lives in the `scenarios:` key of `~/.goad/lab.yml`, as `name@target` entries.
+- The list of enabled scenarios lives in the `scenarios:` key of `~/.goad/lab.yml`, as mappings, e.g. `scenarios: [{name: kerberoast, target: dc01}]`. `goad snapshot list` shows them as `name@target`.
 - `enable` appends the entry to the working `lab.yml` and provisions with tags `content,local_groups,settings`.
-  It takes no snapshot. Run `goad snapshot take <name>` first if you want a fixed point to return to.
+  It takes no snapshot. Run `goad snapshot take [label]` first if you want a fixed point to return to.
   If provisioning fails, the entry stays; run `goad lab provision` again or disable the scenario.
 - `disable` removes the entry, resets the lab to the newest snapshot whose content is contained in the new
   `lab.yml`, then replays the remaining scenarios. It refuses, before touching any VM, if you deleted lab
