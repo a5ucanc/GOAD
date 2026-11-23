@@ -17,7 +17,8 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 | Host checks, VM templates (`goad check`, `goad template ...`) | available |
 | Labs `1domain`, `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | available |
 | Release gate (2domains) | accepted 2026-11-23 with one deploy 40 s over the limit, see docs/release-gate/ |
-| Scenarios and extensions | later, ported one at a time |
+| Scenarios (52, one YAML file each in `scenarios/`) | available |
+| Extensions | later, ported one at a time |
 
 ## Host requirements
 
@@ -114,6 +115,29 @@ goad snapshot take before-change
 goad lab reset before-change     # prints: lab reset to before-change in 94s
 goad lab destroy --yes
 ```
+
+## Scenarios
+
+A scenario is one vulnerability or misconfiguration (kerberoast, ESC8, rbcd, ...) described by one YAML
+file in `scenarios/`. You turn them on and off on a running lab.
+
+```bash
+goad scenario list                                  # name, kind, description, valid targets, where enabled
+goad scenario enable kerberoast                     # --target dc01 to pick a host; default: first valid target
+goad scenario disable kerberoast --target dc01      # --target needed if enabled on several hosts; --yes skips the prompt
+```
+
+- The list of enabled scenarios lives in the `scenarios:` key of `~/.goad/lab.yml`, as `name@target` entries.
+- `enable` appends the entry to the working `lab.yml` and provisions with tags `content,local_groups,settings`.
+  It takes no snapshot. Run `goad snapshot take <name>` first if you want a fixed point to return to.
+  If provisioning fails, the entry stays; run `goad lab provision` again or disable the scenario.
+- `disable` removes the entry, resets the lab to the newest snapshot whose content is contained in the new
+  `lab.yml`, then replays the remaining scenarios. It refuses, before touching any VM, if you deleted lab
+  content from `lab.yml` since `base`.
+- A snapshot's `lab.yml` is expanded with the current scenario files, so editing a scenario file can change
+  which snapshot `disable` picks.
+- `goad snapshot list` has a Scenarios column. `goad creds` also lists scenario users.
+- Five scenarios wait for extensions and are not in `scenarios/` yet: `mssql-impersonate-login`, `mssql-impersonate-user`, `mssql-linked`, `mssql-sysadmin`, `iis-upload`.
 
 ## Provisioning
 
