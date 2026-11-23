@@ -11,12 +11,16 @@
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       $name = 'goad-ca-feature'
-      # Installed already (CertSvc exists only with the role), or an install is under way.
-      if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) { return }
-      if (Get-Service CertSvc -ErrorAction SilentlyContinue) { return }
+      # An install is under way, or finished with a result the adcs role has not read yet.
+      $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
       $dir = Join-Path $env:ProgramData 'goad'
-      New-Item -ItemType Directory -Force -Path $dir | Out-Null
       $result = Join-Path $dir 'ca-feature.json'
+      if ($task -and ($task.State -eq 'Running' -or (Test-Path $result))) { return }
+      # Installed already: CertSvc exists only with the role.
+      if (Get-Service CertSvc -ErrorAction SilentlyContinue) { return }
+      # Registered, not running, no result: the VM restarted during the install. Start it again.
+      if ($task) { Unregister-ScheduledTask -TaskName $name -Confirm:$false }
+      New-Item -ItemType Directory -Force -Path $dir | Out-Null
       Remove-Item -Force -ErrorAction SilentlyContinue -Path $result
       $install = @"
       try {

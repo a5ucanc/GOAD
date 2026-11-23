@@ -279,9 +279,32 @@ def test_adcs_waits_for_the_ca_feature_first():
     wait = tasks[0]
     assert wait['name'] == 'Wait for the certification authority role install'
     assert 'ca-feature.json' in wait['ansible.windows.win_powershell']['script']
-    assert wait['until'] == 'ca_wait is succeeded' and wait['retries'] * wait['delay'] >= 1200
+    assert wait['retries'] * wait['delay'] >= 1200
     assert wait['changed_when'] is False
-    assert tasks[1]['when'] == 'ca_wait.result.restart'
+    assert tasks[2]['when'] == 'ca_wait.result.restart'
+
+
+def test_adcs_wait_retries_only_while_the_install_runs():
+    # A failed or missing install is terminal: retrying it hid the install error behind 20 minutes of
+    # "no install is running". Transport failures (result missing) are still retried.
+    tasks = _tasks('adcs')
+    wait, report = tasks[0], tasks[1]
+    script = wait['ansible.windows.win_powershell']['script']
+    assert wait['until'] == "ca_wait is succeeded and ca_wait.result.state != 'running'"
+    assert 'throw' not in script
+    for state in ('running', 'done', 'failed', 'missing'):
+        assert f"state = '{state}'" in script, state
+    assert report['ansible.builtin.fail']['msg'] == '{{ ca_wait.result.error }}'
+    assert report['when'] == "ca_wait.result.state in ['failed', 'missing']"
+
+
+def test_ca_tasks_treat_only_a_running_task_as_an_install_under_way():
+    # A VM that restarts during the install leaves the task registered, not running, with no result.
+    # Counting that as "under way" blocked the CA for good: both scripts unregister such a task.
+    for script in (_tasks('ca_feature')[0]['ansible.windows.win_powershell']['script'],
+                   _tasks('adcs')[0]['ansible.windows.win_powershell']['script']):
+        assert ".State -eq 'Running'" in script
+        assert 'Unregister-ScheduledTask' in script
 
 
 SETTINGS_TASKS = ANSIBLE / 'roles' / 'settings' / 'tasks'

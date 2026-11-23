@@ -1,7 +1,8 @@
 # The ADCS-Cert-Authority feature install was started by the ca_feature role (join and content play) as the
 # SYSTEM scheduled task goad-ca-feature, which writes %ProgramData%\goad\ca-feature.json when it ends.
-# Polling here is a readiness check, not a fixed wait. A failed install removes the task and its
-# result, so the next run starts it again.
+# Polling here is a readiness check, not a fixed wait. It retries only while the install runs (and on
+# transport failures); a failed, stopped or missing install ends the wait at once. A failed or stopped
+# install leaves no task behind, so the next run of ca_feature starts it again.
 - name: Wait for the certification authority role install
   ansible.windows.win_powershell:
     script: |
@@ -9,23 +10,39 @@
       $Ansible.Changed = $false
       $name = 'goad-ca-feature'
       $result = Join-Path $env:ProgramData 'goad\ca-feature.json'
-      $Ansible.Result = @{ restart = $false }
+      $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
       if (Test-Path $result) {
           $r = Get-Content -Raw -Path $result | ConvertFrom-Json
           Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
           Remove-Item -Force -Path $result
-          if (-not $r.Success) { throw "AD CS role install failed: $($r.Error)" }
-          $Ansible.Result = @{ restart = $r.RestartNeeded -ne 'No' }
-      } elseif (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
-          throw 'the AD CS role install is still running'
-      } elseif (-not (Get-Service CertSvc -ErrorAction SilentlyContinue)) {
-          throw 'the AD CS role is not installed and no install is running: run goad lab provision --tags adcs'
+          if ($r.Success) {
+              $Ansible.Result = @{ state = 'done'; restart = $r.RestartNeeded -ne 'No'; error = '' }
+          } else {
+              $Ansible.Result = @{ state = 'failed'; restart = $false; error = "AD CS role install failed: $($r.Error)" }
+          }
+      } elseif ($task -and $task.State -eq 'Running') {
+          $Ansible.Result = @{ state = 'running'; restart = $false; error = '' }
+      } elseif ($task) {
+          # Registered, not running, no result: the VM restarted during the install.
+          Unregister-ScheduledTask -TaskName $name -Confirm:$false
+          $Ansible.Result = @{ state = 'failed'; restart = $false
+              error = 'the AD CS role install stopped before it finished: run goad lab provision --tags adcs' }
+      } elseif (Get-Service CertSvc -ErrorAction SilentlyContinue) {
+          $Ansible.Result = @{ state = 'done'; restart = $false; error = '' }
+      } else {
+          $Ansible.Result = @{ state = 'missing'; restart = $false
+              error = 'the AD CS role is not installed and no install is running: run goad lab provision --tags adcs' }
       }
   register: ca_wait
-  until: ca_wait is succeeded
+  until: ca_wait is succeeded and ca_wait.result.state != 'running'
   retries: 120
   delay: 10
   changed_when: false
+
+- name: Report a failed certification authority role install
+  ansible.builtin.fail:
+    msg: "{{ ca_wait.result.error }}"
+  when: ca_wait.result.state in ['failed', 'missing']
 
 - name: Reboot after installing the certification authority role
   ansible.windows.win_reboot:
