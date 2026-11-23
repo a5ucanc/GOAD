@@ -1,0 +1,6 @@
+description: "Member server computer account with Kerberos-only constrained delegation to HTTP on the DC"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      delegation: {constrained: ["HTTP/{dc_fqdn}", "HTTP/{dc_hostname}"]}

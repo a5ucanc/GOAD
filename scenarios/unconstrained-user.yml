@@ -1,0 +1,13 @@
+description: "Service account trusted for unconstrained delegation"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-unconst-svc:
+          firstname: scn
+          surname: unconst-svc
+          description: "Unconstrained delegation service account"
+          password: "Aa1234567890!"
+          spns: ["HTTP/scn-unconst.{domain}"]
+          delegation: {unconstrained: true}

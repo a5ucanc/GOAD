@@ -1,0 +1,12 @@
+description: "Service account with an SPN, roastable"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        svc_kerb:
+          firstname: svc
+          surname: kerb
+          description: "Roastable service account"
+          password: "Aa1234567890!"
+          spns: ["MSSQLSvc/svc-kerb.{domain}:1433"]

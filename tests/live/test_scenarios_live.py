@@ -32,6 +32,19 @@ NTDS = 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters'
 SID_TRUST = ('((Get-ADObject -Identity "CN=essos.local,CN=System,$((Get-ADDomain).DistinguishedName)" '
              '-Properties trustAttributes).trustAttributes -band 0x40) -ne 0')
 
+
+def _ad_user(name: str, expr: str) -> str:
+    return (f"$u = Get-ADUser -LDAPFilter '(sAMAccountName={name})' -Properties servicePrincipalName, "
+            "DoesNotRequirePreAuth, TrustedForDelegation, TrustedToAuthForDelegation, 'msDS-AllowedToDelegateTo'; "
+            f"if ($null -eq $u) {{ 'absent' }} else {{ {expr} }}")
+
+
+def _own_computer(expr: str) -> str:
+    # ADSI works on a domain member without RSAT; $c is the computer's own AD entry
+    return ("$c = ([adsisearcher]\"(&(objectClass=computer)(sAMAccountName=$env:COMPUTERNAME$))\").FindOne().Properties; "
+            f"{expr}")
+
+
 PROBES: Dict[str, Tuple[str, str, str]] = {
     'credssp': ('srv02', '(Get-Item WSMan:\\localhost\\Service\\Auth\\CredSSP).Value', 'true'),
     'defender-off': ('srv02', '(Get-MpPreference).DisableRealtimeMonitoring', 'True'),
@@ -58,6 +71,17 @@ PROBES: Dict[str, Tuple[str, str, str]] = {
     'smb-signing-off': ('srv02', _reg('HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters',
                                       'RequireSecuritySignature'), '0'),
     'smbv1': ('srv02', '(Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol).State', 'Enabled'),
+    'kerberoast': ('dc01', _ad_user('svc_kerb', "$u.servicePrincipalName -join ','"),
+                   'MSSQLSvc/svc-kerb.sevenkingdoms.local:1433'),
+    'asrep-roast': ('dc01', _ad_user('asrep_user', '$u.DoesNotRequirePreAuth'), 'True'),
+    'unconstrained-user': ('dc01', _ad_user('scn-unconst-svc', '$u.TrustedForDelegation'), 'True'),
+    'constrained-deleg-any': ('dc01', _ad_user('scn-cdany-svc',
+                                               "($u.TrustedToAuthForDelegation, ($u.'msDS-AllowedToDelegateTo' | Sort-Object) -join ',') -join ';'"),
+                              'True;CIFS/kingslanding,CIFS/kingslanding.sevenkingdoms.local'),
+    'unconstrained-computer': ('srv02', _own_computer("[bool]($c.useraccountcontrol[0] -band 0x80000)"), 'True'),
+    'constrained-deleg-kerb': ('srv02', _own_computer("@($c['msds-allowedtodelegateto'] | Sort-Object) -join ','"),
+                               'HTTP/winterfell,HTTP/winterfell.north.sevenkingdoms.local'),
+    'local-admin': ('srv02', "[bool](Get-LocalGroupMember Administrators | Where-Object Name -like '*\\scn-local-admin')", 'True'),
     'webdav': ('srv02', '[bool](Get-Service WebClient -ErrorAction SilentlyContinue)', 'True'),
 }
 
@@ -146,3 +170,18 @@ def run_step(names: List[str]) -> None:
 
 def test_setting_scenarios_live():
     run_step(SETTING_SCENARIOS)
+
+
+ACCOUNT_SCENARIOS = [
+    'kerberoast',
+    'asrep-roast',
+    'unconstrained-user',
+    'constrained-deleg-any',
+    'unconstrained-computer',
+    'constrained-deleg-kerb',
+    'local-admin',
+]
+
+
+def test_account_scenarios_live():
+    run_step(ACCOUNT_SCENARIOS)

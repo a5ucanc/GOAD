@@ -1,0 +1,13 @@
+description: "Service account with constrained delegation and protocol transition to the DC (CIFS)"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-cdany-svc:
+          firstname: scn
+          surname: cdany-svc
+          description: "Constrained delegation with protocol transition"
+          password: "Aa1234567890!"
+          spns: ["HTTP/scn-cdany.{domain}"]
+          delegation: {constrained: ["CIFS/{dc_fqdn}", "CIFS/{dc_hostname}"], protocol_transition: true}

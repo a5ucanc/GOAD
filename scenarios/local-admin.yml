@@ -1,0 +1,15 @@
+description: "Ordinary domain user that is local administrator of a member server"
+target: server
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-local-admin:
+          firstname: scn
+          surname: local-admin
+          description: "Local administrator of a member server"
+          password: "Aa1234567890!"
+  hosts:
+    '{target}':
+      local_groups:
+        Administrators: ['{netbios}\scn-local-admin']

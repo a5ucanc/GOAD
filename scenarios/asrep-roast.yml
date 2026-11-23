@@ -1,0 +1,12 @@
+description: "User without Kerberos pre-authentication"
+target: domain
+fragment:
+  domains:
+    '{domain}':
+      users:
+        asrep_user:
+          firstname: asrep
+          surname: user
+          description: "User without pre-authentication"
+          password: "Aa1234567890!"
+          preauth: false

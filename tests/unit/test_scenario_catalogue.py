@@ -8,6 +8,8 @@ NAMES = {
     'smb-signing-off', 'llmnr', 'mdns', 'smbv1', 'webdav', 'credssp', 'defender-off', 'firewall-off',
     'rc4', 'maq', 'printerbug', 'ntlm-downgrade', 'ldap-signing-off', 'ldap-cbt-off', 'sid-history',
     'esc6', 'esc8', 'esc10-case1', 'esc10-case2', 'esc11',
+    'kerberoast', 'asrep-roast', 'unconstrained-user', 'constrained-deleg-any', 'unconstrained-computer',
+    'constrained-deleg-kerb', 'local-admin',
 }
 
 # name -> (target kind, [(setting key, vulnerable value)]); values as effective_settings reports them

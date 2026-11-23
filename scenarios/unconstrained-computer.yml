@@ -1,0 +1,6 @@
+description: "Member server trusted for unconstrained delegation"
+target: server
+fragment:
+  hosts:
+    '{target}':
+      delegation: {unconstrained: true}
