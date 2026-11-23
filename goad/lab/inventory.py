@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from goad.lab.definition import WELL_KNOWN_PRINCIPALS, AclDef, DelegationDef, LabDef, UserDef
+from goad.lab.definition import WELL_KNOWN_PRINCIPALS, AclDef, DelegationDef, HostDef, LabDef, UserDef
 from goad.settings import Settings
 from goad.state import inventory_path
 
@@ -27,6 +27,27 @@ def _user(u: UserDef, path: str) -> Dict[str, Any]:
         e['preauth'] = False
     if u.delegation is not None:
         e['delegation'] = _delegation(u.delegation)
+    return e
+
+
+def _qualified(lab: LabDef, fqdn: str, principal: str) -> str:
+    """<NETBIOS>\\<name> for a lab principal (bare names belong to fqdn); a well-known name as is."""
+    if principal in WELL_KNOWN_PRINCIPALS:
+        return principal
+    dom, name = lab.split_member(fqdn, principal)
+    return f'{lab.domains[dom].netbios}\\{name}'
+
+
+def _adcs(lab: LabDef, h: HostDef) -> Dict[str, Any]:
+    """cert_templates and ca_acl of a CA host, each only when set, so older inventories stay unchanged."""
+    e: Dict[str, Any] = {}
+    if h.cert_templates:
+        e['cert_templates'] = {
+            name: {'json': t.json, 'builtin': t.builtin, 'enroll': [_qualified(lab, h.domain, p) for p in t.enroll],
+                   'issuance_group': t.issuance_group}
+            for name, t in h.cert_templates.items()}
+    if h.ca_acl:
+        e['ca_acl'] = [{'principal': _qualified(lab, h.domain, p), 'right': r} for p, r in h.ca_acl]
     return e
 
 
@@ -84,6 +105,7 @@ def render_inventory(lab: LabDef, ip_range: str) -> Dict[str, Any]:
                              'netbios': lab.domains[h.domain].netbios if h.domain else None,
                              'goad_settings': lab.effective_settings(name), 'laps': h.laps, 'ca': h.ca,
                              'local_groups': {g: list(m) for g, m in h.local_groups.items()}}
+        e.update(_adcs(lab, h))
         if h.role == 'dc':
             domain = lab.domains[h.domain]
             own = lab.ip(name, ip_range)

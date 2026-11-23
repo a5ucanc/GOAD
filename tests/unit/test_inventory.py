@@ -115,3 +115,34 @@ def test_inventory_emits_acls_and_gpos_only_when_set():
     assert domains['essos.local']['gpos'] == {'scn-gpo': {'link': 'domain'}, 'vale-gpo': {'link': 'ou:Vale'}}
     for fqdn in ('sevenkingdoms.local', 'north.sevenkingdoms.local'):
         assert 'acls' not in domains[fqdn] and 'gpos' not in domains[fqdn]
+
+
+def test_inventory_emits_adcs_keys_only_when_set():
+    import copy
+    from tests.unit.test_lab_definition import BASE
+    from goad.lab.definition import parse_lab
+    data = copy.deepcopy(BASE)
+    essos = data['domains']['essos.local']
+    essos['users'] = {'attacker': {'firstname': 'A', 'surname': 'T'}}
+    essos['groups']['scn-esc13-group'] = {'scope': 'universal'}
+    essos['acls'] = [{'principal': 'attacker', 'right': 'GenericAll', 'object': 'template:ESC4'}]
+    data['hosts']['srv03']['cert_templates'] = {
+        'ESC4': {'json': 'ESC4.json'},
+        'ESC13': {'json': 'ESC13.json', 'enroll': ['attacker'], 'issuance_policy': {'group': 'scn-esc13-group'}},
+        'WebServer': {'builtin': True, 'enroll': ['Domain Users', 'sevenkingdoms.local\\Domain Users', 'Everyone']}}
+    data['hosts']['srv03']['ca_acl'] = [{'principal': 'attacker', 'right': 'ManageCA'},
+                                        {'principal': 'sevenkingdoms.local\\Domain Admins', 'right': 'ManageCertificates'}]
+    inv = render_inventory(parse_lab(yaml.safe_dump(data), 'lab.yml'), '192.168.56')
+    srv03 = inv['all']['children']['member']['hosts']['srv03']
+    assert srv03['cert_templates'] == {
+        'ESC4': {'json': 'ESC4.json', 'builtin': False, 'enroll': ['ESSOS\\Domain Users'], 'issuance_group': None},
+        'ESC13': {'json': 'ESC13.json', 'builtin': False, 'enroll': ['ESSOS\\attacker'], 'issuance_group': 'scn-esc13-group'},
+        'WebServer': {'json': None, 'builtin': True,
+                      'enroll': ['ESSOS\\Domain Users', 'SEVENKINGDOMS\\Domain Users', 'Everyone'], 'issuance_group': None}}
+    assert srv03['ca_acl'] == [{'principal': 'ESSOS\\attacker', 'right': 'ManageCA'},
+                               {'principal': 'SEVENKINGDOMS\\Domain Admins', 'right': 'ManageCertificates'}]
+    assert inv['all']['vars']['goad_domains']['essos.local']['acls'] == [
+        {'principal': 'attacker', 'right': 'GenericAll', 'inherit': 'none', 'kind': 'template', 'name': 'ESC4'}]
+    dc01 = inv['all']['children']['dc']['hosts']['dc01']
+    assert 'cert_templates' not in dc01 and 'ca_acl' not in dc01
+    assert 'cert_templates' not in inv['all']['children']['dc']['hosts']['dc03']

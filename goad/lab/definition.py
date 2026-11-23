@@ -22,7 +22,7 @@ _TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios'}
 _DOMAIN_KEYS = {'netbios', 'dc', 'parent', 'trust', 'ous', 'groups', 'users', 'acls', 'gpos'}
 _DOMAIN_REQUIRED = {'netbios', 'dc'}
 _HOST_KEYS = {'hostname', 'os', 'role', 'domain', 'octet', 'cpus', 'memory', 'laps', 'ca', 'local_groups', 'settings',
-              'delegation'}
+              'delegation', 'cert_templates', 'ca_acl'}
 _HOST_REQUIRED = {'hostname', 'os', 'role', 'octet', 'cpus', 'memory'}
 _GROUP_KEYS = {'scope', 'ou', 'managed_by', 'members', 'groups'}
 _USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'sensitive',
@@ -32,6 +32,11 @@ _DELEGATION_KEYS = {'unconstrained', 'constrained', 'protocol_transition'}
 _ACL_KEYS = {'principal', 'right', 'object', 'inherit'}
 _ACL_REQUIRED = {'principal', 'right', 'object'}
 _GPO_KEYS = {'link'}
+_CERT_TEMPLATE_KEYS = {'json', 'builtin', 'enroll', 'issuance_policy'}
+_CA_ACL_KEYS = {'principal', 'right'}
+CA_RIGHTS = ('ManageCA', 'ManageCertificates')
+# Template JSONs (Export-ADCSTemplate format) a cert_templates entry may name.
+ADCS_FILES = REPO / 'ansible' / 'roles' / 'adcs' / 'files'
 ACL_RIGHTS = ('GenericAll', 'GenericWrite', 'WriteDacl', 'WriteOwner', 'WriteProperty', 'ForceChangePassword',
               'AddMember', 'SelfMembership', 'WriteSPN', 'ReadAll')
 # Object kinds that name an object (<kind>:<name>) and those that stand alone.
@@ -63,6 +68,15 @@ class DelegationDef:
 
 
 @dataclass(frozen=True)
+class CertTemplateDef:
+    name: str
+    json: Optional[str] = None
+    builtin: bool = False
+    enroll: Tuple[str, ...] = ('Domain Users',)
+    issuance_group: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class HostDef:
     name: str
     hostname: str
@@ -77,6 +91,8 @@ class HostDef:
     local_groups: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
     settings: Dict[str, str] = field(default_factory=dict)
     delegation: Optional[DelegationDef] = None
+    cert_templates: Dict[str, CertTemplateDef] = field(default_factory=dict)
+    ca_acl: Tuple[Tuple[str, str], ...] = ()
 
     @property
     def family(self) -> str:
@@ -361,6 +377,48 @@ def _parse_acls(d: Dict[str, Any], source: str, what: str) -> Tuple[AclDef, ...]
     return tuple(acls)
 
 
+def _parse_cert_templates(value: Any, source: str, what: str) -> Dict[str, CertTemplateDef]:
+    """Shape only; the enroll principals and issuance group are checked in _validate_adcs."""
+    templates: Dict[str, CertTemplateDef] = {}
+    for tname, t in _mapping(value, source, f'cert_templates of {what}').items():
+        twhat = f'template {tname} in {what}'
+        # The name is the template's cn, which ace.ps1 and New-ADCSTemplate (cn = display name without spaces) use.
+        if not isinstance(tname, str) or not tname or ' ' in tname:
+            raise GoadError(f'{source}: template {tname!r} in {what}: name must be a non-empty cn without spaces')
+        t = _mapping(t, source, twhat)
+        _check_keys(t, _CERT_TEMPLATE_KEYS, set(), source, twhat)
+        json = _opt_str(t, 'json', source, twhat)
+        builtin = _bool(t['builtin'], source, twhat, 'builtin') if 'builtin' in t else False
+        if (json is None) == (not builtin):
+            raise GoadError(f'{source}: {twhat} needs exactly one of json and builtin')
+        if json is not None and (Path(json).name != json or not (ADCS_FILES / json).is_file()):
+            raise GoadError(f'{source}: json {json!r} in {twhat} is not a file in ansible/roles/adcs/files')
+        enroll = _str_list(t['enroll'], source, twhat, 'enroll') if 'enroll' in t else ('Domain Users',)
+        group = None
+        if 'issuance_policy' in t:
+            pwhat = f'issuance_policy of {twhat}'
+            p = _mapping(t['issuance_policy'], source, pwhat)
+            _check_keys(p, {'group'}, {'group'}, source, pwhat)
+            group = _str(p['group'], source, pwhat, 'group')
+        templates[tname] = CertTemplateDef(name=tname, json=json, builtin=builtin, enroll=enroll, issuance_group=group)
+    return templates
+
+
+def _parse_ca_acl(value: Any, source: str, what: str) -> Tuple[Tuple[str, str], ...]:
+    if not isinstance(value, list):
+        raise GoadError(f'{source}: {"ca_acl"!r} in {what} must be a list')
+    out = []
+    for i, a in enumerate(value):
+        awhat = f'ca_acl {i + 1} of {what}'
+        a = _mapping(a, source, awhat)
+        _check_keys(a, _CA_ACL_KEYS, _CA_ACL_KEYS, source, awhat)
+        right = _str(a['right'], source, awhat, 'right')
+        if right not in CA_RIGHTS:
+            raise GoadError(f'{source}: unknown right {right!r} in {awhat}: choose one of {", ".join(CA_RIGHTS)}')
+        out.append((_str(a['principal'], source, awhat, 'principal'), right))
+    return tuple(out)
+
+
 def _parse_gpos(dname: str, d: Dict[str, Any], ous: Tuple[str, ...], source: str, what: str) -> Dict[str, GpoDef]:
     gpos: Dict[str, GpoDef] = {}
     for gname, g in _mapping(d.get('gpos', {}), source, f'gpos of {what}').items():
@@ -453,11 +511,16 @@ def parse_lab(text: str, source: str) -> LabDef:
             if not (role in ('server', 'workstation') and domain is not None):
                 raise GoadError(f'{source}: {"delegation"!r} in {what} needs a Windows server or workstation with a domain')
             delegation = _parse_delegation(h['delegation'], source, what)
+        for key in ('cert_templates', 'ca_acl'):
+            if key in h and not ca:
+                raise GoadError(f'{source}: {key!r} in {what} needs ca: true')
+        cert_templates = _parse_cert_templates(h['cert_templates'], source, what) if 'cert_templates' in h else {}
+        ca_acl = _parse_ca_acl(h['ca_acl'], source, what) if 'ca_acl' in h else ()
         host_settings = _parse_settings(h['settings'], source, f'settings of {what}') if 'settings' in h else {}
         hosts[hname] = HostDef(
             name=hname, hostname=hostname, os=os_name, role=role, domain=domain, octet=octet, **sizes,
             laps=laps, ca=ca, local_groups=local_groups, settings=host_settings,
-            delegation=delegation)
+            delegation=delegation, cert_templates=cert_templates, ca_acl=ca_acl)
     if not hosts:
         raise GoadError(f'{source}: hosts must not be empty')
 
@@ -524,6 +587,20 @@ def _validate_references(lab: LabDef, source: str) -> None:
                     raise GoadError(f'{source}: unknown member {member!r} of group {gname} in domain {dname}: not a user or group of {fqdn}')
 
 
+def _check_principal(lab: LabDef, dname: str, principal: str, source: str, what: str) -> None:
+    """An ACE principal: a user or group of dname, <fqdn>\\<name> of a lab domain, or a well-known identity."""
+    if principal in WELL_KNOWN_PRINCIPALS:
+        return
+    fqdn, pname = lab.split_member(dname, principal)
+    if fqdn not in lab.domains or not pname or pname.lower() not in _principals(lab.domains[fqdn]):
+        raise GoadError(f'{source}: unknown principal {principal!r} in {what}: use a user or group of {dname}, '
+                        f'<fqdn>\\<name> of a lab domain, or one of {", ".join(WELL_KNOWN_PRINCIPALS)}')
+
+
+def ca_host(lab: LabDef, domain: str) -> Optional[HostDef]:
+    return next((h for h in lab.hosts.values() if h.ca and h.domain == domain), None)
+
+
 def _validate_acls(lab: LabDef, source: str) -> None:
     for dname, d in lab.domains.items():
         users = {n.lower() for n in d.users} | _BUILTIN_USERS
@@ -557,18 +634,33 @@ def _validate_acls(lab: LabDef, source: str) -> None:
                 # GPO permissions are set by name with Set-GPPermission, which needs the account's type.
                 if '\\' in a.principal or a.principal.lower() not in _principals(d):
                     raise GoadError(f'{source}: principal {a.principal!r} on gpo in {what} must be a user or group of {dname}')
-            # template: checked against the CA's cert_templates once that primitive exists.
-            if a.principal in WELL_KNOWN_PRINCIPALS:
-                continue
-            fqdn, pname = lab.split_member(dname, a.principal)
-            if fqdn not in lab.domains or not pname or pname.lower() not in _principals(lab.domains[fqdn]):
-                raise GoadError(f'{source}: unknown principal {a.principal!r} in {what}: use a user or group of {dname}, '
-                                f'<fqdn>\\<name> of a lab domain, or one of {", ".join(WELL_KNOWN_PRINCIPALS)}')
+                # Set-GPPermission has no inheritance flag.
+                if a.inherit != 'none':
+                    raise GoadError(f'{source}: inherit {a.inherit!r} on gpo in {what}: only none')
+            if kind == 'template':
+                ca = ca_host(lab, dname)
+                if ca is None or name not in ca.cert_templates:
+                    raise GoadError(f'{source}: template {name!r} in {what} is not in cert_templates of the CA host of {dname}')
+            _check_principal(lab, dname, a.principal, source, what)
+
+
+def _validate_adcs(lab: LabDef, source: str) -> None:
+    for hname, h in lab.hosts.items():
+        d = lab.domains[h.domain] if h.domain else None
+        for tname, t in h.cert_templates.items():
+            what = f'template {tname} in host {hname}'
+            for principal in t.enroll:
+                _check_principal(lab, h.domain, principal, source, what)
+            if t.issuance_group is not None and t.issuance_group.lower() not in {n.lower() for n in d.groups} | _BUILTIN_GROUPS:
+                raise GoadError(f'{source}: issuance group {t.issuance_group!r} in {what}: not a group of {h.domain}')
+        for principal, right in h.ca_acl:
+            _check_principal(lab, h.domain, principal, source, f'ca_acl {principal} {right} in host {hname}')
 
 
 def _validate_content(lab: LabDef, source: str) -> None:
     _validate_references(lab, source)
     _validate_acls(lab, source)
+    _validate_adcs(lab, source)
     for dname, d in lab.domains.items():
         if d.parent and d.trust:
             raise GoadError(f'{source}: {"trust"!r} in domain {dname} is not allowed on a child domain (has parent)')

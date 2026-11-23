@@ -68,3 +68,7 @@
               -Credential $cred -Force | Out-Null
           $Ansible.Changed = $true
       }
+
+# After the CA exists: its install creates the built-in templates and the Enrollment Services object.
+- name: Certificate templates, issuance policies and CA ACLs
+  ansible.builtin.include_tasks: templates.yml

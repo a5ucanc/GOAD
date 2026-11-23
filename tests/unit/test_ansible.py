@@ -391,3 +391,27 @@ def test_ad_acls_tasks():
                  'GenericExecute', 'ReadProperty'):
         assert text in ace
     assert 'RemoveAccessRule' not in ace
+
+
+def test_adcs_templates_run_last_after_the_ca():
+    tasks = _tasks('adcs')
+    assert tasks[-1]['ansible.builtin.include_tasks'] == 'templates.yml'
+    assert tasks[-2]['name'] == 'Enterprise root certification authority'
+    steps = yaml.safe_load((ANSIBLE / 'roles' / 'adcs' / 'tasks' / 'templates.yml').read_text())
+    assert [t['name'] for t in steps] == [
+        'ADCSTemplate module', 'Create and publish certificate templates', 'Template enroll rights',
+        'Issuance policies', 'CA ACL', 'Template ACEs']
+    for t in steps:
+        if t['name'] != 'CA ACL':  # registry of the CA host itself
+            assert t['delegate_to'] == '{{ goad_domains[domain].dc }}', t['name']
+    ace = "{{ lookup('ansible.builtin.file', role_path ~ '/../ad_acls/files/ace.ps1') }}"
+    assert steps[2]['ansible.windows.win_powershell']['script'] == ace
+    assert steps[5]['ansible.windows.win_powershell']['script'] == ace
+    assert all('PSPKI' not in t['ansible.windows.win_powershell']['script'] for t in steps[1:])
+
+
+def test_ace_script_knows_enroll_but_lab_acls_do_not():
+    from goad.lab.definition import ACL_RIGHTS
+    assert "'Enroll'" in (ANSIBLE / 'roles' / 'ad_acls' / 'files' / 'ace.ps1').read_text()
+    assert '0e10c968-78fb-11d2-90d4-00c04f79dc55' in (ANSIBLE / 'roles' / 'ad_acls' / 'files' / 'ace.ps1').read_text()
+    assert 'Enroll' not in ACL_RIGHTS

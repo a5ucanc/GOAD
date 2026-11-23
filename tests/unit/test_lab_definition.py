@@ -398,7 +398,8 @@ def test_acl_and_gpo_primitives_parse():
         {'principal': 'sevenkingdoms.local\\tywin.lannister', 'right': 'ForceChangePassword', 'object': 'user:victim'},
         {'principal': 'Domain Users', 'right': 'WriteSPN', 'object': 'user:Administrator'},
         {'principal': 'attacker', 'right': 'GenericAll', 'object': 'template:ESC4'},
-        gpos={'scn-gpo': {}, 'vale-gpo': {'link': 'ou:Vale'}})
+        gpos={'scn-gpo': {}, 'vale-gpo': {'link': 'ou:Vale'}},
+        extra=[(SRV03 + ('cert_templates',), {'ESC4': {'json': 'ESC4.json'}})])
     d = lab.domains['essos.local']
     assert d.acls[0] == AclDef(principal='attacker', right='GenericAll', object='user:victim', inherit='none')
     assert d.acls[2].inherit == 'all' and len(d.acls) == 11
@@ -428,6 +429,8 @@ def _ace(**kw):
     ([_ace(principal='sevenkingdoms.local\\nobody')], None, r"unknown principal 'sevenkingdoms.local\\\\nobody'"),
     ([_ace(principal='NT AUTHORITY\\SYSTEM')], None, r"unknown principal 'NT AUTHORITY\\\\SYSTEM'"),
     ([_ace(object='gpo:g', principal='Everyone')], {'g': {}}, r"principal 'Everyone' on gpo.*must be a user or group of essos.local"),
+    ([_ace(object='gpo:g', inherit='all')], {'g': {}}, r"inherit 'all' on gpo.*only none"),
+    ([_ace(object='template:ESC1')], None, r"template 'ESC1'.*not in cert_templates of the CA host of essos.local"),
     ([_ace(colour=1)], None, r"unknown key 'colour'.*acl"),
     ([{'principal': 'attacker', 'right': 'GenericAll'}], None, r"missing key 'object'.*acl"),
     ('nope', None, r"acls.*domain essos.local.*list"),
@@ -442,3 +445,64 @@ def test_acl_and_gpo_rejected(acls, gpos, message):
             _lab((ESSOS + ('acls',), 'nope'))
         else:
             _acl_lab(*acls, gpos=gpos)
+
+
+def _adcs_lab(templates=None, ca_acl=None, host=SRV03, extra=()):
+    patches = [(ESSOS + ('users',), dict(ACL_USERS)), (ESSOS + ('groups', 'scn-esc13-group'), {'scope': 'universal'})]
+    if templates is not None:
+        patches.append((host + ('cert_templates',), templates))
+    if ca_acl is not None:
+        patches.append((host + ('ca_acl',), ca_acl))
+    return _lab(*patches, *extra)
+
+
+def test_adcs_primitives_parse():
+    from goad.lab.definition import CertTemplateDef
+    lab = _adcs_lab(
+        {'ESC1': {'json': 'ESC1.json'},
+         'ESC13': {'json': 'ESC13.json', 'enroll': ['attacker'], 'issuance_policy': {'group': 'scn-esc13-group'}},
+         'WebServer': {'builtin': True, 'enroll': ['Domain Users', 'sevenkingdoms.local\\Domain Users']}},
+        [{'principal': 'attacker', 'right': 'ManageCA'}, {'principal': 'victim', 'right': 'ManageCertificates'}])
+    h = lab.hosts['srv03']
+    assert h.cert_templates == {
+        'ESC1': CertTemplateDef(name='ESC1', json='ESC1.json'),
+        'ESC13': CertTemplateDef(name='ESC13', json='ESC13.json', enroll=('attacker',), issuance_group='scn-esc13-group'),
+        'WebServer': CertTemplateDef(name='WebServer', builtin=True,
+                                     enroll=('Domain Users', 'sevenkingdoms.local\\Domain Users'))}
+    assert h.cert_templates['ESC1'].enroll == ('Domain Users',) and h.cert_templates['ESC1'].builtin is False
+    assert h.ca_acl == (('attacker', 'ManageCA'), ('victim', 'ManageCertificates'))
+    assert lab.hosts['srv02'].cert_templates == {} and lab.hosts['srv02'].ca_acl == ()
+
+
+def test_template_acl_names_ca_template():
+    lab = _acl_lab({'principal': 'attacker', 'right': 'GenericAll', 'object': 'template:ESC4'},
+                   extra=[(SRV03 + ('cert_templates',), {'ESC4': {'json': 'ESC4.json'}})])
+    assert lab.domains['essos.local'].acls[0].target == 'ESC4'
+
+
+@pytest.mark.parametrize('templates, ca_acl, host, message', [
+    ({'ESC1': {'json': 'ESC1.json'}}, None, SRV02, r"cert_templates.*host srv02.*ca: true"),
+    (None, [{'principal': 'Domain Users', 'right': 'ManageCA'}], SRV02, r"ca_acl.*host srv02.*ca: true"),
+    ({'ESC1': {}}, None, SRV03, r"template ESC1.*exactly one of json and builtin"),
+    ({'ESC1': {'json': 'ESC1.json', 'builtin': True}}, None, SRV03, r"template ESC1.*exactly one of json and builtin"),
+    ({'ESC1': {'builtin': False}}, None, SRV03, r"template ESC1.*exactly one of json and builtin"),
+    ({'ESC1': {'json': 'ESC99.json'}}, None, SRV03, r"json 'ESC99.json'.*template ESC1.*ansible/roles/adcs/files"),
+    ({'ESC1': {'json': '../ad_acls/files/ace.ps1'}}, None, SRV03, r"json '../ad_acls/files/ace.ps1'.*template ESC1"),
+    ({'ESC1': {'json': 'ESC1.json', 'colour': 1}}, None, SRV03, r"unknown key 'colour'.*template ESC1"),
+    ({'ESC1': {'json': 'ESC1.json', 'enroll': 'Domain Users'}}, None, SRV03, r"enroll.*template ESC1"),
+    ({'ESC1': {'json': 'ESC1.json', 'enroll': ['nobody']}}, None, SRV03, r"unknown principal 'nobody'.*template ESC1"),
+    ({'ESC 1': {'json': 'ESC1.json'}}, None, SRV03, r"template 'ESC 1'.*spaces"),
+    ({'ESC13': {'json': 'ESC13.json', 'issuance_policy': {'group': 'nogroup'}}}, None, SRV03,
+     r"issuance group 'nogroup'.*template ESC13.*not a group of essos.local"),
+    ({'ESC13': {'json': 'ESC13.json', 'issuance_policy': {'colour': 1}}}, None, SRV03, r"unknown key 'colour'.*issuance_policy"),
+    ({'ESC13': {'json': 'ESC13.json', 'issuance_policy': {}}}, None, SRV03, r"missing key 'group'.*issuance_policy"),
+    ('ESC1', None, SRV03, r"cert_templates.*host srv03.*mapping"),
+    (None, [{'principal': 'attacker', 'right': 'Owner'}], SRV03, r"unknown right 'Owner'.*ca_acl.*host srv03.*ManageCA, ManageCertificates"),
+    (None, [{'principal': 'nobody', 'right': 'ManageCA'}], SRV03, r"unknown principal 'nobody'.*ca_acl.*host srv03"),
+    (None, [{'principal': 'attacker'}], SRV03, r"missing key 'right'.*ca_acl"),
+    (None, [['attacker', 'ManageCA']], SRV03, r"ca_acl.*host srv03.*mapping"),
+    (None, {'principal': 'attacker', 'right': 'ManageCA'}, SRV03, r"ca_acl.*host srv03.*list"),
+])
+def test_adcs_primitives_rejected(templates, ca_acl, host, message):
+    with pytest.raises(GoadError, match=message):
+        _adcs_lab(templates, ca_acl, host)

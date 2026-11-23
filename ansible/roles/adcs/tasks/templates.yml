@@ -1,0 +1,155 @@
+# Certificate templates, issuance policies and CA ACLs from the CA host's cert_templates and ca_acl
+# and the domain's template acls. Ported from main's scenario_adcs_template role (add only), the esc13
+# issuance policy script and the esc7 CA ACL script. Add only: nothing is removed.
+# Templates live in the configuration NC: the AD tasks run on the domain's DC, which has the
+# ActiveDirectory module (a member server CA may not).
+
+- name: ADCSTemplate module
+  ansible.windows.win_copy:
+    src: ADCSTemplate
+    dest: C:\Program Files\WindowsPowerShell\Modules
+  delegate_to: "{{ goad_domains[domain].dc }}"
+  when: cert_templates | default({}) | dict2items | selectattr('value.json') | list | length > 0
+
+# Enroll rights are granted in the next task, for JSON and built-in templates alike.
+- name: Create and publish certificate templates
+  ansible.windows.win_powershell:
+    parameters:
+      Template: "{{ item.key }}"
+      Json: "{{ lookup('ansible.builtin.file', item.value.json) }}"
+    script: |
+      param([string]$Template, [string]$Json)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      Import-Module ADCSTemplate
+      $server = (Get-ADDomainController).HostName
+      if (-not (Get-ADCSTemplate -DisplayName $Template -Server $server)) {
+          New-ADCSTemplate -DisplayName $Template -JSON $Json -Server $server -Publish
+          $Ansible.Changed = $true
+      }
+      # Publish again when a previous run stopped before publishing.
+      $config = (Get-ADRootDSE).configurationNamingContext
+      $cn = (Get-ADCSTemplate -DisplayName $Template -Server $server).cn
+      foreach ($ca in Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$config" -SearchScope OneLevel -Filter * -Properties certificateTemplates) {
+          if ($ca.certificateTemplates -notcontains $cn) {
+              Set-ADObject -Identity $ca.DistinguishedName -Add @{certificateTemplates = $cn}
+              $Ansible.Changed = $true
+          }
+      }
+  loop: "{{ cert_templates | default({}) | dict2items | selectattr('value.json') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+  delegate_to: "{{ goad_domains[domain].dc }}"
+
+# GenericRead plus Certificate-Enrollment, the rights New-ADCSTemplate -Identity grants.
+- name: Template enroll rights
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', role_path ~ '/../ad_acls/files/ace.ps1') }}"
+    parameters:
+      Principal: "{{ item.0.1 }}"
+      Kind: template
+      Name: "{{ item.0.0.key }}"
+      Right: "{{ item.1 }}"
+      Inherit: none
+  loop: "{{ cert_templates | default({}) | dict2items | subelements('value.enroll') | product(['GenericRead', 'Enroll']) | list }}"
+  loop_control:
+    label: "{{ item.0.1 }} {{ item.1 }} on {{ item.0.0.key }}"
+  delegate_to: "{{ goad_domains[domain].dc }}"
+
+# An issuance policy OID (display name IssuancePolicy<template>) set on the template and linked to
+# the group: a certificate from the template gives the group's rights.
+- name: Issuance policies
+  ansible.windows.win_powershell:
+    parameters:
+      Template: "{{ item.key }}"
+      Group: "{{ item.value.issuance_group }}"
+      Policy: "IssuancePolicy{{ item.key }}"
+    script: |
+      param([string]$Template, [string]$Group, [string]$Policy)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      Import-Module ActiveDirectory
+      $config = (Get-ADRootDSE).configurationNamingContext
+      $oidPath = "CN=OID,CN=Public Key Services,CN=Services,$config"
+      $oid = Get-ADObject -SearchBase $oidPath -LDAPFilter "(displayName=$Policy)" -Properties msPKI-Cert-Template-OID, msDS-OIDToGroupLink | Select-Object -First 1
+      if (-not $oid) {
+          $forest = (Get-ADObject -Identity $oidPath -Properties msPKI-Cert-Template-OID).'msPKI-Cert-Template-OID'
+          $a = Get-Random -Minimum 10000000 -Maximum 99999999
+          $b = Get-Random -Minimum 10000000 -Maximum 99999999
+          $hex = -join ((1..32) | ForEach-Object { '{0:X}' -f (Get-Random -Maximum 16) })
+          New-ADObject -Path $oidPath -Name "$b.$hex" -Type 'msPKI-Enterprise-Oid' -OtherAttributes @{
+              'displayName' = $Policy; 'flags' = [int]2; 'msPKI-Cert-Template-OID' = "$forest.$a.$b" }
+          $oid = Get-ADObject -SearchBase $oidPath -LDAPFilter "(displayName=$Policy)" -Properties msPKI-Cert-Template-OID, msDS-OIDToGroupLink | Select-Object -First 1
+          $Ansible.Changed = $true
+      }
+      $value = $oid.'msPKI-Cert-Template-OID'
+      # The template key is its cn (a built-in template's display name has spaces).
+      $tpl = Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$config" -LDAPFilter "(cn=$Template)" -Properties msPKI-Certificate-Policy
+      if (-not $tpl) { throw "certificate template $Template not found" }
+      if (@($tpl.'msPKI-Certificate-Policy') -notcontains $value) {
+          Set-ADObject -Identity $tpl.DistinguishedName -Replace @{'msPKI-Certificate-Policy' = $value}
+          $Ansible.Changed = $true
+      }
+      $groupDn = (Get-ADGroup -Identity $Group).DistinguishedName
+      if ($oid.'msDS-OIDToGroupLink' -ne $groupDn) {
+          Set-ADObject -Identity $oid.DistinguishedName -Replace @{'msDS-OIDToGroupLink' = $groupDn}
+          $Ansible.Changed = $true
+      }
+  loop: "{{ cert_templates | default({}) | dict2items | selectattr('value.issuance_group') | list }}"
+  loop_control:
+    label: "{{ item.key }} -> {{ item.value.issuance_group }}"
+  delegate_to: "{{ goad_domains[domain].dc }}"
+
+# The CA's own ACL is the Security value of its configuration key, read by CertSvc when it starts
+# (main's esc7 set it with PSPKI from the PowerShell Gallery; this needs no download). Rights:
+# ManageCA = CA_ACCESS_ADMIN (1), ManageCertificates = CA_ACCESS_OFFICER (2).
+- name: CA ACL
+  ansible.windows.win_powershell:
+    parameters:
+      Entries: "{{ ca_acl | to_json }}"
+    script: |
+      param([string]$Entries)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $masks = @{ ManageCA = 1; ManageCertificates = 2 }
+      $config = 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration'
+      $key = Join-Path $config (Get-ItemProperty -Path $config).Active
+      $sd = [Security.AccessControl.RawSecurityDescriptor]::new([byte[]](Get-ItemProperty -Path $key).Security, 0)
+      foreach ($e in ($Entries | ConvertFrom-Json)) {
+          $mask = $masks[$e.right]
+          try {
+              $sid = (New-Object Security.Principal.NTAccount $e.principal).Translate([Security.Principal.SecurityIdentifier])
+          } catch { throw "principal $($e.principal) not found" }
+          $has = @($sd.DiscretionaryAcl | Where-Object {
+              $_.AceQualifier -eq 'AccessAllowed' -and $_.SecurityIdentifier -eq $sid -and ($_.AccessMask -band $mask) -eq $mask
+          })
+          if (-not $has) {
+              $ace = [Security.AccessControl.CommonAce]::new([Security.AccessControl.AceFlags]::None,
+                  [Security.AccessControl.AceQualifier]::AccessAllowed, $mask, $sid, $false, $null)
+              $sd.DiscretionaryAcl.InsertAce($sd.DiscretionaryAcl.Count, $ace)
+              $Ansible.Changed = $true
+          }
+      }
+      if ($Ansible.Changed) {
+          $bytes = New-Object byte[] $sd.BinaryLength
+          $sd.GetBinaryForm($bytes, 0)
+          Set-ItemProperty -Path $key -Name Security -Value $bytes -Type Binary
+          Restart-Service -Name CertSvc
+      }
+  when: ca_acl | default([]) | length > 0
+
+# Template ACEs from the domain's acls (the ad_acls role skips them: the templates exist only now).
+- name: Template ACEs
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', role_path ~ '/../ad_acls/files/ace.ps1') }}"
+    parameters:
+      Principal: "{{ item.principal }}"
+      Kind: "{{ item.kind }}"
+      Name: "{{ item.name }}"
+      Right: "{{ item.right }}"
+      Inherit: "{{ item.inherit }}"
+  loop: "{{ goad_domains[domain].acls | default([]) | selectattr('kind', 'equalto', 'template') | list }}"
+  loop_control:
+    label: "{{ item.principal }} {{ item.right }} template:{{ item.name }}"
+  delegate_to: "{{ goad_domains[domain].dc }}"

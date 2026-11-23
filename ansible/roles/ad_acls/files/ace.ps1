@@ -49,6 +49,8 @@ $map = @{
     'WriteSPN'            = @(, @('Self', 'f3a64788-5306-11d1-a9c5-0000f80367c1'))
     'ForceChangePassword' = @(, @('ExtendedRight', '00299570-246d-11d0-a768-00aa006e0529'))
     'ReadAll'             = @(@('ReadProperty', $empty), @('GenericExecute', $empty))
+    # Certificate-Enrollment, for the adcs role's template enroll grants (not a lab.yml acls right).
+    'Enroll'              = @(, @('ExtendedRight', '0e10c968-78fb-11d2-90d4-00c04f79dc55'))
 }
 # Assigned in the branches: an if expression would unroll a one-pair list into its two strings.
 if ($map.ContainsKey($Right)) { $pairs = $map[$Right] } else { $pairs = @(, @($Right, $empty)) }
