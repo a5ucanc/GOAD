@@ -1,5 +1,6 @@
 # Windows LAPS stores the password in schema attributes the forest does not have by default.
 # Runs on forest-root DCs whose forest has a laps host (laps_schema in the inventory).
+# AD can reject schema operations for a while after the DCs are restored from a snapshot.
 - name: Extend the schema for Windows LAPS
   ansible.windows.win_powershell:
     script: |
@@ -10,3 +11,7 @@
           Update-LapsADSchema -Confirm:$false
           $Ansible.Changed = $true
       }
+  register: laps_schema_extend
+  retries: 10
+  delay: 30
+  until: laps_schema_extend is not failed

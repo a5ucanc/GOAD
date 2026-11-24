@@ -34,11 +34,16 @@
   failed_when: false
   changed_when: false
 
+# AD can reject LAPS operations for a while after the DCs are restored from a snapshot.
 - name: Apply the Windows LAPS policy now
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = 'Stop'
       Invoke-LapsPolicyProcessing
+  register: laps_apply
+  retries: 10
+  delay: 30
+  until: laps_apply is not failed
   when: laps_policy is changed or not (laps_probe.result | default(false) | bool)
 
 # Reads the password from the domain's DC, with the DC's own connection settings.

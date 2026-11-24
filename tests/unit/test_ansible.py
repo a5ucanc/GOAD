@@ -134,6 +134,14 @@ def test_laps_processing_reruns_without_password():
     assert 'laps_policy is changed' in invoke['when'] and 'laps_probe' in invoke['when']
 
 
+def test_laps_tasks_retry_while_ad_settles():
+    for role, needle in (('laps_schema', 'Update-LapsADSchema'), ('laps_host', 'Invoke-LapsPolicyProcessing')):
+        tasks = yaml.safe_load((ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text())
+        task = next(t for t in tasks if needle in t.get('ansible.windows.win_powershell', {}).get('script', ''))
+        assert task['retries'] == 10 and task['delay'] == 30
+        assert task['until'] == f"{task['register']} is not failed"
+
+
 def test_every_setting_has_a_task_file():
     # _<name>.yml: a helper the setting files include, not a setting
     files = {p.stem for p in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml')
