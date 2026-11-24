@@ -17,6 +17,8 @@ MIN_FREE_GB = 100
 MIN_ANSIBLE = (2, 16)
 REPO = Path(__file__).resolve().parents[2]
 REQUIREMENTS = REPO / 'ansible' / 'requirements.yml'
+SEVENZIP_DEFAULT = '/mnt/c/Program Files/7-Zip/7z.exe'
+SEVENZIP_MISSING = '7-Zip not found: winget install 7zip.7zip'
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,15 @@ def _cert_files(folder: str) -> List[Path]:
     return [p for p in path.iterdir() if p.suffix.lower() in ('.cer', '.crt')]
 
 
+def find_7zip(path_lookup: Callable[[str], Optional[str]] = shutil.which,
+              exists: Callable[[str], bool] = os.path.isfile) -> Optional[str]:
+    """WSL path of 7z.exe (extracts the Kali image): PATH first, else the default install folder."""
+    found = path_lookup('7z.exe')
+    if found:
+        return found
+    return SEVENZIP_DEFAULT if exists(SEVENZIP_DEFAULT) else None
+
+
 def _ansible_checks(runner: Runner) -> List[Check]:
     result = runner.run([ansible_bin('ansible-playbook'), '--version'], timeout=60)
     match = re.search(r'core (\d+)\.(\d+)', result.stdout)
@@ -77,7 +88,10 @@ def run_checks(runner: Runner, settings: Settings, need_packer: bool, need_ansib
                exists: Callable[[str], bool] = os.path.isfile,
                disk_usage=shutil.disk_usage,
                packer_path: Callable[[str], Optional[str]] = resolve_packer,
-               cert_files: Callable[[str], List[Path]] = _cert_files) -> List[Check]:
+               cert_files: Callable[[str], List[Path]] = _cert_files,
+               need_7zip: bool = False,
+               sevenzip_path: Callable[[], Optional[str]] = find_7zip) -> List[Check]:
+    """need_7zip: only goad template import asks for it (the Kali image is a .7z archive)."""
     checks: List[Check] = []
 
     vmrun = to_wsl(settings.vmware_dir) / 'vmrun.exe'
@@ -97,6 +111,10 @@ def run_checks(runner: Runner, settings: Settings, need_packer: bool, need_ansib
 
     if need_ansible:
         checks.extend(_ansible_checks(runner))
+
+    if need_7zip:
+        sevenzip = sevenzip_path()
+        checks.append(Check('7zip', sevenzip is not None, sevenzip or SEVENZIP_MISSING))
 
     adapter = f'VMware Network Adapter {settings.vmnet}'
     want = f'{settings.ip_range}.1'

@@ -18,7 +18,7 @@ from goad.lab.remote import remove_setup_account
 from goad.settings import Settings
 from goad.state import STEPS, HostState, LabState, SnapshotRecord, load_state, save_state, working_lab_path
 from goad.templates.smoke import check_psrp, check_ssh, FIRSTBOOT_TIMEOUT, firstboot_marker, is_up, wait_port
-from goad.templates.store import TemplateStore
+from goad.templates.store import TemplateStore, no_template_error
 from goad.vmware.guestinfo import FIRSTBOOT_DONE, FIRSTBOOT_FAILED, GuestConfig, configure_hardware, lab_mac, write_guestinfo
 from goad.vmware.parallel import run_parallel
 from goad.vmware.vmrun import Vmrun, norm_vmx
@@ -53,8 +53,7 @@ def _subset(hosts: Dict[str, HostState], names: Optional[Iterable[str]]) -> Dict
 def _template(store: TemplateStore, os_name: str):
     template = store.latest(os_name)
     if template is None:
-        verb = 'import' if os_name == 'kali' else 'build'
-        raise GoadError(f'no {os_name} template: run goad template {verb} {os_name}')
+        raise no_template_error(os_name)
     return template
 
 

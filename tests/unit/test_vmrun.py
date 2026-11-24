@@ -49,3 +49,23 @@ def test_read_guest_var_unset_returns_empty(vmrun, fake):
 def test_delete_vm_argv(vmrun, fake):
     vmrun.delete_vm('x.vmx')
     assert fake.calls[-1][3:] == ['deleteVM', 'x.vmx']
+
+
+def test_guest_ops_argv(vmrun, fake):
+    vmrun.copy_to_guest('a.vmx', 'kali', 'pw', r'C:\x\prep.sh', '/tmp/prep.sh')
+    vmrun.run_in_guest('a.vmx', 'kali', 'pw', '/bin/bash', ['/tmp/prep.sh', 'pw'], timeout=99)
+    assert [c[3:] for c in fake.calls] == [
+        ['-gu', 'kali', '-gp', 'pw', 'copyFileFromHostToGuest', 'a.vmx', r'C:\x\prep.sh', '/tmp/prep.sh'],
+        ['-gu', 'kali', '-gp', 'pw', 'runProgramInGuest', 'a.vmx', '/bin/bash', '/tmp/prep.sh', 'pw']]
+
+
+def test_guest_op_failure_names_command(vmrun, fake):
+    fake.respond(lambda a: 'runProgramInGuest' in a, Result(0, 'Error: Guest program exited with non-zero exit code: 1', ''))
+    with pytest.raises(VmrunError, match='vmrun runProgramInGuest failed: Error: Guest program exited'):
+        vmrun.run_in_guest('a.vmx', 'kali', 'pw', '/bin/bash', [])
+
+
+def test_tools_state(vmrun, fake):
+    fake.respond(lambda a: 'checkToolsState' in a, Result(0, 'running\r\n', ''))
+    assert vmrun.tools_state('a.vmx') == 'running'
+    assert fake.calls[-1][3:] == ['checkToolsState', 'a.vmx']

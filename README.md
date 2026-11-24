@@ -69,6 +69,7 @@ into a folder and set `ca_certs_dir`. Every `.cer` / `.crt` file in it is truste
 
 ```bash
 goad template build win2025      # win2022 | win2025 | win11 | ubuntu2404
+goad template import kali        # Kali's prebuilt VMware image (needs 7-Zip: winget install 7zip.7zip)
 goad template list
 goad template test win2025       # clone, first boot, readiness check, delete
 goad template delete win2025-v1  # --yes to skip the prompt

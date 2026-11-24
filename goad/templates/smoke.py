@@ -15,7 +15,7 @@ from goad.host.paths import to_wsl
 from goad.host.runner import Runner
 from goad.settings import Settings
 from goad.templates.build import PASSWORD
-from goad.templates.store import OS_FAMILY, TemplateStore
+from goad.templates.store import OS_FAMILY, TemplateStore, no_template_error
 from goad.vmware.guestinfo import FIRSTBOOT_DONE, FIRSTBOOT_FAILED, FIRSTBOOT_KEY, GuestConfig, configure_hardware, lab_mac, write_guestinfo
 from goad.vmware.vmrun import Vmrun, VmrunError
 from goad.vmware.vmx import Vmx
@@ -84,7 +84,7 @@ def check_ssh(ip: str) -> None:
 def smoke_test(os_name: str, settings: Settings, runner: Runner, store: TemplateStore) -> float:
     template = store.latest(os_name)
     if template is None:
-        raise GoadError(f'no {os_name} template: run goad template build {os_name}')
+        raise no_template_error(os_name)
     ip = f'{settings.ip_range}.{SMOKE_OCTET}'
     if is_up(ip):
         raise GoadError(f'{ip} already answers: the template test needs that address free')

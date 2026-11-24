@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from rich.console import Console
 
 from goad import GoadError, __version__
+from goad.settings import OS_NAMES
 
 err = Console(stderr=True)
 
@@ -84,6 +85,15 @@ def _template_build(args, ctx) -> int:
     with keep_host_awake():
         template = build_template(args.os, ctx.settings, ctx.runner, _store(ctx))
     Console().print(f'template {template.name} built')
+    return 0
+
+
+def _template_import(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
+    from goad.templates.kali import import_kali
+    with keep_host_awake():
+        template = import_kali(ctx.settings, ctx.runner, _store(ctx))
+    Console().print(f'template {template.name} imported')
     return 0
 
 
@@ -346,6 +356,7 @@ HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = 
     ('template', 'list'): _template_list,
     ('template', 'delete'): _template_delete,
     ('template', 'test'): _template_test,
+    ('template', 'import'): _template_import,
     ('lab', 'deploy'): _lab_deploy,
     ('lab', 'status'): _lab_status,
     ('lab', 'start'): _lab_start,
@@ -368,7 +379,7 @@ HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = 
     ('vm', 'console'): _vm_console,
 }
 
-OS_CHOICES = ('win2022', 'win2025', 'win11', 'ubuntu2404')
+OS_CHOICES = OS_NAMES
 
 
 def _ip_range(value: str) -> str:
@@ -385,11 +396,14 @@ def build_parser() -> argparse.ArgumentParser:
     check = groups.add_parser('check', help='check the host: VMware, Packer, lab network, disk, CA certificates')
     check.set_defaults(command=('check',))
 
-    template = groups.add_parser('template', help='build, list, test and delete VM templates')
+    template = groups.add_parser('template', help='build, import, list, test and delete VM templates')
     actions = template.add_subparsers(dest='action', required=True)
     build = actions.add_parser('build', help='build a new template version with Packer')
     build.add_argument('os', choices=OS_CHOICES)
     build.set_defaults(command=('template', 'build'))
+    imported = actions.add_parser('import', help='import a prebuilt VM image as a new template version (kali)')
+    imported.add_argument('os', choices=['kali'])
+    imported.set_defaults(command=('template', 'import'))
     listing = actions.add_parser('list', help='list built templates')
     listing.set_defaults(command=('template', 'list'))
     delete = actions.add_parser('delete', help='delete a template version')

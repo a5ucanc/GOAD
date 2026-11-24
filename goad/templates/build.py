@@ -11,7 +11,7 @@ from goad.host.paths import to_windows
 from goad.host.runner import Runner
 from goad.settings import OS_NAMES, Settings, resolve_packer
 from goad.templates.iso import ensure_iso
-from goad.templates.store import BUILD_DIR, OS_FAMILY, Template, TemplateStore
+from goad.templates.store import BUILD_DIR, IMPORTED, OS_FAMILY, Template, TemplateStore
 
 REPO = Path(__file__).resolve().parents[2]
 PASSWORD = 'Aa1234567890!'
@@ -40,6 +40,8 @@ def build_template(os_name: str, settings: Settings, runner: Runner, store: Temp
                    packer_path: Callable[[str], Optional[str]] = resolve_packer) -> Template:
     if os_name not in OS_NAMES:
         raise GoadError(f'unknown OS {os_name}: pick one of {", ".join(OS_NAMES)}')
+    if os_name in IMPORTED:
+        raise GoadError(f'{os_name} is imported, not built: run goad template import {os_name}')
     failed = [c for c in checks(runner, settings, need_packer=True) if not c.ok]
     if failed:
         raise GoadError('host checks failed: ' + '; '.join(f'{c.name}: {c.detail}' for c in failed))

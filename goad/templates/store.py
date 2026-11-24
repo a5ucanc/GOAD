@@ -12,9 +12,16 @@ from goad.state import templates_in_use
 from goad.vmware.vmrun import Vmrun
 
 OS_FAMILY = {'win2022': 'windows', 'win2025': 'windows', 'win11': 'windows', 'ubuntu2404': 'linux', 'kali': 'linux'}
+# templates goad imports from a prebuilt VM image instead of building with Packer
+IMPORTED = ('kali',)
 BUILD_DIR = '.build'
 META = 'template.json'
 _NAME = re.compile(r'^(' + '|'.join(OS_NAMES) + r')-v(\d+)$')
+
+
+def no_template_error(os_name: str) -> GoadError:
+    verb = 'import' if os_name in IMPORTED else 'build'
+    return GoadError(f'no {os_name} template: run goad template {verb} {os_name}')
 
 
 @dataclass(frozen=True)

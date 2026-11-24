@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 from goad import GoadError
 from goad.host.paths import to_wsl
@@ -21,8 +21,10 @@ class Vmrun:
         self.runner = runner
         self.binary = str(to_wsl(settings.vmware_dir) / 'vmrun.exe')
 
-    def _run(self, *args: str, timeout: float = 600) -> str:
-        argv = [self.binary, '-T', 'ws', *args]
+    def _run(self, *args: str, timeout: float = 600, guest: Tuple[str, str] = ()) -> str:
+        """guest: (user, password) for guest operations, which need VMware Tools running in the guest."""
+        auth = ['-gu', guest[0], '-gp', guest[1]] if guest else []
+        argv = [self.binary, '-T', 'ws', *auth, *args]
         result = self.runner.run(argv, timeout=timeout)
         # vmrun reports some failures with exit code 0 and "Error: ..." on stdout
         if not result.ok or result.stdout.lstrip().startswith('Error:'):
@@ -63,3 +65,16 @@ class Vmrun:
 
     def delete_vm(self, vmx: str) -> None:
         self._run('deleteVM', vmx)
+
+    def tools_state(self, vmx: str) -> str:
+        """'running' once VMware Tools answers in the guest; else 'installed', 'unknown' or ''."""
+        return self._run('checkToolsState', vmx, timeout=60).strip()
+
+    def copy_to_guest(self, vmx: str, user: str, password: str, src: str, dest: str) -> None:
+        """src: Windows path on the host."""
+        self._run('copyFileFromHostToGuest', vmx, src, dest, timeout=300, guest=(user, password))
+
+    def run_in_guest(self, vmx: str, user: str, password: str, program: str, args: List[str],
+                     timeout: float = 600) -> None:
+        """Run program in the guest and wait for it; a non-zero exit code raises VmrunError."""
+        self._run('runProgramInGuest', vmx, program, *args, timeout=timeout, guest=(user, password))

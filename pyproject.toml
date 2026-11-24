@@ -21,3 +21,6 @@ goad = "goad.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["goad*"]
+
+[tool.setuptools.package-data]
+"goad.templates" = ["kali-prep.sh"]

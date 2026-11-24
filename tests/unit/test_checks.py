@@ -2,7 +2,7 @@ import json
 from collections import namedtuple
 
 from goad.cli import Context, main
-from goad.host.checks import run_checks
+from goad.host.checks import Check, run_checks
 from goad.host.runner import Result
 
 IPCONFIG = '''Windows IP Configuration\r
@@ -119,3 +119,13 @@ def test_missing_collection_named(fake, settings):
 def test_ansible_skipped_by_default(fake, settings):
     checks = _checks(fake, settings, need_packer=False)
     assert 'ansible' not in checks and 'collections' not in checks
+
+
+def test_7zip_only_reported_when_asked(fake, settings):
+    assert '7zip' not in _checks(fake, settings, need_packer=False)
+    found = run_checks(fake, settings, False, need_7zip=True, exists=lambda p: True,
+                       disk_usage=lambda p: Usage(0, 0, 500 * GB), sevenzip_path=lambda: '/w/7z.exe')
+    assert [c for c in found if c.name == '7zip'] == [Check('7zip', True, '/w/7z.exe')]
+    missing = run_checks(fake, settings, False, need_7zip=True, exists=lambda p: True,
+                         disk_usage=lambda p: Usage(0, 0, 500 * GB), sevenzip_path=lambda: None)
+    assert [c for c in missing if c.name == '7zip'] == [Check('7zip', False, '7-Zip not found: winget install 7zip.7zip')]
