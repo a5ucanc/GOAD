@@ -1,7 +1,8 @@
+import json
 import pytest
 import yaml
 
-from goad.lab.definition import LAB_NAMES, load_lab, parse_lab, shipped_lab
+from goad.lab.definition import LAB_NAMES, REPO, load_lab, parse_lab, shipped_lab
 from goad.lab.scenarios import load_catalogue, valid_targets
 
 NAMES = {
@@ -258,3 +259,11 @@ def test_substitute_merges_colliding_keys():
     out = substitute({'hosts': {'{target}': {'a': {'x': 1}}, '{dc}': {'a': {'y': 2}, 'b': 3}}},
                      {'{target}': 'dc01', '{dc}': 'dc01'})
     assert out == {'hosts': {'dc01': {'a': {'x': 1, 'y': 2}, 'b': 3}}}
+
+
+def test_adcs_template_json_is_utf8():
+    # Ansible's file lookup reads UTF-8 only: a UTF-16 export reaches New-ADCSTemplate as mangled text.
+    files = sorted((REPO / 'ansible' / 'roles' / 'adcs' / 'files').glob('*.json'))
+    assert files
+    for path in files:
+        json.loads(path.read_bytes().decode('utf-8'))
