@@ -69,3 +69,8 @@ def test_tools_state(vmrun, fake):
     fake.respond(lambda a: 'checkToolsState' in a, Result(0, 'running\r\n', ''))
     assert vmrun.tools_state('a.vmx') == 'running'
     assert fake.calls[-1][3:] == ['checkToolsState', 'a.vmx']
+
+
+def test_reset_argv(vmrun, fake):
+    vmrun.reset('a.vmx', hard=True)
+    assert [c[3:] for c in fake.calls] == [['reset', 'a.vmx', 'hard']]

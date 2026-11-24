@@ -174,11 +174,32 @@ def test_waits_for_tools_and_power_off(store, settings, fake):
 def test_tools_timeout_stops_vm_and_raises(store, settings, fake, monkeypatch):
     fake.respond(lambda a: 'checkToolsState' in a, Result(0, 'installed\n', ''))  # answers before _host's
     _host(store, fake)
+    monkeypatch.setattr(kali, 'TOOLS_FIRST_TIMEOUT', 0)
     monkeypatch.setattr(kali, 'TOOLS_TIMEOUT', 0)
     with pytest.raises(GoadError, match='VMware Tools'):
         _import(settings, fake, store)
     assert 'stop' in [_verb(c) for c in fake.calls]
     assert store.list() == []
+
+
+def test_tools_never_running_on_first_boot_resets_once(store, settings, fake, monkeypatch):
+    _host(store, fake)
+    monkeypatch.setattr(kali, 'TOOLS_FIRST_TIMEOUT', 0)
+    original = fake.run
+    state = {'reset': False}
+
+    def run(argv, timeout=None):
+        if 'checkToolsState' in argv:
+            fake.calls.append(list(argv))
+            return Result(0, 'running\n' if state['reset'] else 'installed\n', '')
+        if 'reset' in argv:
+            state['reset'] = True
+        return original(argv, timeout)
+    fake.run = run
+    _import(settings, fake, store)
+    verbs = [_verb(c) for c in fake.calls]
+    assert verbs.count('reset') == 1
+    assert [c for c in fake.calls if _verb(c) == 'reset'][0][-1] == 'hard'
 
 
 def test_failed_checks_stop_before_download(store, settings, fake):

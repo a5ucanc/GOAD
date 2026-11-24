@@ -45,6 +45,9 @@ class Vmrun:
     def stop(self, vmx: str, hard: bool = False, timeout: float = 600) -> None:
         self._run('stop', vmx, 'hard' if hard else 'soft', timeout=timeout)
 
+    def reset(self, vmx: str, hard: bool = False, timeout: float = 600) -> None:
+        self._run('reset', vmx, 'hard' if hard else 'soft', timeout=timeout)
+
     def running(self) -> List[str]:
         return [norm_vmx(line) for line in self._lines(self._run('list', timeout=60))]
 
