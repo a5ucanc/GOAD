@@ -53,6 +53,12 @@ def test_join_falls_back_only_when_unreachable():
     assert fallback['when'] == 'domain_login.unreachable | default(false)'
 
 
+def test_connect_probe_retries_while_a_restored_vm_is_slow():
+    probe = yaml.safe_load((ANSIBLE / 'roles' / 'connect' / 'tasks' / 'main.yml').read_text())[0]
+    assert probe['retries'] == 10 and probe['delay'] == 15
+    assert probe['until'] == 'domain_login is not failed'
+
+
 def test_connect_laps_read_survives_an_unreachable_dc():
     # An unreachable delegate marks the member unreachable; failed_when cannot cover it, and
     # ansible-core skips retries/until on a connection failure, so the DC is awaited first.

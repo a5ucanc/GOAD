@@ -4,6 +4,12 @@
   ansible.windows.win_ping:
   register: domain_login
   ignore_unreachable: true
+  # A VM restored from a snapshot can accept the connection and still time out the first requests
+  # (reported as failed, not unreachable). Retry while it settles. An unreachable result ends the
+  # retries at once and leads to the local Administrator fallback.
+  retries: 10
+  delay: 15
+  until: domain_login is not failed
 
 - name: Use the local Administrator until the host is joined
   ansible.builtin.set_fact:
