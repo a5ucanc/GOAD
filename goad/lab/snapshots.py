@@ -95,11 +95,40 @@ def delete(lab: Lab, name: str) -> None:
     lab.save()
 
 
-def reset(lab: Lab, name: str = PROTECTED, wait=wait_ready) -> float:
+def recorded_extensions(lab_yml: str) -> List[str]:
+    """The raw extensions: list of a lab.yml text; empty when absent or unreadable."""
+    import yaml
+
+    from goad.lab.extensions import entries
+    try:
+        raw = yaml.safe_load(lab_yml)
+    except yaml.YAMLError:
+        return []
+    return entries(raw) if isinstance(raw, dict) else []
+
+
+def unusable(record: SnapshotRecord, current_text: str) -> Optional[str]:
+    """Why a snapshot cannot be a reset target, or None when its extension list matches the current one."""
+    held, current = recorded_extensions(record.lab_yml), recorded_extensions(current_text)
+    if held == current:
+        return None
+    newer = [x for x in current if x not in held]
+    if newer:
+        return f'predates extension {newer[-1]}: run goad extension remove {newer[-1]} first'
+    extra = [x for x in held if x not in current]
+    if extra:
+        return f'holds extension {extra[-1]}, which is not installed'
+    return f'has extensions in a different order than lab.yml: {", ".join(held)}'
+
+
+def reset(lab: Lab, name: str = PROTECTED, wait=wait_ready, current_text: Optional[str] = None) -> float:
     record = lab.state.snapshot(name)
     if record is None:
         raise GoadError(f'unknown snapshot {name}')
     path = working_lab_path(lab.settings)
+    reason = unusable(record, path.read_text() if current_text is None else current_text)
+    if reason:
+        raise GoadError(f'snapshot {name} {reason}')
     definition = parse_lab(record.lab_yml, f'snapshot {name} lab.yml')
     check_compatible(definition, lab.state)   # before any VM is listed or powered off
     found = _listed(lab)

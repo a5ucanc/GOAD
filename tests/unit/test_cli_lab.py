@@ -179,7 +179,8 @@ def test_scenario_disable_needs_yes(cli, settings, deployed, monkeypatch, capsys
     assert resets == [] and working_lab_path(settings).read_text() == text
 
 
-def test_snapshot_list_shows_scenarios(cli, settings, deployed, capsys):
+def test_snapshot_list_shows_scenarios(cli, settings, deployed, capsys, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '200')   # the extra Extensions column no longer fits 80
     from goad.state import SnapshotRecord
     deployed.snapshots.append(SnapshotRecord('pre', '2026-11-21T01:00:00Z', '',
                                              'scenarios:\n- {name: esc1, target: dc01}\n- {name: kerb, target: dc02}\n'))
@@ -188,3 +189,16 @@ def test_snapshot_list_shows_scenarios(cli, settings, deployed, capsys):
     assert main(['snapshot', 'list']) == 0
     out = flat(capsys.readouterr().out)
     assert 'Scenarios' in out and 'esc1@dc01, kerb@dc02' in out
+
+
+def test_snapshot_list_marks_unusable(cli, settings, deployed, capsys, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '200')
+    from goad.state import SnapshotRecord, working_lab_path
+    path = working_lab_path(settings)
+    path.write_text(path.read_text() + 'extensions: [mssql]\n')
+    deployed.snapshots.append(SnapshotRecord('pre', '2026-11-21T01:00:00Z', '', path.read_text()))
+    save_state(settings, deployed)
+    cli.respond(lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 2\nbase\npre\n', ''))
+    assert main(['snapshot', 'list']) == 0
+    out = flat(capsys.readouterr().out)
+    assert 'Extensions' in out and 'base (unusable)' in out and 'pre (unusable)' not in out

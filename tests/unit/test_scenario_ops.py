@@ -278,3 +278,24 @@ def test_disable_provision_failure_after_reset(settings, fake, deployed, calls, 
 def test_disable_requires_ask():
     import inspect
     assert inspect.signature(scenario_ops.disable).parameters['ask'].default is inspect.Parameter.empty
+
+
+def _mssql_catalogue(tmp_path, monkeypatch):
+    from goad.lab import extensions
+    (tmp_path / 'mssql.yml').write_text('description: t\nlabs:\n  2domains: {}\n', encoding='utf-8')
+    monkeypatch.setattr(extensions, 'EXTENSION_DIR', tmp_path)
+
+
+def test_pick_snapshot_skips_unusable(tmp_path, monkeypatch):
+    _mssql_catalogue(tmp_path, monkeypatch)
+    base = base_text()
+    ext = base + 'extensions: [mssql]\n'
+    state = _state(('base', base), ('ext-mssql', ext))
+    assert scenario_ops.pick_snapshot(state, ext) == 'ext-mssql'
+
+
+def test_pick_snapshot_only_base_with_extension_refuses(tmp_path, monkeypatch):
+    _mssql_catalogue(tmp_path, monkeypatch)
+    base = base_text()
+    with pytest.raises(GoadError, match='predates extension mssql'):
+        scenario_ops.pick_snapshot(_state(('base', base)), base + 'extensions: [mssql]\n')

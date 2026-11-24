@@ -135,7 +135,10 @@ def contained(old_text: str, new_text: str) -> Optional[str]:
 
 
 def pick_snapshot(state: LabState, new_text: str) -> str:
+    from goad.lab.snapshots import unusable
     for record in reversed(state.snapshots):
+        if unusable(record, new_text):
+            continue
         try:
             if contained(record.lab_yml, new_text) is None:
                 return record.name
@@ -144,6 +147,9 @@ def pick_snapshot(state: LabState, new_text: str) -> str:
     base = state.snapshot('base')
     if base is None:
         raise GoadError('no snapshot qualifies and there is no base snapshot: provision cannot remove content; redeploy')
+    reason = unusable(base, new_text)
+    if reason:
+        raise GoadError(f'snapshot base {reason}')
     try:
         path = contained(base.lab_yml, new_text)
     except GoadError as e:

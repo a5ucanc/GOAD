@@ -191,10 +191,14 @@ def _snapshot_list(args, ctx) -> int:
     from rich.table import Table
 
     from goad.lab import snapshots
-    table = Table('Name', 'Taken', 'Label', 'Scenarios', 'Missing on')
-    for row in snapshots.list_snapshots(_open(ctx, need_definition=False)):
-        table.add_row(row.record.name, row.record.taken_at, row.record.label, _recorded_scenarios(row.record.lab_yml),
-                      ', '.join(row.missing_on))
+    from goad.state import working_lab_path
+    table = Table('Name', 'Taken', 'Label', 'Scenarios', 'Extensions', 'Missing on')
+    lab = _open(ctx, need_definition=False)
+    current = working_lab_path(ctx.settings).read_text()
+    for row in snapshots.list_snapshots(lab):
+        name = row.record.name + (' (unusable)' if snapshots.unusable(row.record, current) else '')
+        table.add_row(name, row.record.taken_at, row.record.label, _recorded_scenarios(row.record.lab_yml),
+                      ', '.join(snapshots.recorded_extensions(row.record.lab_yml)), ', '.join(row.missing_on))
     Console().print(table)
     return 0
 

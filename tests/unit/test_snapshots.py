@@ -144,3 +144,45 @@ def test_reset_refuses_incompatible_record(lab, fake):
     with pytest.raises(GoadError, match='srv02 was removed'):
         reset(lab, 'x', wait=lambda e: None)
     assert fake.calls == []
+
+
+def _mssql_catalogue(tmp_path, monkeypatch):
+    from goad.lab import extensions
+    (tmp_path / 'mssql.yml').write_text('description: t\nlabs:\n  2domains: {}\n', encoding='utf-8')
+    monkeypatch.setattr(extensions, 'EXTENSION_DIR', tmp_path)
+
+
+def _with_extensions(text, *names):
+    return text + f'extensions: [{", ".join(names)}]\n'
+
+
+def test_reset_refuses_snapshot_before_extension(lab, fake, settings, tmp_path, monkeypatch):
+    _mssql_catalogue(tmp_path, monkeypatch)
+    path = working_lab_path(settings)
+    path.write_text(_with_extensions(path.read_text(), 'mssql'))
+    with pytest.raises(GoadError, match='snapshot base predates extension mssql: run goad extension remove mssql first'):
+        reset(lab, 'base')
+    assert not [a for a in fake.calls if a[3] in ('stop', 'revertToSnapshot')]
+
+
+def test_reset_current_text_overrides_working_text(lab, fake, settings, tmp_path, monkeypatch):
+    _mssql_catalogue(tmp_path, monkeypatch)
+    path = working_lab_path(settings)
+    with_ext = _with_extensions(path.read_text(), 'mssql')
+    path.write_text(with_ext)
+    # working text has the extension; the text it is being removed from does not
+    reset(lab, 'base', wait=lambda endpoints: None, current_text=path.read_text().replace('extensions: [mssql]\n', ''))
+    assert 'mssql' not in path.read_text()
+    with pytest.raises(GoadError, match='predates extension mssql'):
+        reset(lab, 'base', wait=lambda endpoints: None, current_text=with_ext)
+
+
+def test_unusable_reasons():
+    from goad.lab.snapshots import unusable
+    from goad.state import SnapshotRecord
+    rec = lambda t: SnapshotRecord('r', '2026-11-21T00:00:00Z', '', t)
+    assert unusable(rec('a: 1\n'), 'a: 1\n') is None
+    assert unusable(rec('extensions: [a, b]\n'), 'extensions: [a, b]\n') is None
+    assert unusable(rec('extensions: [a]\n'), 'extensions: [a, b, c]\n') == \
+        'predates extension c: run goad extension remove c first'
+    assert unusable(rec('extensions: [a, x]\n'), 'extensions: [a]\n') == 'holds extension x, which is not installed'
