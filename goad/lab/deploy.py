@@ -2,7 +2,7 @@
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -21,7 +21,7 @@ from goad.templates.smoke import check_psrp, check_ssh, FIRSTBOOT_TIMEOUT, first
 from goad.templates.store import TemplateStore
 from goad.vmware.guestinfo import FIRSTBOOT_DONE, FIRSTBOOT_FAILED, GuestConfig, configure_hardware, lab_mac, write_guestinfo
 from goad.vmware.parallel import run_parallel
-from goad.vmware.vmrun import Vmrun
+from goad.vmware.vmrun import Vmrun, norm_vmx
 from goad.vmware.vmx import Vmx
 
 console = Console()
@@ -45,16 +45,26 @@ class Probes:
     provision: Callable = provision
 
 
+def _subset(hosts: Dict[str, HostState], names: Optional[Iterable[str]]) -> Dict[str, HostState]:
+    """Every host, or only the named ones."""
+    return dict(hosts) if names is None else {name: hosts[name] for name in names}
+
+
+def _template(store: TemplateStore, os_name: str):
+    template = store.latest(os_name)
+    if template is None:
+        verb = 'import' if os_name == 'kali' else 'build'
+        raise GoadError(f'no {os_name} template: run goad template {verb} {os_name}')
+    return template
+
+
 def step_check(lab: Lab, store: TemplateStore, probes: Probes) -> None:
     failed = [c for c in probes.run_checks(lab.runner, lab.settings, need_packer=False, need_ansible=True) if not c.ok]
     if failed:
         raise GoadError('host checks failed: ' + '; '.join(f'{c.name}: {c.detail}' for c in failed))
     templates = {}
     for os_name in lab.definition.templates_needed():
-        template = store.latest(os_name)
-        if template is None:
-            raise GoadError(f'no {os_name} template: run goad template build {os_name}')
-        templates[os_name] = template
+        templates[os_name] = _template(store, os_name)
     hosts: Dict[str, HostState] = {}
     for name, host in lab.definition.hosts.items():
         ip = lab.definition.ip(name, lab.state.ip_range)
@@ -66,17 +76,17 @@ def step_check(lab: Lab, store: TemplateStore, probes: Probes) -> None:
     lab.state.templates = sorted({h.template for h in hosts.values()})
 
 
-def step_clone(lab: Lab, store: TemplateStore) -> None:
+def step_clone(lab: Lab, store: TemplateStore, names: Optional[Iterable[str]] = None) -> None:
     def clone(name: str, host: HostState) -> None:
         if to_wsl(host.vmx).exists():
             return  # cloned by an earlier run
         lab.vmrun.clone_linked(store.windows_vmx(host.template), host.vmx, 'base', f'{lab.state.lab}-{name}')
 
-    run_parallel(lab.state.hosts, clone, 'clone').raise_if_failed('clone')
+    run_parallel(_subset(lab.state.hosts, names), clone, 'clone').raise_if_failed('clone')
 
 
-def step_configure(lab: Lab) -> None:
-    for name, host in lab.state.hosts.items():
+def step_configure(lab: Lab, names: Optional[Iterable[str]] = None) -> None:
+    for name, host in _subset(lab.state.hosts, names).items():
         definition = lab.definition.hosts[name]
         vmx = Vmx.load(to_wsl(host.vmx))
         mac = lab_mac(host.ip)
@@ -103,8 +113,8 @@ def _already_booted(lab: Lab, probes: Probes, name: str, host: HostState) -> boo
     return True
 
 
-def step_firstboot(lab: Lab, probes: Probes) -> None:
-    pending = {name: host for name, host in lab.state.hosts.items() if not host.ready}
+def step_firstboot(lab: Lab, probes: Probes, names: Optional[Iterable[str]] = None) -> None:
+    pending = {name: host for name, host in _subset(lab.state.hosts, names).items() if not host.ready}
     start_all(lab.vmrun, lab.vms())   # ready hosts too: later steps need every VM running
 
     def boot(name: str, host: HostState) -> None:
@@ -135,6 +145,33 @@ def step_firstboot(lab: Lab, probes: Probes) -> None:
         lab.state.hosts[name].ready = True
     lab.save()  # partial success survives a failed run
     result.raise_if_failed('first boot')
+
+
+def add_hosts(lab: Lab, store: TemplateStore, probes: Probes, names: List[str]) -> None:
+    """Clone, configure and first boot only the named hosts of a deployed lab. A name already in the state
+    (an earlier run stopped part way) keeps its record; clone skips an existing .vmx, first boot a ready host."""
+    if not names:
+        return
+    new = [name for name in names if name not in lab.state.hosts]
+    for name in new:
+        ip = lab.definition.ip(name, lab.state.ip_range)
+        if probes.is_up(ip):
+            raise GoadError(f'{ip} ({name}) already answers')
+    templates = {name: _template(store, lab.definition.hosts[name].os) for name in new}
+    for name in new:
+        host = lab.definition.hosts[name]
+        lab.state.hosts[name] = HostState(vmx=vm_path(lab.settings, name), template=templates[name].name,
+                                          hostname=host.hostname, ip=lab.definition.ip(name, lab.state.ip_range))
+    lab.state.templates = sorted({h.template for h in lab.state.hosts.values()})
+    lab.save()
+    step_clone(lab, store, names)
+    lab.save()
+    running = set(lab.vmrun.running())
+    step_configure(lab, [name for name in names
+                         if not lab.state.hosts[name].ready and norm_vmx(lab.state.hosts[name].vmx) not in running])
+    lab.save()
+    step_firstboot(lab, probes, names)
+    lab.save()
 
 
 def step_provision(lab: Lab, probes: Probes) -> None:

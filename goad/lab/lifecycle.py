@@ -1,7 +1,7 @@
 """Lab status, destroy, credentials and single-VM control."""
 import shutil
 from dataclasses import dataclass
-from typing import Callable, List
+from typing import Callable, Dict, Iterable, List
 
 from goad import GoadError
 from goad.host.paths import to_wsl
@@ -45,8 +45,12 @@ def destroy(settings: Settings, runner, yes: bool) -> None:
         raise GoadError('no lab deployed')
     if not confirm(f'Destroy lab {state.lab} and delete its VMs?', yes):
         raise GoadError('cancelled')
-    vmrun = Vmrun(runner, settings)
-    vms = {name: host.vmx for name, host in state.hosts.items()}
+    delete_vms(settings, Vmrun(runner, settings), {name: host.vmx for name, host in state.hosts.items()})
+    delete_state(settings)
+
+
+def delete_vms(settings: Settings, vmrun: Vmrun, vms: Dict[str, str], folders: Iterable[str] = ()) -> None:
+    """Hard-stop and delete the VMs, then remove their folders (and the extra host folders named)."""
     try:
         stop_all(vmrun, vms, hard=True)
     except GoadError:
@@ -60,7 +64,7 @@ def destroy(settings: Settings, runner, yes: bool) -> None:
 
     run_parallel(vms, delete, 'delete')
     failed = []
-    for name in vms:
+    for name in dict.fromkeys([*vms, *folders]):
         folder = to_wsl(vm_folder(settings, name))
         if folder.exists():
             try:
@@ -69,7 +73,6 @@ def destroy(settings: Settings, runner, yes: bool) -> None:
                 failed.append(f'{folder} ({exc})')
     if failed:
         raise GoadError(f'cannot remove {"; ".join(failed)}: close VMware and retry')
-    delete_state(settings)
 
 
 def creds(lab: Lab, laps: Callable[[str, str, str], str] = laps_password) -> List[Credential]:

@@ -38,6 +38,7 @@ class LabState:
     snapshots: List[SnapshotRecord] = field(default_factory=list)
     current: Optional[str] = None
     durations: Dict[str, float] = field(default_factory=dict)
+    pending_extension: Optional[str] = None   # goad extension add stopped part way; add again resumes
 
     @property
     def deployed(self) -> bool:
