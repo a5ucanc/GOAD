@@ -384,3 +384,12 @@ def test_add_open_failure_says_resume(env, monkeypatch):
         extension_ops.add(env.settings, env.runner, env.store, 'a', probes=env.probes)
     assert str(e.value) == 'lab.yml: invalid YAML: run goad extension add a again to resume'
     assert load_state(env.settings).pending_extension == 'a'
+
+
+def test_remove_refuses_scenario_requiring_extension(monkeypatch):
+    needs = Scenario('needs', '', 'server', {}, requires='novm')
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: dict(CATALOGUE, needs=needs))
+    raw = yaml.safe_load(text_with('novm'))
+    raw['scenarios'] = [{'name': 'needs', 'target': 'srv02'}]
+    with pytest.raises(GoadError, match=r'disable needs@srv02 first'):
+        extension_ops.remove_entry(yaml.safe_dump(raw, sort_keys=False), 'novm')

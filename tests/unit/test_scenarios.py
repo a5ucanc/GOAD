@@ -221,3 +221,59 @@ def test_setting_str_equal_is_not_a_conflict():
     mk = lambda v: _sc({'hosts': {'{target}': {'settings': {'dc.strong_cert_binding': v}}}})
     out = expand(_with(('a', 'dc01'), ('b', 'dc01')), 'x', {'a': mk('0'), 'b': mk(0)})
     assert str(out['hosts']['dc01']['settings']['dc.strong_cert_binding']) == '0'
+
+
+def _tmp_catalogues(tmp_path, monkeypatch, scenario_data):
+    from goad.lab import extensions, scenarios as scn
+    ext_dir, scn_dir = tmp_path / 'ext', tmp_path / 'scn'
+    ext_dir.mkdir()
+    scn_dir.mkdir()
+    svc = {'services': {'mssql': {}}}
+    (ext_dir / 'mssql.yml').write_text(yaml.safe_dump({'description': 'mssql', 'labs': {
+        '2forests': {'hosts': {'srv03': svc, 'srv02': svc}}}}), encoding='utf-8')
+    (scn_dir / 'dbscn.yml').write_text(yaml.safe_dump(scenario_data), encoding='utf-8')
+    monkeypatch.setattr(extensions, 'EXTENSION_DIR', ext_dir)
+    monkeypatch.setattr(scn, 'SCENARIO_DIR', scn_dir)
+
+
+DBSCN = {'description': 'db thing', 'target': 'service:mssql', 'requires': 'mssql',
+         'fragment': {'hosts': {'{target}': {'settings': {'smb.signing': 'optional'}}}}}
+
+
+def test_requires_refused_without_extension(tmp_path, monkeypatch):
+    _tmp_catalogues(tmp_path, monkeypatch, DBSCN)
+    raw = lab('2forests')
+    raw['scenarios'] = [{'name': 'dbscn', 'target': 'srv02'}]
+    with pytest.raises(GoadError) as e:
+        expand(raw, 'lab.yml')
+    assert str(e.value) == 'lab.yml: scenario dbscn needs extension mssql: run goad extension add mssql'
+
+
+def test_service_kind_targets_srv02_first(tmp_path, monkeypatch):
+    from goad.lab import extensions
+    _tmp_catalogues(tmp_path, monkeypatch, DBSCN)
+    raw = lab('2forests')
+    raw['extensions'] = ['mssql']
+    assert valid_targets(extensions.expand(raw, 'lab.yml'), 'service:mssql') == ['srv02', 'srv03']
+    assert valid_targets(lab('2forests'), 'service:mssql') == []
+
+
+def test_listing_shows_requires(tmp_path, monkeypatch):
+    from goad.lab import scenario_ops
+    _tmp_catalogues(tmp_path, monkeypatch, DBSCN)
+    assert load_catalogue()['dbscn'].requires == 'mssql'
+    raw = lab('2forests')
+    raw['extensions'] = ['mssql']
+    rows = scenario_ops.listing(yaml.safe_dump(raw))
+    assert rows == [('dbscn', 'service:mssql', 'db thing (requires extension mssql)', 'srv02, srv03', '')]
+
+
+def test_add_entry_requires_and_expands_extension(tmp_path, monkeypatch):
+    from goad.lab import scenario_ops
+    _tmp_catalogues(tmp_path, monkeypatch, DBSCN)
+    raw = lab('2forests')
+    with pytest.raises(GoadError, match='needs extension mssql: run goad extension add mssql'):
+        scenario_ops.add_entry(yaml.safe_dump(raw), 'dbscn', None)
+    raw['extensions'] = ['mssql']
+    _, target = scenario_ops.add_entry(yaml.safe_dump(raw), 'dbscn', None)
+    assert target == 'srv02'

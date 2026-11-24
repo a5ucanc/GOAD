@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import yaml
 
 from goad import GoadError
-from goad.lab import scenarios
+from goad.lab import extensions, scenarios
 from goad.lab.definition import parse_lab
 from goad.state import LabState, load_state, working_lab_path
 
@@ -42,13 +42,15 @@ def add_entry(text: str, name: str, target: Optional[str]) -> Tuple[str, str]:
     catalogue = scenarios.load_catalogue()
     if name not in catalogue:
         raise GoadError(f'unknown scenario {name}: see goad scenario list')
+    scenarios.check_requires(catalogue[name], raw, 'lab.yml')
     kind = catalogue[name].kind
-    valid = scenarios.valid_targets(raw, kind)
+    expanded = extensions.expand(raw, SOURCE)
+    valid = scenarios.valid_targets(expanded, kind)
     if target is None:
         if not valid:
             raise GoadError(f'scenario {name} needs a {kind} target: none in this lab')
         target = valid[0]
-    elif target not in (raw.get('hosts') or {}):
+    elif target not in (expanded.get('hosts') or {}):
         raise GoadError(f'unknown host {target}')
     elif target not in valid:
         choice = f'choose one of {valid}' if valid else 'none in this lab'
@@ -209,15 +211,19 @@ def disable(settings, runner, name: str, target: Optional[str], yes: bool,
 def listing(text: Optional[str]) -> List[Tuple[str, str, str, str, str]]:
     catalogue = scenarios.load_catalogue()
     raw = _load(text) if text is not None else None
+    expanded = extensions.expand(raw, SOURCE) if raw is not None else None
     rows = []
     for name in sorted(catalogue):
         scenario = catalogue[name]
         if raw is None:
             valid = enabled = ''
         else:
-            valid = ', '.join(scenarios.valid_targets(raw, scenario.kind))
+            valid = ', '.join(scenarios.valid_targets(expanded, scenario.kind))
             enabled = ', '.join(e['target'] for e in _entries(raw) if e['name'] == name)
-        rows.append((name, scenario.kind, scenario.description, valid, enabled))
+        description = scenario.description
+        if scenario.requires:
+            description = f'{description} (requires extension {scenario.requires})'.strip()
+        rows.append((name, scenario.kind, description, valid, enabled))
     return rows
 
 

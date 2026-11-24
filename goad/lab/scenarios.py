@@ -7,11 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from goad import GoadError
-from goad.lab.definition import REPO
+from goad.lab.definition import REPO, SERVICES
 
 SCENARIO_DIR = REPO / 'scenarios'
 KINDS = ('domain', 'server', 'ca', 'trust')
-_KEYS = {'description', 'target', 'fragment'}
+_KEYS = {'description', 'target', 'fragment', 'requires'}
 
 
 @dataclass(frozen=True)
@@ -20,9 +20,16 @@ class Scenario:
     description: str
     kind: str
     fragment: Dict[str, Any]
+    requires: Optional[str] = None
 
 
-def load_catalogue(directory: Path = SCENARIO_DIR) -> Dict[str, Scenario]:
+def is_kind(kind: Any) -> bool:
+    return kind in KINDS or (isinstance(kind, str) and kind.startswith('service:') and kind[len('service:'):] in SERVICES)
+
+
+def load_catalogue(directory: Optional[Path] = None) -> Dict[str, Scenario]:
+    """Every scenarios/*.yml file; the directory is read at call time so tests can point it elsewhere."""
+    directory = SCENARIO_DIR if directory is None else directory
     catalogue: Dict[str, Scenario] = {}
     for path in sorted(Path(directory).glob('*.yml')):
         try:
@@ -33,12 +40,16 @@ def load_catalogue(directory: Path = SCENARIO_DIR) -> Dict[str, Scenario]:
             raise GoadError(f'{path.name}: scenario file must be a mapping')
         extra = sorted(set(data) - _KEYS)
         if extra:
-            raise GoadError(f'{path.name}: unknown keys {extra}; allowed: description, target, fragment')
-        if data.get('target') not in KINDS:
-            raise GoadError(f'{path.name}: target must be one of {list(KINDS)}, got {data.get("target")!r}')
+            raise GoadError(f'{path.name}: unknown keys {extra}; allowed: description, target, fragment, requires')
+        if not is_kind(data.get('target')):
+            kinds = list(KINDS) + [f'service:{s}' for s in SERVICES]
+            raise GoadError(f'{path.name}: target must be one of {kinds}, got {data.get("target")!r}')
+        requires = data.get('requires')
+        if requires is not None and not isinstance(requires, str):
+            raise GoadError(f'{path.name}: requires must be an extension name')
         if not isinstance(data.get('fragment'), dict):
             raise GoadError(f'{path.name}: fragment must be a mapping')
-        catalogue[path.stem] = Scenario(path.stem, str(data.get('description', '')), data['target'], data['fragment'])
+        catalogue[path.stem] = Scenario(path.stem, str(data.get('description', '')), data['target'], data['fragment'], requires)
     return catalogue
 
 
@@ -53,7 +64,9 @@ def valid_targets(raw: Dict[str, Any], kind: str) -> List[str]:
     trusted = _trust_domains(raw) if kind == 'trust' else set()
     out = []
     for key, h in hosts.items():
-        if kind == 'domain':
+        if kind.startswith('service:'):
+            ok = kind[len('service:'):] in (h.get('services') or {})
+        elif kind == 'domain':
             ok = h.get('role') == 'dc'
         elif kind == 'server':
             ok = h.get('role') == 'server' and bool(h.get('domain'))
@@ -65,7 +78,17 @@ def valid_targets(raw: Dict[str, Any], kind: str) -> List[str]:
             ok = False
         if ok:
             out.append(key)
+    if kind.startswith('service:') and 'srv02' in out:
+        out.remove('srv02')
+        out.insert(0, 'srv02')
     return out
+
+
+def check_requires(scenario: 'Scenario', raw: Dict[str, Any], source: str) -> None:
+    from goad.lab import extensions
+    req = scenario.requires
+    if req and req not in extensions.entries(raw):
+        raise GoadError(f'{source}: scenario {scenario.name} needs extension {req}: run goad extension add {req}')
 
 
 def placeholders(raw: Dict[str, Any], target: str) -> Dict[str, str]:
@@ -185,6 +208,7 @@ def expand(raw: Dict[str, Any], source: str, catalogue: Optional[Dict[str, Scena
         if target not in hosts:
             raise GoadError(f'{source}: unknown host {target!r} in scenario {name}')
         scenario = catalogue[name]
+        check_requires(scenario, raw, source)
         valid = valid_targets(raw, scenario.kind)
         if target not in valid:
             choice = f'choose one of {valid}' if valid else 'none in this lab'
