@@ -1,0 +1,29 @@
+# Port of main's extensions/wazuh role wazuh_agent: the Wazuh agent MSI, enrolled with the wazuh host's
+# manager on its first start.
+- name: Wazuh setup folder
+  ansible.windows.win_file:
+    path: "{{ wazuh_agent_setup_dir }}"
+    state: directory
+
+- name: Download the Wazuh agent
+  ansible.windows.win_get_url:
+    url: "{{ wazuh_agent_msi_url }}"
+    dest: "{{ wazuh_agent_setup_dir }}\\wazuh-agent.msi"
+    force: false
+  register: wazuh_agent_download
+  until: wazuh_agent_download is succeeded
+  retries: 3
+  delay: 10
+
+# win_package reads the product code from the MSI: installed once.
+- name: Install the Wazuh agent
+  ansible.windows.win_package:
+    path: "{{ wazuh_agent_setup_dir }}\\wazuh-agent.msi"
+    arguments: WAZUH_MANAGER={{ wazuh_agent_manager }} WAZUH_REGISTRATION_SERVER={{ wazuh_agent_manager }}
+    state: present
+
+- name: Start the Wazuh agent
+  ansible.windows.win_service:
+    name: WazuhSvc
+    start_mode: auto
+    state: started

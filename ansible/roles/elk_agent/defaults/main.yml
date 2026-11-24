@@ -1,0 +1,12 @@
+# The elk server: the inventory host whose services list elk (extensions/elk.yml).
+elk_agent_server: "{{ groups['all'] | map('extract', hostvars) | selectattr('services', 'defined') | selectattr('services', 'contains', 'elk') | map(attribute='ansible_host') | first }}"
+# Password of the Elasticsearch elastic user (role elk, the extension credential).
+elk_agent_elastic_password: 'Aa1234567890!'
+# Same version as the stack (role elk, elk_version).
+elk_agent_winlogbeat_version: '9.5.6'
+elk_agent_winlogbeat_name: "winlogbeat-{{ elk_agent_winlogbeat_version }}-windows-x86_64"
+elk_agent_winlogbeat_url: "https://artifacts.elastic.co/downloads/beats/winlogbeat/{{ elk_agent_winlogbeat_name }}.zip"
+elk_agent_winlogbeat_dir: C:\Program Files\Elastic\winlogbeat
+# Sysmon from Microsoft at provision time (main committed Sysmon.zip). Sysinternals serves only the latest.
+elk_agent_sysmon_url: https://download.sysinternals.com/files/Sysmon.zip
+elk_agent_setup_dir: C:\setup\sysmon

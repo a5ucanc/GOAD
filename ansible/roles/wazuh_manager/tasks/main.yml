@@ -1,0 +1,112 @@
+# Port of main's extensions/wazuh role wazuh_manager: the Wazuh installation assistant, all in one
+# (manager, indexer, dashboard), then the indexer admin password set to the extension credential.
+- name: Wazuh working folder
+  ansible.builtin.file:
+    path: "{{ wazuh_dir }}"
+    state: directory
+    mode: '0750'
+
+- name: Look for the installed Wazuh components
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /var/ossec/bin/wazuh-control
+    - /usr/share/wazuh-indexer/bin/opensearch
+    - /usr/share/wazuh-dashboard/bin/opensearch-dashboards
+  register: wazuh_components
+
+- name: Decide whether to run the installation assistant
+  ansible.builtin.set_fact:
+    wazuh_install: "{{ wazuh_components.results | rejectattr('stat.exists') | list | length > 0 }}"
+
+- name: Download the Wazuh installation assistant
+  ansible.builtin.get_url:
+    url: "{{ wazuh_install_script_url }}"
+    dest: "{{ wazuh_dir }}/wazuh-install.sh"
+    mode: '0750'
+    force: true
+  when: wazuh_install
+
+- name: Read the installation assistant version
+  ansible.builtin.command: grep -oP '^readonly wazuh_version="\K[^"]+' {{ wazuh_dir }}/wazuh-install.sh
+  register: wazuh_script_version
+  changed_when: false
+  when: wazuh_install
+
+- name: Refuse an installation assistant of another version
+  ansible.builtin.assert:
+    that: wazuh_script_version.stdout == wazuh_version
+    fail_msg: >-
+      {{ wazuh_install_script_url }} installs Wazuh {{ wazuh_script_version.stdout }}, not {{ wazuh_version }}:
+      update wazuh_version (role wazuh_manager) and the agent MSI (role wazuh_agent)
+  when: wazuh_install
+
+# An interrupted run leaves its generated certificates and passwords: start over.
+- name: Remove the files of an interrupted installation
+  ansible.builtin.file:
+    path: "{{ wazuh_dir }}/wazuh-install-files.tar"
+    state: absent
+  when: wazuh_install
+
+# -o: a component left by an interrupted run is reinstalled instead of stopping the assistant.
+- name: Run the Wazuh installation assistant (all in one)
+  ansible.builtin.shell: >-
+    bash {{ wazuh_dir }}/wazuh-install.sh -a -i -o > {{ wazuh_dir }}/wazuh-install-output.txt 2>&1
+    || { tail -n 40 {{ wazuh_dir }}/wazuh-install-output.txt; exit 1; }
+  args:
+    chdir: "{{ wazuh_dir }}"
+  when: wazuh_install
+
+# False positive on /bin/diff, https://github.com/wazuh/wazuh/issues/19000
+- name: Fix the rootkit trojan false positive on diff
+  ansible.builtin.lineinfile:
+    path: /var/ossec/etc/rootcheck/rootkit_trojans.txt
+    search_string: 'diff        !bash|^/bin/sh|file\.h|proc\.h|/dev/[^n]|^/bin/.*sh!'
+    line: 'diff        !bash|^/bin/sh|file\.h|proc\.h|/dev/[^nf]|^/bin/.*sh!'
+  notify: Restart wazuh-manager
+
+- name: Start and enable the Wazuh services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [wazuh-indexer, wazuh-manager, wazuh-dashboard, filebeat]
+
+- name: Check the indexer admin user password
+  ansible.builtin.uri:
+    url: https://127.0.0.1:9200
+    user: admin
+    password: "{{ wazuh_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: [200, 401]
+  register: wazuh_admin_check
+  until: wazuh_admin_check.status in [200, 401]
+  retries: 30
+  delay: 10
+  no_log: true
+
+# The steps of wazuh-passwords-tool.sh for the admin user, without its symbol check.
+- name: Set the indexer admin user password
+  ansible.builtin.shell: |
+    set -e
+    tools=/usr/share/wazuh-indexer/plugins/opensearch-security/tools
+    certs=/etc/wazuh-indexer/certs
+    export JAVA_HOME=/usr/share/wazuh-indexer/jdk OPENSEARCH_CONF_DIR=/etc/wazuh-indexer
+    hash=$(bash $tools/hash.sh -p "$WAZUH_ADMIN_PASSWORD" 2>/dev/null | tail -1)
+    mkdir -p /etc/wazuh-indexer/backup
+    bash $tools/securityadmin.sh -backup /etc/wazuh-indexer/backup -icl -p 9200 -nhnv \
+      -cacert $certs/root-ca.pem -cert $certs/admin.pem -key $certs/admin-key.pem -h 127.0.0.1
+    sed -i "/^admin:/{n;s|hash: .*|hash: \"$hash\"|}" /etc/wazuh-indexer/backup/internal_users.yml
+    bash $tools/securityadmin.sh -f /etc/wazuh-indexer/backup/internal_users.yml -t internalusers -icl -p 9200 -nhnv \
+      -cacert $certs/root-ca.pem -cert $certs/admin.pem -key $certs/admin-key.pem -h 127.0.0.1
+    # filebeat and the manager indexer connector log in as admin
+    echo "$WAZUH_ADMIN_PASSWORD" | filebeat keystore add password --force --stdin
+    /var/ossec/bin/wazuh-keystore -f indexer -k password -v "$WAZUH_ADMIN_PASSWORD"
+    systemctl restart filebeat wazuh-manager
+  args:
+    executable: /bin/bash
+  environment:
+    WAZUH_ADMIN_PASSWORD: "{{ wazuh_admin_password }}"
+  when: wazuh_admin_check.status != 200
+  no_log: true

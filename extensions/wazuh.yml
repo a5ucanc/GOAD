@@ -1,0 +1,12 @@
+description: "Wazuh manager, indexer and dashboard on wazuh; Wazuh agent on every Windows host"
+# Port of main's extensions/wazuh. The wazuh_manager role runs the Wazuh installation assistant (all in
+# one) on the host whose services list wazuh. The agents play installs the Wazuh agent (role
+# wazuh_agent) on every Windows host, enrolled with that manager.
+credentials:
+- {account: admin, password: 'Aa1234567890!', scope: 'wazuh (https://{range}.51)'}
+labs:
+  1domain: &wazuh
+    hosts:
+      wazuh: {hostname: wazuh, os: ubuntu2404, role: linux, octet: 51, cpus: 2, memory: 8192, services: {wazuh: {}}}
+  2domains: *wazuh
+  2forests: *wazuh

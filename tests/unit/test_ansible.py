@@ -14,14 +14,14 @@ from goad.lab.settings_catalog import SETTINGS
 
 ANSIBLE = REPO / 'ansible'
 PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign members', 'post-join', 'settings',
-         'services', 'linux']
+         'services', 'linux', 'agents']
 
 
 def test_play_order():
     plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     assert [p['name'] for p in plays] == PLAYS
     assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc', 'dc', 'dc:member', 'dc', 'windows', 'windows',
-                                                'windows', 'linux']
+                                                'windows', 'linux', 'windows']
     assert all(p['gather_facts'] is False for p in plays)
 
 
@@ -34,7 +34,8 @@ def test_no_fixed_waits():
 
 @pytest.mark.skipif(shutil.which(ansible_bin('ansible-playbook')) is None, reason='ansible not installed')
 @pytest.mark.parametrize('name', LAB_NAMES)
-@pytest.mark.parametrize('extensions', ['', 'extensions: [mssql, iis]\n', 'extensions: [ws01, lx01, kali]\n'])
+@pytest.mark.parametrize('extensions', ['', 'extensions: [mssql, iis]\n', 'extensions: [ws01, lx01, kali]\n',
+                                        'extensions: [elk, wazuh]\n'])
 def test_site_syntax(name, extensions, tmp_path):
     from goad.lab.definition import parse_lab
     inv = tmp_path / 'inventory.yml'
@@ -468,7 +469,7 @@ def test_mssql_options_failure_is_reported_without_no_log():
 def test_linux_play_joins_only_domain_hosts():
     play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'linux')
     assert play['hosts'] == 'linux' and play['tags'] == ['linux'] and play['become'] is True
-    role, = play['roles']
+    role = play['roles'][0]
     assert role['role'] == 'linux_join' and role['when'] == 'domain is not none'
 
 
@@ -514,6 +515,92 @@ def test_linux_join_creates_resolved_dir_and_reports_join_failure():
     assert 'stderr' in report['ansible.builtin.fail']['msg'] and 'no_log' not in report
     step = next(t for t in tasks if t['name'] == 'Step the clock at any offset')
     assert step['ansible.builtin.lineinfile']['path'] == '/etc/chrony/chrony.conf'
+
+
+def test_linux_play_installs_the_monitoring_servers():
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'linux')
+    # free: the elk install does not wait on each wazuh task
+    assert play['strategy'] == 'free'
+    roles = {r['role']: r for r in play['roles']}
+    assert list(roles) == ['linux_join', 'elk', 'wazuh_manager']
+    assert "'elk' in services" in roles['elk']['when']
+    assert "'wazuh' in services" in roles['wazuh_manager']['when']
+
+
+def test_agents_play_runs_only_with_the_extension():
+    plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
+    play = plays[-1]
+    assert play['name'] == 'agents' and play['hosts'] == 'windows' and play['tags'] == ['agents']
+    roles = {r['role']: r for r in play['roles']}
+    assert list(roles) == ['elk_agent', 'wazuh_agent']
+    assert roles['elk_agent']['when'] == "'elk' in goad_extensions | default([])"
+    assert roles['wazuh_agent']['when'] == "'wazuh' in goad_extensions | default([])"
+
+
+def _defaults(role):
+    return yaml.safe_load((ANSIBLE / 'roles' / role / 'defaults' / 'main.yml').read_text())
+
+
+def test_monitoring_versions_are_pinned_and_match():
+    elk, agent = _defaults('elk'), _defaults('elk_agent')
+    assert re.fullmatch(r'9\.\d+\.\d+', elk['elk_version'])
+    assert agent['elk_agent_winlogbeat_version'] == elk['elk_version']
+    manager, wazuh_agent = _defaults('wazuh_manager'), _defaults('wazuh_agent')
+    assert re.fullmatch(r'4\.\d+\.\d+', manager['wazuh_version'])
+    assert f"wazuh-agent-{manager['wazuh_version']}-1.msi" in wazuh_agent['wazuh_agent_msi_url']
+    for role in ('elk', 'elk_agent', 'wazuh_manager', 'wazuh_agent'):
+        text = (ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text()
+        assert '9.x' not in text and 'latest' not in text, role
+
+
+def test_no_binaries_in_monitoring_roles():
+    # Sysmon is downloaded from Microsoft at provision time
+    for role in ('elk', 'elk_agent', 'wazuh_manager', 'wazuh_agent'):
+        for path in (ANSIBLE / 'roles' / role).rglob('*'):
+            assert path.suffix.lower() not in ('.zip', '.exe', '.msi'), path
+
+
+def test_agents_find_their_server_through_services():
+    for role, key in (('elk_agent', 'elk_agent_server'), ('wazuh_agent', 'wazuh_agent_manager')):
+        expr = _defaults(role)[key]
+        assert 'services' in expr and not re.search(r'\d+\.\d+\.\d+', expr), role
+
+
+@pytest.mark.skipif(shutil.which(ansible_bin('ansible-playbook')) is None, reason='ansible not installed')
+def test_agent_server_lookup_resolves(tmp_path):
+    from goad.lab.definition import parse_lab
+    lab = parse_lab(shipped_lab('2forests').read_text() + 'extensions: [elk, wazuh]\n', '2forests')
+    inv = tmp_path / 'inventory.yml'
+    inv.write_text(yaml.safe_dump(render_inventory(lab, '10.9.8')))
+    playbook = tmp_path / 'lookup.yml'
+    playbook.write_text(yaml.safe_dump([{
+        'hosts': 'dc01', 'gather_facts': False,
+        'vars_files': [str(ANSIBLE / 'roles' / 'elk_agent' / 'defaults' / 'main.yml'),
+                       str(ANSIBLE / 'roles' / 'wazuh_agent' / 'defaults' / 'main.yml')],
+        'tasks': [{'ansible.builtin.debug': {'msg': 'elk={{ elk_agent_server }} wazuh={{ wazuh_agent_manager }}'}}]}]))
+    result = subprocess.run([ansible_bin('ansible-playbook'), '-i', str(inv), str(playbook)],
+                            capture_output=True, text=True, env={**os.environ, **ANSIBLE_ENV})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'elk=10.9.8.50 wazuh=10.9.8.51' in result.stdout
+
+
+def test_monitoring_passwords_are_set_only_when_they_differ():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'elk' / 'tasks' / 'main.yml').read_text())
+    by_name = {t['name']: t for t in tasks}
+    check = by_name['Check the built-in users passwords']
+    assert check['ansible.builtin.uri']['status_code'] == [200, 401]
+    setter = by_name['Set the built-in users passwords']
+    assert setter['loop'] == '{{ elk_auth.results }}' and setter['when'] == 'item.status != 200'
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'wazuh_manager' / 'tasks' / 'main.yml').read_text())
+    by_name = {t['name']: t for t in tasks}
+    assert by_name['Set the indexer admin user password']['when'] == 'wazuh_admin_check.status != 200'
+
+
+def test_monitoring_commands_state_when_they_change():
+    for role in ('elk', 'elk_agent', 'wazuh_manager', 'wazuh_agent'):
+        for t in yaml.safe_load((ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text()):
+            if any(k in t for k in ('ansible.builtin.command', 'ansible.builtin.shell', 'ansible.windows.win_command')):
+                assert 'changed_when' in t or 'when' in t, f"{role}: {t['name']}"
 
 
 def test_sql_conf_keys_hold_one_quoted_value():

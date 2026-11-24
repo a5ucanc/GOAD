@@ -299,3 +299,39 @@ def test_linux_local_groups_need_a_domain():
 
 def test_kali_extension_lists_kali_credential():
     assert load_catalogue()['kali'].credentials == (('kali', 'kali', 'ssh {range}.99'),)
+
+
+# Global Constraints: the monitoring servers, not domain joined
+MONITORING_HOSTS = {'elk': ('elk', 'ubuntu2404', 'linux', None, 50, 2, 6144),
+                    'wazuh': ('wazuh', 'ubuntu2404', 'linux', None, 51, 2, 8192)}
+
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_elk_and_wazuh_extensions(name):
+    text = shipped_lab(name).read_text() + 'extensions: [elk, wazuh]\n'
+    lab = parse_lab(text, 'lab.yml')
+    base = load_lab(shipped_lab(name))
+    assert set(lab.hosts) - set(base.hosts) == set(MONITORING_HOSTS)
+    for key, (hostname, os_name, role, domain, octet, cpus, memory) in MONITORING_HOSTS.items():
+        h = lab.hosts[key]
+        assert (h.hostname, h.os, h.role, h.domain, h.octet, h.cpus, h.memory) == (
+            hostname, os_name, role, domain, octet, cpus, memory)
+        assert h.services == {key: {}}
+    raw = yaml.safe_load(text)
+    for key in MONITORING_HOSTS:
+        assert extension_hosts(raw, key) == [key]
+    inv = render_inventory(lab, '192.168.56')
+    assert inv['all']['vars']['goad_extensions'] == ['elk', 'wazuh']
+    children = inv['all']['children']
+    assert set(children['linux']['hosts']) == set(MONITORING_HOSTS)
+    assert children['linux']['hosts']['elk']['services'] == {'elk': {}}
+    assert children['linux']['hosts']['wazuh']['ansible_host'] == '192.168.56.51'
+    assert not set(MONITORING_HOSTS) & set(children['member']['hosts'])
+
+
+def test_elk_and_wazuh_credentials_render_with_the_range():
+    from goad.lab.lifecycle import _extension_credentials
+    text = shipped_lab('1domain').read_text() + 'extensions: [elk, wazuh]\n'
+    rows = [(c.account, c.password, c.scope) for c in _extension_credentials(text, '10.2.0')]
+    assert rows == [('elastic', 'Aa1234567890!', 'elk (http://10.2.0.50:5601)'),
+                    ('admin', 'Aa1234567890!', 'wazuh (https://10.2.0.51)')]

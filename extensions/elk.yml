@@ -1,0 +1,12 @@
+description: "Elasticsearch, Kibana and Logstash on elk; Sysmon and Winlogbeat on every Windows host"
+# Port of main's extensions/elk. The elk role installs the stack on the host whose services list elk.
+# The agents play installs Sysmon and Winlogbeat (role elk_agent) on every Windows host and ships their
+# event logs to that host's Elasticsearch.
+credentials:
+- {account: elastic, password: 'Aa1234567890!', scope: 'elk (http://{range}.50:5601)'}
+labs:
+  1domain: &elk
+    hosts:
+      elk: {hostname: elk, os: ubuntu2404, role: linux, octet: 50, cpus: 2, memory: 6144, services: {elk: {}}}
+  2domains: *elk
+  2forests: *elk

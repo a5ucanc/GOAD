@@ -1,0 +1,7 @@
+# Kibana configuration for the GOAD elk extension.
+server.port: 5601
+server.host: "0.0.0.0"
+
+elasticsearch.hosts: ["http://localhost:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "{{ elk_kibana_system_password }}"

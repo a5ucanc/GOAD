@@ -1,0 +1,154 @@
+# Port of main's extensions/elk role logs_windows: Sysmon (SwiftOnSecurity configuration) and Winlogbeat
+# shipping the event logs to the elk host's Elasticsearch.
+
+# Sysmon
+- name: Sysmon setup folder
+  ansible.windows.win_file:
+    path: "{{ elk_agent_setup_dir }}"
+    state: directory
+
+- name: Sysmon configuration
+  ansible.windows.win_copy:
+    src: sysmonconfig-export.xml
+    dest: "{{ elk_agent_setup_dir }}\\sysmonconfig-export.xml"
+  register: elk_agent_sysmon_config
+
+- name: Look for the Sysmon service
+  ansible.windows.win_service_info:
+    name: Sysmon64
+  register: elk_agent_sysmon
+
+- name: Download Sysmon
+  ansible.windows.win_get_url:
+    url: "{{ elk_agent_sysmon_url }}"
+    dest: "{{ elk_agent_setup_dir }}\\Sysmon.zip"
+    force: false
+  when: not elk_agent_sysmon.exists
+
+- name: Unpack Sysmon
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Expand-Archive -LiteralPath "$Dir\Sysmon.zip" -DestinationPath $Dir -Force
+    parameters:
+      Dir: "{{ elk_agent_setup_dir }}"
+  when: not elk_agent_sysmon.exists
+
+- name: Install Sysmon
+  ansible.windows.win_command: >-
+    "{{ elk_agent_setup_dir }}\Sysmon64.exe" -accepteula -i "{{ elk_agent_setup_dir }}\sysmonconfig-export.xml"
+  when: not elk_agent_sysmon.exists
+
+# Sysmon64 -i copies itself to the Windows folder: update the configuration of the installed copy.
+- name: Update the Sysmon configuration
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      & "$env:SystemRoot\Sysmon64.exe" -c $Config
+      if ($LASTEXITCODE) { throw "Sysmon64 -c exited with $LASTEXITCODE" }
+    parameters:
+      Config: "{{ elk_agent_setup_dir }}\\sysmonconfig-export.xml"
+  when: elk_agent_sysmon.exists and elk_agent_sysmon_config.changed
+
+# Winlogbeat
+- name: Look for the winlogbeat service
+  ansible.windows.win_service_info:
+    name: winlogbeat
+  register: elk_agent_winlogbeat
+
+- name: Look for this winlogbeat version
+  ansible.windows.win_stat:
+    path: "{{ elk_agent_winlogbeat_dir }}\\{{ elk_agent_winlogbeat_name }}\\winlogbeat.exe"
+  register: elk_agent_winlogbeat_exe
+
+- name: Winlogbeat folder
+  ansible.windows.win_file:
+    path: "{{ elk_agent_winlogbeat_dir }}"
+    state: directory
+
+# Another version is installed: remove its service and folders before installing this one.
+- name: Remove another winlogbeat version
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      if (Get-Service winlogbeat -ErrorAction SilentlyContinue) {
+          Stop-Service winlogbeat -Force
+          sc.exe delete winlogbeat | Out-Null
+      }
+      Get-ChildItem -LiteralPath $Dir -Directory | Where-Object Name -ne $Name | Remove-Item -Recurse -Force
+    parameters:
+      Dir: "{{ elk_agent_winlogbeat_dir }}"
+      Name: "{{ elk_agent_winlogbeat_name }}"
+  when: not elk_agent_winlogbeat_exe.stat.exists
+
+- name: Download winlogbeat
+  ansible.windows.win_get_url:
+    url: "{{ elk_agent_winlogbeat_url }}"
+    dest: "{{ elk_agent_winlogbeat_dir }}\\winlogbeat.zip"
+    checksum_url: "{{ elk_agent_winlogbeat_url }}.sha512"
+    checksum_algorithm: sha512
+  when: not elk_agent_winlogbeat_exe.stat.exists
+
+- name: Unpack winlogbeat
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      Expand-Archive -LiteralPath "$Dir\winlogbeat.zip" -DestinationPath $Dir -Force
+      Remove-Item -LiteralPath "$Dir\winlogbeat.zip"
+    parameters:
+      Dir: "{{ elk_agent_winlogbeat_dir }}"
+  when: not elk_agent_winlogbeat_exe.stat.exists
+
+- name: Configure winlogbeat
+  ansible.builtin.template:
+    src: winlogbeat.yml.j2
+    dest: "{{ elk_agent_winlogbeat_dir }}\\{{ elk_agent_winlogbeat_name }}\\winlogbeat.yml"
+    newline_sequence: "\r\n"
+  notify: Restart winlogbeat
+
+- name: Install the winlogbeat service
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Dir\install-service-winlogbeat.ps1"
+      if ($LASTEXITCODE) { throw "install-service-winlogbeat.ps1 exited with $LASTEXITCODE" }
+    parameters:
+      Dir: "{{ elk_agent_winlogbeat_dir }}\\{{ elk_agent_winlogbeat_name }}"
+  when: not elk_agent_winlogbeat.exists or not elk_agent_winlogbeat_exe.stat.exists
+
+# Setup loads the index template, the ingest pipelines (the output names the routing pipeline) and the
+# Kibana dashboards: cluster-wide objects, needed once. One host at a time: parallel runs race on the
+# data stream. A host that finds the routing pipeline of this version skips it.
+- name: Run winlogbeat setup once for the cluster
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("elastic:$Password"))
+      $url = "http://${Server}:9200/_ingest/pipeline/winlogbeat-$Version-routing"
+      try {
+          Invoke-WebRequest -UseBasicParsing -Uri $url -Headers @{Authorization = "Basic $auth"} | Out-Null
+          $Ansible.Changed = $false
+          return
+      } catch {
+          if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }
+      }
+      # -e logs to stderr: Continue, or the first log line stops the script
+      $ErrorActionPreference = 'Continue'
+      Push-Location $Dir
+      try {
+          $log = & .\winlogbeat.exe setup -e --index-management --dashboards --pipelines 2>&1 | Out-String
+          $code = $LASTEXITCODE
+      } finally { Pop-Location }
+      if ($code) { throw "winlogbeat setup exited with ${code}: $log" }
+    parameters:
+      Server: "{{ elk_agent_server }}"
+      Password: "{{ elk_agent_elastic_password }}"
+      Version: "{{ elk_agent_winlogbeat_version }}"
+      Dir: "{{ elk_agent_winlogbeat_dir }}\\{{ elk_agent_winlogbeat_name }}"
+  throttle: 1
+
+- name: Start winlogbeat
+  ansible.windows.win_service:
+    name: winlogbeat
+    start_mode: auto
+    state: started
