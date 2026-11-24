@@ -18,16 +18,18 @@ LAB_NAMES = ('1domain', '2domains', '2forests')
 ROLES = ('dc', 'server', 'workstation', 'linux')
 _NAME = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 _TOP_REQUIRED = {'name', 'password', 'dns_forwarder', 'domains', 'hosts'}
-_TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios'}
+_TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios', 'extensions'}
 _DOMAIN_KEYS = {'netbios', 'dc', 'parent', 'trust', 'ous', 'groups', 'users', 'acls', 'gpos'}
 _DOMAIN_REQUIRED = {'netbios', 'dc'}
 _HOST_KEYS = {'hostname', 'os', 'role', 'domain', 'octet', 'cpus', 'memory', 'laps', 'ca', 'local_groups', 'settings',
-              'delegation', 'cert_templates', 'ca_acl'}
+              'delegation', 'cert_templates', 'ca_acl', 'services'}
 _HOST_REQUIRED = {'hostname', 'os', 'role', 'octet', 'cpus', 'memory'}
 _GROUP_KEYS = {'scope', 'ou', 'managed_by', 'members', 'groups'}
 _USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'sensitive',
               'password', 'spns', 'preauth', 'delegation'}
 _USER_REQUIRED = {'firstname', 'surname'}
+# host services an extension role installs; each value's contents are validated by that role
+SERVICES = ('mssql', 'mssql_ssms', 'iis', 'exchange', 'elk', 'wazuh')
 _DELEGATION_KEYS = {'unconstrained', 'constrained', 'protocol_transition'}
 _ACL_KEYS = {'principal', 'right', 'object', 'inherit'}
 _ACL_REQUIRED = {'principal', 'right', 'object'}
@@ -93,6 +95,7 @@ class HostDef:
     delegation: Optional[DelegationDef] = None
     cert_templates: Dict[str, CertTemplateDef] = field(default_factory=dict)
     ca_acl: Tuple[Tuple[str, str], ...] = ()
+    services: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     @property
     def family(self) -> str:
@@ -170,6 +173,7 @@ class LabDef:
     hosts: Dict[str, HostDef]
     settings: Dict[str, Dict[str, str]] = field(default_factory=dict)
     scenarios: Tuple[ScenarioRef, ...] = ()
+    extensions: Tuple[str, ...] = ()
 
     def ip(self, host: str, ip_range: str) -> str:
         return f'{ip_range}.{self.hosts[host].octet}'
@@ -435,13 +439,23 @@ def _parse_gpos(dname: str, d: Dict[str, Any], ous: Tuple[str, ...], source: str
     return gpos
 
 
+def _parse_services(value: Any, source: str, what: str) -> Dict[str, Dict[str, Any]]:
+    services: Dict[str, Dict[str, Any]] = {}
+    for sname, config in _mapping(value, source, f'services of {what}').items():
+        if sname not in SERVICES:
+            raise GoadError(f'{source}: unknown service {sname!r} in {what}: choose one of {", ".join(SERVICES)}')
+        services[sname] = _mapping(config, source, f'service {sname} of {what}')
+    return services
+
+
 def parse_lab(text: str, source: str) -> LabDef:
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as e:
         raise GoadError(f'{source}: invalid YAML: {e}')
     raw = _mapping(raw, source, 'lab definition')
-    from goad.lab import scenarios as _scenarios  # scenarios imports this module
+    from goad.lab import extensions as _extensions, scenarios as _scenarios  # both import this module
+    raw = _extensions.expand(raw, source)
     raw = _scenarios.expand(raw, source)
     _check_keys(raw, _TOP_KEYS, _TOP_REQUIRED, source, 'lab definition')
     name = _str(raw['name'], source, 'lab definition', 'name')
@@ -517,10 +531,11 @@ def parse_lab(text: str, source: str) -> LabDef:
         cert_templates = _parse_cert_templates(h['cert_templates'], source, what) if 'cert_templates' in h else {}
         ca_acl = _parse_ca_acl(h['ca_acl'], source, what) if 'ca_acl' in h else ()
         host_settings = _parse_settings(h['settings'], source, f'settings of {what}') if 'settings' in h else {}
+        services = _parse_services(h['services'], source, what) if 'services' in h else {}
         hosts[hname] = HostDef(
             name=hname, hostname=hostname, os=os_name, role=role, domain=domain, octet=octet, **sizes,
             laps=laps, ca=ca, local_groups=local_groups, settings=host_settings,
-            delegation=delegation, cert_templates=cert_templates, ca_acl=ca_acl)
+            delegation=delegation, cert_templates=cert_templates, ca_acl=ca_acl, services=services)
     if not hosts:
         raise GoadError(f'{source}: hosts must not be empty')
 
@@ -552,7 +567,8 @@ def parse_lab(text: str, source: str) -> LabDef:
         layers[layer] = _parse_settings(values, source, f'settings layer {layer}')
 
     lab = LabDef(name=name, password=password, dns_forwarder=forwarder, domains=domains, hosts=hosts, settings=layers,
-                 scenarios=tuple(ScenarioRef(e['name'], e['target']) for e in raw.get('scenarios') or []))
+                 scenarios=tuple(ScenarioRef(e['name'], e['target']) for e in raw.get('scenarios') or []),
+                 extensions=tuple(_extensions.entries(raw)))
     _validate_content(lab, source)
     return lab
 

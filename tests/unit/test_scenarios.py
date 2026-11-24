@@ -150,7 +150,7 @@ def test_same_value_twice_is_fine():
 
 def test_non_settings_conflict_between_entries_names_owner():
     mk = lambda d: _sc(_user(description=d))
-    with pytest.raises(GoadError, match='already set by a@dc02'):
+    with pytest.raises(GoadError, match='scenario b@dc02 sets .*, already set by scenario a@dc02'):
         expand(_with(('a', 'dc02'), ('b', 'dc02')), 'x', {'a': mk('x'), 'b': mk('y')})
 
 

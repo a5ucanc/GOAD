@@ -1,6 +1,6 @@
 from tests.live.gate import GateRun, Sample, passed, render, verdicts
 
-OK_TEMPLATES = [Sample('template', 300.0, True, os) for os in ('win2022', 'win2025', 'win11', 'ubuntu2404')]
+OK_TEMPLATES = [Sample('template', 300.0, True, os) for os in ('win2022', 'win2025', 'win11', 'ubuntu2404', 'kali')]
 
 
 def run(*samples):

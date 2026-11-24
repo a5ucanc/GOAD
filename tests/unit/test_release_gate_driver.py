@@ -46,7 +46,7 @@ def report_text(settings):
 def test_gate_runs_every_step_in_order(fake_gate):
     settings, calls, _ = fake_gate
     gate.test_release_gate()
-    assert calls.count(['template', 'test']) == 4
+    assert calls.count(['template', 'test']) == 5  # one per OS_NAMES entry, kali included
     assert calls.count(['lab', 'deploy']) == 3 and calls.count(['snapshot', 'take']) == 3
     assert calls.count(['lab', 'reset']) == 5 and calls.count(['lab', 'destroy']) == 3
     assert calls.index(['lab', 'reset']) < calls.index(['lab', 'destroy'])

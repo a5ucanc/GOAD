@@ -13,7 +13,7 @@ from goad.host.paths import to_wsl
 
 _WINDOWS_PATH = re.compile(r'^[a-zA-Z]:[\\/]')
 
-OS_NAMES = ('win2022', 'win2025', 'win11', 'ubuntu2404')
+OS_NAMES = ('win2022', 'win2025', 'win11', 'ubuntu2404', 'kali')
 
 
 @dataclass(frozen=True)

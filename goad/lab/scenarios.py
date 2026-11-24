@@ -155,8 +155,8 @@ def merge_fragment(base: Dict[str, Any], fragment: Dict[str, Any], owners: Dict[
                     base[key] = copy.deepcopy(value)
                     owners[path] = who
                     continue
-                raise GoadError(f'{source}: scenario {who} sets {dotted} to {value!r}, scenario {owner} set it to {old!r}')
-            raise GoadError(f'{source}: scenario {who} sets {dotted}, already set by {owner or "lab.yml"}')
+                raise GoadError(f'{source}: {who} sets {dotted} to {value!r}, {owner} set it to {old!r}')
+            raise GoadError(f'{source}: {who} sets {dotted}, already set by {owner or "lab.yml"}')
 
 
 def _union(base: List[Any], items: List[Any]) -> None:
@@ -189,10 +189,11 @@ def expand(raw: Dict[str, Any], source: str, catalogue: Optional[Dict[str, Scena
         if target not in valid:
             choice = f'choose one of {valid}' if valid else 'none in this lab'
             raise GoadError(f'{source}: scenario {name} needs a {scenario.kind} target: {choice}')
-        who = f'{name}@{target}'
-        if who in seen:
-            raise GoadError(f'{source}: duplicate entry {who}')
-        seen.add(who)
+        entry_id = f'{name}@{target}'
+        if entry_id in seen:
+            raise GoadError(f'{source}: duplicate entry {entry_id}')
+        seen.add(entry_id)
+        who = f'scenario {entry_id}'
         fragment = substitute(scenario.fragment, placeholders(raw, target))
         merge_fragment(result, fragment, owners, who, source)
     return result

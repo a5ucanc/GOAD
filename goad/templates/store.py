@@ -11,7 +11,7 @@ from goad.settings import OS_NAMES, Settings
 from goad.state import templates_in_use
 from goad.vmware.vmrun import Vmrun
 
-OS_FAMILY = {'win2022': 'windows', 'win2025': 'windows', 'win11': 'windows', 'ubuntu2404': 'linux'}
+OS_FAMILY = {'win2022': 'windows', 'win2025': 'windows', 'win11': 'windows', 'ubuntu2404': 'linux', 'kali': 'linux'}
 BUILD_DIR = '.build'
 META = 'template.json'
 _NAME = re.compile(r'^(' + '|'.join(OS_NAMES) + r')-v(\d+)$')

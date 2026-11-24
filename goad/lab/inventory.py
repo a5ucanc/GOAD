@@ -106,6 +106,8 @@ def render_inventory(lab: LabDef, ip_range: str) -> Dict[str, Any]:
                              'goad_settings': lab.effective_settings(name), 'laps': h.laps, 'ca': h.ca,
                              'local_groups': {g: list(m) for g, m in h.local_groups.items()}}
         e.update(_adcs(lab, h))
+        if h.services:
+            e['services'] = {name: dict(config) for name, config in h.services.items()}
         if h.role == 'dc':
             domain = lab.domains[h.domain]
             own = lab.ip(name, ip_range)
@@ -142,11 +144,12 @@ def render_inventory(lab: LabDef, ip_range: str) -> Dict[str, Any]:
     children['child_dc'] = group([n for n in dcs if lab.domains[lab.hosts[n].domain].parent])
     children['member'] = group([n for n in names if lab.hosts[n].role in ('server', 'workstation')
                                 and lab.hosts[n].domain])
-    return {'all': {
-        'vars': {'ansible_user': 'Administrator', 'ansible_password': lab.password, 'lab_name': lab.name,
-                 'dns_forwarder': lab.dns_forwarder, 'lab_password': lab.password,
-                 'goad_domains': _domains(lab, ip_range)},
-        'children': children}}
+    all_vars: Dict[str, Any] = {'ansible_user': 'Administrator', 'ansible_password': lab.password, 'lab_name': lab.name,
+                                'dns_forwarder': lab.dns_forwarder, 'lab_password': lab.password,
+                                'goad_domains': _domains(lab, ip_range)}
+    if lab.extensions:
+        all_vars['goad_extensions'] = list(lab.extensions)
+    return {'all': {'vars': all_vars, 'children': children}}
 
 
 def write_inventory(settings: Settings, lab: LabDef, ip_range: str) -> Path:
