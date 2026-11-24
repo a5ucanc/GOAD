@@ -706,6 +706,21 @@ def test_exchange_downloads_come_from_microsoft():
                          'exchange_rewrite_url', 'exchange_ucma_url'}
     assert all(u.startswith('https://download.microsoft.com/') for u in urls.values())
     assert defaults['exchange_setup_dir'] == 'C:\\setup\\exchange'
+    # SHA256 published in KB5047155
+    assert re.fullmatch(r'[0-9A-F]{64}', defaults['exchange_iso_sha256'])
+    download = next(t for t in _exchange_tasks('install.yml') if t['name'] == 'Download the Exchange ISO')
+    assert download['ansible.windows.win_get_url']['checksum'] == '{{ exchange_iso_sha256 }}'
+    assert download['ansible.windows.win_get_url']['checksum_algorithm'] == 'sha256'
+
+
+def test_exchange_scripts_review_fixes():
+    files = EXCHANGE / 'files'
+    # an AD error fails the state check instead of reading as not installed
+    assert 'Get-ExchangeServer -ErrorAction Stop' in (files / 'state.ps1').read_text()
+    # exact domain of the user, not a suffix match that child domains also pass
+    assert 'EndsWith(",$DomainDn")' not in (files / 'mailboxes.ps1').read_text()
+    assert '$userDomain -ne $DomainDn' in (files / 'mailboxes.ps1').read_text()
+    assert 'foreach ($try in 1..30)' in (files / 'mount.ps1').read_text()
 
 
 def test_exchange_reboots_where_setup_needs_one():

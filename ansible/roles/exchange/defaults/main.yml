@@ -1,6 +1,8 @@
 # Exchange Server SE RTM (15.2.2562), the only Exchange release supported with Windows Server 2025 DCs.
 # Unlicensed: a 180-day trial. Installer media and prerequisites come from the Microsoft Download Center.
 exchange_iso_url: https://download.microsoft.com/download/ad9b1e53-f28e-4a82-987d-6c88803795b2/ExchangeServerSE-x64.iso
+# SHA256 published in KB5047155 (Exchange SE RTM, download page id=108244, version 15.02.2562.017)
+exchange_iso_sha256: CD2B13F2C297187776AF4CFF3541B4BE3C677CF907CCA69D85AB0E2B70377BD1
 # Prerequisites of the Mailbox role (learn.microsoft.com/exchange/plan-and-deploy/prerequisites). Windows
 # Server 2022 ships .NET Framework 4.8, which Exchange SE supports.
 # Visual C++ 2012 Update 4 and 2013 (12.0.40664) x64 redistributables

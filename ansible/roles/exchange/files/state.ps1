@@ -9,7 +9,8 @@ if (Get-PSSnapin -Registered -Name Microsoft.Exchange.Management.PowerShell.Snap
         Where-Object { $_.GetValueNames() -contains 'Watermark' }
     if (-not $watermark) {
         Add-PSSnapin -Name Microsoft.Exchange.Management.PowerShell.SnapIn
-        $installed = [bool](Get-ExchangeServer -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $Name })
+        # A cmdlet error (AD unreachable) fails the task: it must not read as not installed
+        $installed = [bool](Get-ExchangeServer -ErrorAction Stop | Where-Object { $_.Name -eq $Name })
     }
 }
 $Ansible.Result = @{ installed = $installed }

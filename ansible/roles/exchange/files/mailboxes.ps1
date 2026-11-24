@@ -8,7 +8,9 @@ $failed = @()
 $created = @()
 foreach ($user in Get-User -RecipientTypeDetails User -ResultSize Unlimited) {
     $sam = [string]$user.SamAccountName
-    if (-not $user.DistinguishedName.EndsWith(",$DomainDn") -or $sam.EndsWith('$') -or $Exclude -contains $sam -or
+    # The domain part of the DN (from the first DC=) must be the domain itself, not a child domain
+    $userDomain = [string]$user.DistinguishedName -replace '^.*?,(?=DC=)', ''
+    if ($userDomain -ne $DomainDn -or $sam.EndsWith('$') -or $Exclude -contains $sam -or
         $sam -like 'SM_*' -or $sam -like 'HealthMailbox*' -or [string]$user.UserAccountControl -match 'AccountDisabled') {
         continue
     }

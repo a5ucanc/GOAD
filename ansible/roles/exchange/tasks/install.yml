@@ -11,6 +11,8 @@
     url: "{{ exchange_iso_url }}"
     dest: "{{ exchange_iso }}"
     force: false
+    checksum: "{{ exchange_iso_sha256 }}"
+    checksum_algorithm: sha256
   when: not exchange_iso_file.stat.exists
 
 - name: Look for a pending reboot
