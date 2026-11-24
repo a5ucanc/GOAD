@@ -14,14 +14,14 @@ from goad.lab.settings_catalog import SETTINGS
 
 ANSIBLE = REPO / 'ansible'
 PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign members', 'post-join', 'settings',
-         'services']
+         'services', 'linux']
 
 
 def test_play_order():
     plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     assert [p['name'] for p in plays] == PLAYS
     assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc', 'dc', 'dc:member', 'dc', 'windows', 'windows',
-                                                'windows']
+                                                'windows', 'linux']
     assert all(p['gather_facts'] is False for p in plays)
 
 
@@ -34,7 +34,7 @@ def test_no_fixed_waits():
 
 @pytest.mark.skipif(shutil.which(ansible_bin('ansible-playbook')) is None, reason='ansible not installed')
 @pytest.mark.parametrize('name', LAB_NAMES)
-@pytest.mark.parametrize('extensions', ['', 'extensions: [mssql, iis]\n'])
+@pytest.mark.parametrize('extensions', ['', 'extensions: [mssql, iis]\n', 'extensions: [ws01, lx01, kali]\n'])
 def test_site_syntax(name, extensions, tmp_path):
     from goad.lab.definition import parse_lab
     inv = tmp_path / 'inventory.yml'
@@ -461,3 +461,28 @@ def test_mssql_options_failure_is_reported_without_no_log():
     assert 'mssql_options.failed' in report['when']
     assert 'ansible.builtin.fail' in report and 'no_log' not in report
     assert 'mssql_options.result.error' in report['ansible.builtin.fail']['msg']
+
+
+def test_linux_play_joins_only_domain_hosts():
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'linux')
+    assert play['hosts'] == 'linux' and play['tags'] == ['linux'] and play['become'] is True
+    role, = play['roles']
+    assert role['role'] == 'linux_join' and role['when'] == 'domain is not none'
+
+
+def test_linux_join_is_guarded_by_realm_list():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'linux_join' / 'tasks' / 'main.yml').read_text())
+    join = next(t for t in tasks if t['name'] == 'Join the realm')
+    assert 'realm join' in join['ansible.builtin.command']['cmd'] and join['no_log'] is True
+    assert 'not in' in join['when']
+    # every command or shell task states when it changes something
+    for t in tasks:
+        if 'ansible.builtin.command' in t or 'ansible.builtin.shell' in t:
+            assert 'changed_when' in t or 'when' in t, t['name']
+
+
+def test_new_settings_are_idempotent_powershell_or_registry():
+    asr = yaml.safe_load((SETTINGS_TASKS / 'defender_asr_psexec_wmi.yml').read_text())
+    assert asr[0]['ansible.windows.win_powershell']['parameters']['Id'] == 'd1e49aac-8f56-4280-b9ba-993a6d77406c'
+    policy, = yaml.safe_load((SETTINGS_TASKS / 'powershell_execution_policy.yml').read_text())
+    assert policy['ansible.windows.win_regedit']['name'] == 'ExecutionPolicy'

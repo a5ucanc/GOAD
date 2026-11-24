@@ -1,0 +1,11 @@
+description: "Kali attacker box on the lab network, not domain joined"
+# From the prebuilt Kali VMware image (goad template import kali). No role: reachable over SSH, nothing
+# else configured.
+credentials:
+- {account: kali, password: kali, scope: 'ssh {range}.99'}
+labs:
+  1domain: &kali
+    hosts:
+      kali: {hostname: kali, os: kali, role: linux, octet: 99, cpus: 2, memory: 4096}
+  2domains: *kali
+  2forests: *kali

@@ -1,0 +1,10 @@
+# Port of main's security/powershell_restrict. The LocalMachine scope only: main also tried the
+# MachinePolicy and UserPolicy scopes, which Set-ExecutionPolicy cannot set (it ignored the errors).
+# A policy scope would also override the -ExecutionPolicy Bypass that goad's own boot scripts use.
+- name: "Set the PowerShell execution policy (LocalMachine)"
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell
+    name: ExecutionPolicy
+    data: "{{ {'restricted': 'Restricted', 'remotesigned': 'RemoteSigned', 'unrestricted': 'Unrestricted'}[setting_value] }}"
+    type: string
+    state: present

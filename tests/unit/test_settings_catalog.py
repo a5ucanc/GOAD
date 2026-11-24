@@ -16,7 +16,7 @@ def test_normalize_value_rejects_other_types():
 def test_catalogue_scopes():
     assert SETTINGS['dc.maq'] == ('dc', tuple(str(n) for n in range(11)))
     assert SETTINGS['adcs.editf_san'][0] == 'ca'
-    assert len(SETTINGS) == 24
+    assert len(SETTINGS) == 26
     assert {scope for scope, _ in SETTINGS.values()} == {'all', 'dc', 'ca'}
 
 

@@ -1,0 +1,6 @@
+# The DC of this host's domain: dc_ip and dc_hostname (FQDN).
+linux_join_dc: "{{ goad_domains[domain] }}"
+# NETBIOS -> FQDN of every lab domain, to turn the <NETBIOS>\<group> members of local_groups into names.
+linux_join_fqdn: "{{ dict(goad_domains.values() | map(attribute='netbios') | zip(goad_domains.keys())) }}"
+# Ansible doubles a backslash written inside a Jinja string literal: keep it in a YAML value.
+linux_join_sep: "\\"

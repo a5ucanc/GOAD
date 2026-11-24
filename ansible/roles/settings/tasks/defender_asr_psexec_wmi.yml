@@ -1,0 +1,29 @@
+# ASR rule "Block process creations originating from PSExec and WMI commands" (main's ws01 asr list).
+# Get-MpPreference reports actions as numbers: 0 Disabled, 1 Enabled (block), 2 Audit, 6 Warn.
+- name: "Set ASR rule for PSExec and WMI process creation"
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Id, [string]$Action)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $wanted = @{ Disabled = 0; Enabled = 1 }[$Action]
+      $pref = Get-MpPreference
+      $ids = @($pref.AttackSurfaceReductionRules_Ids)
+      $actions = @($pref.AttackSurfaceReductionRules_Actions)
+      $current = $null
+      for ($i = 0; $i -lt $ids.Count; $i++) {
+        if ($ids[$i] -and $ids[$i] -eq $Id) { $current = [int]$actions[$i] }
+      }
+      if ($current -ne $wanted) {
+        Add-MpPreference -AttackSurfaceReductionRules_Ids $Id -AttackSurfaceReductionRules_Actions $Action
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Id: d1e49aac-8f56-4280-b9ba-993a6d77406c
+      Action: "{{ 'Enabled' if setting_value == 'block' else 'Disabled' }}"
+    error_action: stop
+  # Defender's WMI provider answers 0x800106ba until WinDefend is up, e.g. right after a reboot.
+  register: asr_psexec_wmi
+  retries: 10
+  delay: 15
+  until: asr_psexec_wmi is not failed

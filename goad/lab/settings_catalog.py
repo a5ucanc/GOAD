@@ -19,6 +19,8 @@ SETTINGS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     'firewall.state': ('all', _ONOFF),
     'lsa.ppl': ('all', _ONOFF),
     'defender.asr_lsass': ('all', ('block', 'off')),
+    'defender.asr_psexec_wmi': ('all', ('block', 'off')),
+    'powershell.execution_policy': ('all', ('restricted', 'remotesigned', 'unrestricted')),
     'winrm.credssp': ('all', ('disabled', 'server', 'client')),
     'ldap.signing': ('dc', ('required', 'none')),
     'ldap.channel_binding': ('dc', ('always', 'never')),

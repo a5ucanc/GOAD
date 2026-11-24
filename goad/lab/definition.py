@@ -16,6 +16,7 @@ from goad.vmware.guestinfo import is_valid_windows_hostname
 REPO = Path(__file__).resolve().parents[2]
 LAB_NAMES = ('1domain', '2domains', '2forests')
 ROLES = ('dc', 'server', 'workstation', 'linux')
+LINUX_LOCAL_GROUPS = ('sudoers', 'ssh')
 _NAME = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 _TOP_REQUIRED = {'name', 'password', 'dns_forwarder', 'domains', 'hosts'}
 _TOP_KEYS = _TOP_REQUIRED | {'settings', 'scenarios', 'extensions'}
@@ -544,9 +545,11 @@ def parse_lab(text: str, source: str) -> LabDef:
             raise GoadError(f'{source}: {"ca"!r} in {what} needs a Windows dc or server with a domain')
         local_groups: Dict[str, Tuple[str, ...]] = {}
         if 'local_groups' in h:
-            if role == 'linux':
-                raise GoadError(f'{source}: {"local_groups"!r} in {what} is for Windows hosts only')
             for lname, members in _mapping(h['local_groups'], source, f'local_groups of {what}').items():
+                # on a Linux host: domain groups given sudo (sudoers) or allowed to log in (ssh) by linux_join
+                if role == 'linux' and (lname not in LINUX_LOCAL_GROUPS or domain is None):
+                    raise GoadError(f'{source}: {"local_groups"!r} in {what}: a Linux host takes only '
+                                    f'{", ".join(LINUX_LOCAL_GROUPS)}, and needs a domain')
                 local_groups[lname] = _str_list(members, source, what, 'local_groups')
         delegation = None
         if 'delegation' in h:

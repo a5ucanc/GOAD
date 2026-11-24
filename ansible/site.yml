@@ -114,3 +114,13 @@
       when: "'mssql' in services | default({})"
     - role: iis
       when: "'iis' in services | default({})"
+
+# Linux hosts (extensions lx01, kali) over SSH as goad. Only those with a domain join it (realmd, sssd).
+- name: linux
+  hosts: linux
+  gather_facts: false
+  become: true
+  tags: [linux]
+  roles:
+    - role: linux_join
+      when: domain is not none

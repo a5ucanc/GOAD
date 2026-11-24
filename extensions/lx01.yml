@@ -1,0 +1,19 @@
+description: "Ubuntu server lx01, joined to sevenkingdoms.local with realmd and sssd"
+# Port of main's extensions/lx01 (role linux/add_linux_to_domain, here linux_join). local_groups on a
+# Linux host: sudoers get passwordless sudo, ssh are the only domain groups allowed to log in.
+labs:
+  1domain: &lx01
+    hosts:
+      lx01:
+        hostname: lx01
+        os: ubuntu2404
+        role: linux
+        domain: sevenkingdoms.local
+        octet: 32
+        cpus: 1
+        memory: 1024
+        local_groups:
+          sudoers: ['SEVENKINGDOMS\Baratheon']
+          ssh: ['SEVENKINGDOMS\Lannister', 'SEVENKINGDOMS\Baratheon']
+  2domains: *lx01
+  2forests: *lx01

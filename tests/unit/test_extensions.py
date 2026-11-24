@@ -225,3 +225,77 @@ def test_service_options_accepted():
                          "linked: [{name: BRAAVOS, remote: srv03, local_login: 'NORTH\\d', remote_login: sa}]}, "
                          "iis: {upload: true}}"), 'lab.yml')
     assert lab.hosts['srv02'].services['iis'] == {'upload': True}
+
+
+# Global Constraints: key -> (hostname, os, role, domain, octet, cpus, memory)
+VM_HOSTS = {'ws01': ('casterlyrock', 'win11', 'workstation', 'sevenkingdoms.local', 31, 2, 4096),
+            'lx01': ('lx01', 'ubuntu2404', 'linux', 'sevenkingdoms.local', 32, 1, 1024),
+            'kali': ('kali', 'kali', 'linux', None, 99, 2, 4096)}
+
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_ws01_lx01_kali_extensions(name):
+    text = shipped_lab(name).read_text() + 'extensions: [ws01, lx01, kali]\n'
+    lab = parse_lab(text, 'lab.yml')
+    base = load_lab(shipped_lab(name))
+    assert set(lab.hosts) - set(base.hosts) == set(VM_HOSTS)
+    for key, (hostname, os_name, role, domain, octet, cpus, memory) in VM_HOSTS.items():
+        h = lab.hosts[key]
+        assert (h.hostname, h.os, h.role, h.domain, h.octet, h.cpus, h.memory) == (
+            hostname, os_name, role, domain, octet, cpus, memory)
+    raw = yaml.safe_load(text)
+    for key in VM_HOSTS:
+        assert extension_hosts(raw, key) == [key]
+    children = render_inventory(lab, '192.168.56')['all']['children']
+    assert set(children['linux']['hosts']) == {'lx01', 'kali'}
+    for group in ('windows', 'workstation', 'member'):
+        assert 'ws01' in children[group]['hosts']
+    assert 'lx01' not in children['member']['hosts'] and 'kali' not in children['member']['hosts']
+
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_ws01_is_hardened(name):
+    lab = parse_lab(shipped_lab(name).read_text() + 'extensions: [ws01]\n', 'lab.yml')
+    ws01 = lab.hosts['ws01']
+    assert ws01.laps
+    assert ws01.local_groups == {
+        'Administrators': ('SEVENKINGDOMS\\tywin.lannister', 'SEVENKINGDOMS\\jaime.lannister'),
+        'Remote Desktop Users': ('SEVENKINGDOMS\\Lannister',)}
+    settings = lab.effective_settings('ws01')
+    assert settings['lsa.ppl'] == 'on'
+    assert settings['defender.asr_lsass'] == 'block'
+    assert settings['defender.asr_psexec_wmi'] == 'block'
+    assert settings['powershell.execution_policy'] == 'remotesigned'
+    assert settings['host.tier'] == '2'
+    assert 'casterlyrock' in render_inventory(lab, '192.168.56')['all']['vars']['goad_domains'][
+        'sevenkingdoms.local']['laps_hosts']
+
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_lx01_login_groups(name):
+    lab = parse_lab(shipped_lab(name).read_text() + 'extensions: [lx01]\n', 'lab.yml')
+    assert lab.hosts['lx01'].local_groups == {'sudoers': ('SEVENKINGDOMS\\Baratheon',),
+                                              'ssh': ('SEVENKINGDOMS\\Lannister', 'SEVENKINGDOMS\\Baratheon')}
+    entry = render_inventory(lab, '192.168.56')['all']['children']['linux']['hosts']['lx01']
+    assert entry['local_groups']['ssh'] == ['SEVENKINGDOMS\\Lannister', 'SEVENKINGDOMS\\Baratheon']
+    assert entry['goad_settings'] == {}
+
+
+def test_linux_local_groups_only_sudoers_and_ssh():
+    text = shipped_lab('1domain').read_text() + (
+        "  lx: {hostname: lx, os: ubuntu2404, role: linux, domain: sevenkingdoms.local, octet: 40, cpus: 1, "
+        "memory: 1024, local_groups: {Administrators: ['SEVENKINGDOMS\\Lannister']}}\n")
+    with pytest.raises(GoadError, match='sudoers, ssh'):
+        parse_lab(text, 'lab.yml')
+
+
+def test_linux_local_groups_need_a_domain():
+    text = shipped_lab('1domain').read_text() + (
+        "  lx: {hostname: lx, os: ubuntu2404, role: linux, octet: 40, cpus: 1, "
+        "memory: 1024, local_groups: {ssh: ['SEVENKINGDOMS\\Lannister']}}\n")
+    with pytest.raises(GoadError, match='domain'):
+        parse_lab(text, 'lab.yml')
+
+
+def test_kali_extension_lists_kali_credential():
+    assert load_catalogue()['kali'].credentials == (('kali', 'kali', 'ssh {range}.99'),)

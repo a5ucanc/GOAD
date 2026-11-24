@@ -1,0 +1,27 @@
+description: "Hardened Windows 11 workstation casterlyrock, joined to sevenkingdoms.local"
+# Port of main's extensions/ws01: tywin and jaime local admins, Lannister on RDP, LAPS, and the
+# security list enable_run_as_ppl, asr (LSASS stealing, PSExec and WMI) and powershell_restrict
+# expressed as settings. Tier 2: the workstation tier of the base labs' tiering.
+labs:
+  1domain: &ws01
+    hosts:
+      ws01:
+        hostname: casterlyrock
+        os: win11
+        role: workstation
+        domain: sevenkingdoms.local
+        octet: 31
+        cpus: 2
+        memory: 4096
+        laps: true
+        local_groups:
+          Administrators: ['SEVENKINGDOMS\tywin.lannister', 'SEVENKINGDOMS\jaime.lannister']
+          Remote Desktop Users: ['SEVENKINGDOMS\Lannister']
+        settings:
+          host.tier: 2
+          lsa.ppl: 'on'
+          defender.asr_lsass: block
+          defender.asr_psexec_wmi: block
+          powershell.execution_policy: remotesigned
+  2domains: *ws01
+  2forests: *ws01

@@ -1,0 +1,185 @@
+# Joins a Linux host to its domain with realmd and sssd. Port of main's linux/add_linux_to_domain onto
+# the inventory: goad_domains[domain] gives the DC, the domain Administrator joins with lab_password,
+# local_groups.sudoers get passwordless sudo and local_groups.ssh are the only domain groups allowed in.
+# sssd names this domain's groups by their short name (use_fully_qualified_names False) and a trusted
+# domain's by <group>@<fqdn>, lower case as sudo compares them. realm permit takes <group>@<fqdn>.
+- name: Start the sudoers and ssh group lists
+  ansible.builtin.set_fact:
+    linux_join_sudoers: []
+    linux_join_ssh: []
+
+- name: Name the sudoers groups as sssd does
+  ansible.builtin.set_fact:
+    linux_join_sudoers: "{{ linux_join_sudoers + [(group if fqdn == domain else group ~ '@' ~ fqdn) | lower] }}"
+  loop: "{{ local_groups.sudoers | default([]) }}"
+  vars:
+    group: "{{ item.split(linux_join_sep, 1)[1] }}"
+    fqdn: "{{ linux_join_fqdn[item.split(linux_join_sep, 1)[0]] }}"
+
+- name: Name the ssh groups as realm permit takes them
+  ansible.builtin.set_fact:
+    linux_join_ssh: "{{ linux_join_ssh + [item.split(linux_join_sep, 1)[1] ~ '@' ~ linux_join_fqdn[item.split(linux_join_sep, 1)[0]]] }}"
+  loop: "{{ local_groups.ssh | default([]) }}"
+
+- name: Install the realmd, sssd, Kerberos and chrony packages
+  ansible.builtin.apt:
+    name: [realmd, sssd-ad, sssd-tools, adcli, krb5-user, chrony, bind9-dnsutils]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# Two NICs: nat gets its resolver from DHCP. Route the lab domains to the DC on any link.
+- name: Send the lab domains to the DC resolver
+  ansible.builtin.copy:
+    dest: /etc/systemd/resolved.conf.d/goad.conf
+    mode: '0644'
+    content: |
+      [Resolve]
+      DNS={{ linux_join_dc.dc_ip }}
+      Domains={{ goad_domains | map('regex_replace', '^', '~') | join(' ') }}
+  register: linux_join_resolved
+
+- name: Restart systemd-resolved
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    state: restarted
+  when: linux_join_resolved is changed
+
+- name: Name this host and the DC in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - {regexp: '^127\.0\.1\.1\s', line: "127.0.1.1 {{ hostname }}.{{ domain }} {{ hostname }}"}
+    - regexp: "^{{ linux_join_dc.dc_ip | regex_escape }}\\s"
+      line: "{{ linux_join_dc.dc_ip }} {{ linux_join_dc.dc_hostname }} {{ linux_join_dc.dc_hostname.split('.') | first }}"
+  loop_control:
+    label: "{{ item.line }}"
+
+- name: Write krb5.conf
+  ansible.builtin.copy:
+    dest: /etc/krb5.conf
+    mode: '0644'
+    content: |
+      [libdefaults]
+          default_realm = {{ domain | upper }}
+          dns_lookup_realm = false
+          dns_lookup_kdc = true
+          rdns = false
+          ticket_lifetime = 24h
+          renew_lifetime = 7d
+          forwardable = true
+
+      [realms]
+          {{ domain | upper }} = {
+              kdc = {{ linux_join_dc.dc_hostname }}
+              admin_server = {{ linux_join_dc.dc_hostname }}
+          }
+
+      [domain_realm]
+          .{{ domain }} = {{ domain | upper }}
+          {{ domain }} = {{ domain | upper }}
+
+# Kerberos refuses a clock more than 5 minutes off the DC: take time from the DC only, step at any offset.
+- name: Take time from the DC only
+  ansible.builtin.copy:
+    dest: /etc/chrony/conf.d/goad.conf
+    mode: '0644'
+    content: |
+      server {{ linux_join_dc.dc_ip }} iburst prefer
+      makestep 1 -1
+  register: linux_join_chrony_conf
+
+- name: Drop the distribution NTP pools
+  ansible.builtin.replace:
+    path: /etc/chrony/chrony.conf
+    regexp: '^(pool .*)$'
+    replace: '# \1'
+  register: linux_join_chrony_pools
+
+- name: Restart chrony and wait for the first sync
+  ansible.builtin.shell: systemctl restart chrony && chronyc waitsync 12 1
+  when: linux_join_chrony_conf is changed or linux_join_chrony_pools is changed
+  # Not fatal: VMware Tools keeps the clock close to the host's, which the DC also follows.
+  failed_when: false
+
+- name: List the joined realms
+  ansible.builtin.command: realm list --name-only
+  register: linux_join_realms
+  changed_when: false
+
+- name: Join the realm
+  ansible.builtin.command:
+    cmd: "realm join --membership-software=adcli --client-software=sssd -U Administrator {{ domain }}"
+    stdin: "{{ lab_password }}"
+  when: domain | lower not in linux_join_realms.stdout_lines | map('lower') | list
+  no_log: true
+
+- name: Use short user names and /home/<user>
+  ansible.builtin.lineinfile:
+    path: /etc/sssd/sssd.conf
+    regexp: "^{{ item.key }}\\s*="
+    line: "{{ item.key }} = {{ item.value }}"
+    insertafter: '^\[domain/'
+  loop:
+    - {key: use_fully_qualified_names, value: 'False'}
+    - {key: fallback_homedir, value: /home/%u}
+    # sssd registers the lab address (the NIC guestinfo names lab, not nat) in the domain DNS with nsupdate.
+    - {key: dyndns_update, value: 'True'}
+    - {key: dyndns_iface, value: lab}
+  notify: Restart sssd
+
+- name: Check that PAM creates home directories
+  ansible.builtin.command: grep -q pam_mkhomedir /etc/pam.d/common-session
+  register: linux_join_mkhomedir
+  changed_when: false
+  failed_when: linux_join_mkhomedir.rc > 1
+
+- name: Create home directories at first login
+  ansible.builtin.command: pam-auth-update --enable mkhomedir
+  when: linux_join_mkhomedir.rc != 0
+
+- name: Give the sudoers groups passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/goad-domain
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+    content: |
+      {% for g in linux_join_sudoers %}
+      %{{ g | replace(' ', '\ ') }} ALL=(ALL) NOPASSWD:ALL
+      {% endfor %}
+  when: linux_join_sudoers | length > 0
+
+- name: Remove the sudoers file when no group is listed
+  ansible.builtin.file:
+    path: /etc/sudoers.d/goad-domain
+    state: absent
+  when: linux_join_sudoers | length == 0
+
+- name: Read the realm login policy
+  ansible.builtin.command: realm list {{ domain }}
+  register: linux_join_policy
+  changed_when: false
+  when: linux_join_ssh | length > 0
+
+# realm permit replaces nothing: it adds. Permit all listed groups when any is missing.
+- name: Allow only the ssh groups to log in
+  ansible.builtin.command:
+    argv: "{{ ['realm', 'permit', '-g'] + linux_join_ssh }}"
+  when: >-
+    linux_join_ssh | length > 0 and
+    (linux_join_ssh | map('lower') | difference(linux_join_policy.stdout | lower
+     | regex_findall('permitted-groups:(.*)') | join(',') | split(',') | map('trim') | list)) | length > 0
+  notify: Restart sssd
+
+- name: Accept Kerberos tickets over SSH
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/goad-gssapi.conf
+    mode: '0644'
+    content: |
+      GSSAPIAuthentication yes
+      GSSAPICleanupCredentials yes
+      GSSAPIStrictAcceptorCheck no
+      UsePAM yes
+  notify: Restart ssh
