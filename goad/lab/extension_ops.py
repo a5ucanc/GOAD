@@ -1,9 +1,11 @@
 """goad extension add and remove: edit the extensions list of the working lab.yml on a deployed lab."""
+from dataclasses import replace
 from typing import Callable, Optional
 
 from goad import GoadError
 from goad.lab import extensions, scenarios
 from goad.lab.definition import parse_lab
+from goad.lab.provision import check_compatible
 from goad.lab.scenario_ops import ENABLE_TAGS, SOURCE, _dump, _entries, _load, contained
 from goad.state import LabState, SnapshotRecord, load_state, save_state, working_lab_path
 
@@ -79,9 +81,10 @@ def add(settings, runner, store, name: str, probes=None) -> SnapshotRecord:
         path.write_text(text)
         state.pending_extension = name
         save_state(settings, state)
-    lab = open_lab(settings, runner)
     label = f'ext-{name}'
+    lab = None
     try:
+        lab = open_lab(settings, runner)
         new = [h for h in lab.definition.hosts if h not in lab.state.hosts or not lab.state.hosts[h].ready]
         add_hosts(lab, store, probes, new)
         step_provision(lab, probes)
@@ -92,7 +95,8 @@ def add(settings, runner, store, name: str, probes=None) -> SnapshotRecord:
         if record is None:
             record = snapshots.take(lab, label=label)
     except GoadError as e:
-        lab.save()
+        if lab is not None:
+            lab.save()
         raise GoadError(f'{e}: run goad extension add {name} again to resume') from e
     lab.state.pending_extension = None
     lab.save()
@@ -122,19 +126,25 @@ def remove(settings, runner, name: str, yes: bool, ask: Callable[[str, bool], bo
     path = working_lab_path(settings)
     current = path.read_text()
     new_text = remove_entry(current, name)
-    doomed = extensions.extension_hosts(_load(current), name)
+    # only VMs that exist: a half-added extension may not have cloned all its hosts
+    doomed = [h for h in extensions.extension_hosts(_load(current), name) if h in state.hosts]
     record = _pick(state, new_text, name)
     snap = record.name
+    lab = open_lab(settings, runner, lab_yml=record.lab_yml)
+    # the checks reset makes, run before any VM is deleted: a refusal must leave the lab whole
+    survivors = [h for h in lab.state.hosts if h not in doomed]
+    check_compatible(lab.definition, replace(lab.state, hosts={h: lab.state.hosts[h] for h in survivors}))
+    missing = snapshots.missing_on(lab, snap, survivors)
+    if missing:
+        raise GoadError(f'snapshot {snap} is missing on {", ".join(missing)}: nothing was changed')
     question = f'reset the lab to snapshot {snap}? Changes made inside the VMs since {snap} are lost.'
     question = f'Delete VMs {", ".join(doomed)} and {question}' if doomed else question[0].upper() + question[1:]
     if not ask(question, yes):
         raise GoadError('cancelled')
-    lab = open_lab(settings, runner, lab_yml=record.lab_yml)
     if doomed:
-        delete_vms(settings, lab.vmrun, {h: lab.state.hosts[h].vmx for h in doomed if h in lab.state.hosts},
-                   folders=doomed)
+        delete_vms(settings, lab.vmrun, {h: lab.state.hosts[h].vmx for h in doomed})
         for host in doomed:
-            lab.state.hosts.pop(host, None)
+            del lab.state.hosts[host]
         lab.state.templates = sorted({h.template for h in lab.state.hosts.values()})
         lab.save()
     snapshots.reset(lab, snap, current_text=new_text)

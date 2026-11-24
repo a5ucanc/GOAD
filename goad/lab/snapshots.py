@@ -3,7 +3,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from rich.console import Console
 
@@ -27,15 +27,21 @@ class SnapshotRow:
     missing_on: List[str]
 
 
-def _listed(lab: Lab) -> Dict[str, List[str]]:
-    """Snapshot names per host, one listSnapshots per VM."""
+def _listed(lab: Lab, hosts: Optional[Iterable[str]] = None) -> Dict[str, List[str]]:
+    """Snapshot names per host (every host, or only the named ones), one listSnapshots per VM."""
     found: Dict[str, List[str]] = {}
 
     def list_one(name: str, vmx: str) -> None:
         found[name] = lab.vmrun.snapshots(vmx)
 
-    run_parallel(lab.vms(), list_one, 'list snapshots').raise_if_failed('list snapshots')
+    vms = lab.vms() if hosts is None else {host: lab.vms()[host] for host in hosts}
+    run_parallel(vms, list_one, 'list snapshots').raise_if_failed('list snapshots')
     return found
+
+
+def missing_on(lab: Lab, name: str, hosts: Optional[Iterable[str]] = None) -> List[str]:
+    """The hosts (every host, or only the named ones) whose VM does not hold snapshot name."""
+    return [host for host, names in _listed(lab, hosts).items() if name not in names]
 
 
 def _undo_partial(lab: Lab, name: str, done: List[str]) -> None:
@@ -131,8 +137,7 @@ def reset(lab: Lab, name: str = PROTECTED, wait=wait_ready, current_text: Option
         raise GoadError(f'snapshot {name} {reason}')
     definition = parse_lab(record.lab_yml, f'snapshot {name} lab.yml')
     check_compatible(definition, lab.state)   # before any VM is listed or powered off
-    found = _listed(lab)
-    missing = [host for host in lab.vms() if name not in found[host]]
+    missing = missing_on(lab, name)
     if missing:
         raise GoadError(f'snapshot {name} is missing on {", ".join(missing)}: nothing was changed')
     start = time.monotonic()

@@ -2,6 +2,7 @@ import pytest
 import yaml
 
 from goad import GoadError
+from goad.host.runner import Result
 from goad.lab import deploy as deploy_module
 from goad.lab import extension_ops, extensions, lifecycle, scenario_ops, scenarios
 from goad.lab.deploy import Probes
@@ -71,6 +72,9 @@ def env(settings, deployed, tmp_path, monkeypatch):
                     wait_port=lambda *a: None, check_psrp=lambda *a: None, check_ssh=lambda *a: None,
                     remove_setup_account=lambda *a: None, provision=provision)
     runner = CloneRunner(local)
+    # every VM holds base and the ext-* snapshots; a test inserts a more specific answer in front
+    runner.respond(lambda a: a[3] == 'listSnapshots',
+                   Result(0, 'Total snapshots: 3\nbase\next-a\next-novm\n', ''))
 
     class Env:
         pass
@@ -346,3 +350,37 @@ def test_remove_clears_pending(env, resets):
 def test_remove_requires_ask():
     import inspect
     assert inspect.signature(extension_ops.remove).parameters['ask'].default is inspect.Parameter.empty
+
+
+def test_remove_refuses_when_a_survivor_lacks_the_snapshot(env, installed, resets):
+    env.runner._responses.insert(0, (lambda a: a[3] == 'listSnapshots' and 'srv02' in a[4],
+                                     Result(0, 'Total snapshots: 1\next-a\n', '')))
+    asked = []
+    with pytest.raises(GoadError) as e:
+        extension_ops.remove(env.settings, env.runner, 'a', yes=True, ask=lambda q, y: asked.append(q) or True)
+    assert str(e.value) == 'snapshot base is missing on srv02: nothing was changed'
+    assert asked == [] and resets == []
+    assert not [a for a in env.runner.calls if a[3] in ('deleteVM', 'stop')]
+    assert 'x' in load_state(env.settings).hosts
+
+
+def test_remove_half_added_names_only_cloned_vms(env, catdir, resets):
+    _write_ext(catdir, 'two', {'hosts': {'x': X, 'y': dict(X, hostname='yhost', octet=41)}})
+    env.probes.is_up = lambda ip: ip == '192.168.56.41'
+    with pytest.raises(GoadError, match='already answers'):
+        extension_ops.add(env.settings, env.runner, env.store, 'two', probes=env.probes)
+    assert 'x' not in load_state(env.settings).hosts   # refused before any host was added
+    asked = []
+    extension_ops.remove(env.settings, env.runner, 'two', yes=True, ask=lambda q, y: asked.append(q) or True)
+    assert asked == ['Reset the lab to snapshot base? Changes made inside the VMs since base are lost.']
+    assert not [a for a in env.runner.calls if a[3] in ('deleteVM', 'clone')]
+
+
+def test_add_open_failure_says_resume(env, monkeypatch):
+    def broken(*a, **k):
+        raise GoadError('lab.yml: invalid YAML')
+    monkeypatch.setattr('goad.lab.context.open_lab', broken)
+    with pytest.raises(GoadError) as e:
+        extension_ops.add(env.settings, env.runner, env.store, 'a', probes=env.probes)
+    assert str(e.value) == 'lab.yml: invalid YAML: run goad extension add a again to resume'
+    assert load_state(env.settings).pending_extension == 'a'

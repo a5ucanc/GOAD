@@ -1,7 +1,7 @@
 """Lab status, destroy, credentials and single-VM control."""
 import shutil
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List
+from typing import Callable, Dict, List
 
 from goad import GoadError
 from goad.host.paths import to_wsl
@@ -49,8 +49,8 @@ def destroy(settings: Settings, runner, yes: bool) -> None:
     delete_state(settings)
 
 
-def delete_vms(settings: Settings, vmrun: Vmrun, vms: Dict[str, str], folders: Iterable[str] = ()) -> None:
-    """Hard-stop and delete the VMs, then remove their folders (and the extra host folders named)."""
+def delete_vms(settings: Settings, vmrun: Vmrun, vms: Dict[str, str]) -> None:
+    """Hard-stop and delete the VMs, then remove their folders."""
     try:
         stop_all(vmrun, vms, hard=True)
     except GoadError:
@@ -64,7 +64,7 @@ def delete_vms(settings: Settings, vmrun: Vmrun, vms: Dict[str, str], folders: I
 
     run_parallel(vms, delete, 'delete')
     failed = []
-    for name in dict.fromkeys([*vms, *folders]):
+    for name in vms:
         folder = to_wsl(vm_folder(settings, name))
         if folder.exists():
             try:
