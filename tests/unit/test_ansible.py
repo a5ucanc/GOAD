@@ -433,3 +433,29 @@ def test_services_play():
 def test_scenario_replay_runs_services():
     from goad.lab.scenario_ops import ENABLE_TAGS
     assert 'services' in ENABLE_TAGS
+
+
+def test_iis_installs_no_dotnet35():
+    # ASP.NET 3.5 needs NET-Framework-Core, whose payload comes from Windows Update (fails behind TLS inspection)
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'iis' / 'tasks' / 'main.yml').read_text())
+    features = [t['ansible.windows.win_feature'] for t in tasks if 'ansible.windows.win_feature' in t]
+    names = [n for f in features for n in f['name']]
+    assert 'Web-Asp-Net45' in names
+    assert not any(f.get('include_sub_features') for f in features)
+    assert not {'Web-Asp-Net', 'Web-Net-Ext', 'NET-Framework-Core', 'NET-Framework-Features'} & set(names)
+
+
+def test_mssql_installers_accept_reboot_pending():
+    for name in ('install.yml', 'ssms.yml'):
+        text = (ANSIBLE / 'roles' / 'mssql' / 'tasks' / name).read_text()
+        assert 'rc not in [0, 3010]' in text, name
+
+
+def test_mssql_options_failure_is_reported_without_no_log():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'mssql' / 'tasks' / 'main.yml').read_text())
+    names = [t['name'] for t in tasks]
+    options = tasks[names.index('Apply the sa login and the scenario options')]
+    report = tasks[names.index('Apply the sa login and the scenario options') + 1]
+    assert options['no_log'] is True and options['failed_when'] is False
+    assert 'ansible.builtin.fail' in report and 'no_log' not in report
+    assert 'mssql_options.result.error' in report['ansible.builtin.fail']['msg']

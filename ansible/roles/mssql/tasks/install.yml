@@ -63,6 +63,13 @@
   vars:
     ansible_become_password: "{{ lab_password }}"
   register: mssql_setup
+  # 3010: installed, reboot pending
+  failed_when: mssql_setup.rc not in [0, 3010]
   until: mssql_setup is not failed
   retries: 3
   delay: 120
+
+- name: Reboot after SQL Server setup asked for it
+  ansible.windows.win_reboot:
+    reboot_timeout: 1200
+  when: mssql_setup.rc == 3010

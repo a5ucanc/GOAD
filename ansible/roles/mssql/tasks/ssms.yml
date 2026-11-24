@@ -19,6 +19,9 @@
 
     - name: Run the SSMS installer
       ansible.windows.win_command: "{{ mssql_setup_dir }}\\SSMS_installer.exe /install /quiet /norestart"
+      register: mssql_ssms_setup
+      # 3010: installed, reboot pending (the reboot below runs either way)
+      failed_when: mssql_ssms_setup.rc not in [0, 3010]
 
     - name: Reboot after the SSMS install
       ansible.windows.win_reboot:

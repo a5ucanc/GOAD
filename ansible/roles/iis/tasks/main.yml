@@ -22,11 +22,16 @@
     state: present
   register: iis_compat
 
-- name: Install the IIS web server with its sub features and management tools
+# Not Web-Server with include_sub_features: that pulls ASP.NET 3.5 (Web-Asp-Net, Web-Net-Ext ->
+# NET-Framework-Core), whose payload is not on the image and comes from Windows Update, which fails behind
+# a TLS-inspecting egress. The web server with ASP.NET 4.x is enough for the upload page.
+- name: Install the IIS web server with ASP.NET 4.x
   ansible.windows.win_feature:
-    name: Web-Server
+    name: [Web-Server, Web-WebServer, Web-Common-Http, Web-Default-Doc, Web-Dir-Browsing, Web-Http-Errors,
+           Web-Static-Content, Web-Health, Web-Http-Logging, Web-Performance, Web-Stat-Compression,
+           Web-Security, Web-Filtering, Web-App-Dev, Web-Net-Ext45, Web-Asp-Net45, Web-ISAPI-Ext,
+           Web-ISAPI-Filter]
     state: present
-    include_sub_features: true
     include_management_tools: true
   register: iis_server
 

@@ -77,7 +77,15 @@
            | map('extract', hostvars) | map(attribute='domain')) | map('join', '.') | list }}
       # sa of every SQL host has the lab password
       RemotePassword: "{{ lab_password }}"
+  # no_log hides the passwords; options.ps1 reports a failure without them in result.error, raised below
   no_log: true
+  register: mssql_options
+  failed_when: false
+
+- name: Report a failed sa login or scenario option
+  ansible.builtin.fail:
+    msg: "{{ mssql_options.result.error | default('options.ps1 failed without a message') }}"
+  when: mssql_options.result.error is defined or mssql_options.failed | default(false)
 
 - name: Install SQL Server Management Studio
   ansible.builtin.include_tasks: ssms.yml
