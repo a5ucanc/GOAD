@@ -28,8 +28,16 @@ _GROUP_KEYS = {'scope', 'ou', 'managed_by', 'members', 'groups'}
 _USER_KEYS = {'firstname', 'surname', 'city', 'description', 'ou', 'groups', 'sensitive',
               'password', 'spns', 'preauth', 'delegation'}
 _USER_REQUIRED = {'firstname', 'surname'}
-# host services an extension role installs; each value's contents are validated by that role
-SERVICES = ('mssql', 'mssql_ssms', 'iis', 'exchange', 'elk', 'wazuh')
+# host services an extension role installs; mssql and iis options are checked here, the others by their role
+SERVICES = ('mssql', 'iis', 'exchange', 'elk', 'wazuh')
+# option -> keys of each list entry (None: a boolean; (): a list of strings)
+_SERVICE_OPTIONS: Dict[str, Dict[str, Any]] = {
+    'mssql': {'ssms': None, 'sysadmins': (),
+              'impersonate_login': ('login', 'grantee'),
+              'impersonate_user': ('database', 'user', 'grantee'),
+              'linked': ('name', 'remote', 'local_login', 'remote_login')},
+    'iis': {'upload': None},
+}
 _DELEGATION_KEYS = {'unconstrained', 'constrained', 'protocol_transition'}
 _ACL_KEYS = {'principal', 'right', 'object', 'inherit'}
 _ACL_REQUIRED = {'principal', 'right', 'object'}
@@ -444,8 +452,29 @@ def _parse_services(value: Any, source: str, what: str) -> Dict[str, Dict[str, A
     for sname, config in _mapping(value, source, f'services of {what}').items():
         if sname not in SERVICES:
             raise GoadError(f'{source}: unknown service {sname!r} in {what}: choose one of {", ".join(SERVICES)}')
-        services[sname] = _mapping(config, source, f'service {sname} of {what}')
+        config = _mapping(config, source, f'service {sname} of {what}')
+        if sname in _SERVICE_OPTIONS:
+            _check_service_options(sname, config, source, f'service {sname} of {what}')
+        services[sname] = config
     return services
+
+
+def _check_service_options(sname: str, config: Dict[str, Any], source: str, what: str) -> None:
+    options = _SERVICE_OPTIONS[sname]
+    extra = sorted(set(config) - set(options))
+    if extra:
+        raise GoadError(f'{source}: unknown keys {extra} in {what}; allowed: {", ".join(options)}')
+    for key, value in config.items():
+        shape = options[key]
+        if shape is None:
+            _bool(value, source, what, key)
+        elif shape == ():
+            _str_list(value, source, what, key)
+        elif not isinstance(value, list) or not all(
+                isinstance(v, dict) and set(v) == set(shape) and all(isinstance(x, str) and x for x in v.values())
+                for v in value):
+            raise GoadError(f'{source}: {key!r} in {what} must be a list of mappings with exactly the keys '
+                            f'{", ".join(shape)} (non-empty strings)')
 
 
 def parse_lab(text: str, source: str) -> LabDef:
@@ -701,6 +730,12 @@ def _validate_content(lab: LabDef, source: str) -> None:
             other = ca_hosts.setdefault(h.domain, hname)
             if other != hname:
                 raise GoadError(f'{source}: {"ca"!r} set on host {hname} and host {other} in domain {h.domain}: one CA per domain')
+    for hname, h in lab.hosts.items():
+        for link in h.services.get('mssql', {}).get('linked', []):
+            remote = lab.hosts.get(link['remote'])
+            if remote is None or 'mssql' not in remote.services or link['remote'] == hname:
+                raise GoadError(f'{source}: host {hname}: linked server remote {link["remote"]!r} must be another '
+                                f'host with service mssql')
     netbios = {d.netbios.lower() for d in lab.domains.values()}
     for hname, h in lab.hosts.items():
         for lname, members in h.local_groups.items():

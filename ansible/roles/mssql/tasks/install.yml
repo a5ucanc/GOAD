@@ -1,0 +1,68 @@
+# SQL Server setup is launched through WinRM; the default per-shell memory quota makes setup.exe die with
+# System.OutOfMemoryException and leaves a half-installed instance behind. Raise it before installing:
+# the shell quota and the quota of the PowerShell plugin psrp uses (that one takes a WinRM restart).
+- name: Raise the WinRM shell memory quota for SQL Server setup
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      foreach ($path in 'WSMan:\localhost\Shell\MaxMemoryPerShellMB',
+                        'WSMan:\localhost\Plugin\microsoft.powershell\Quotas\MaxMemoryPerShellMB') {
+          if ([int](Get-Item $path).Value -lt 4096) {
+              Set-Item $path 4096 -WarningAction SilentlyContinue
+              $Ansible.Changed = $true
+          }
+      }
+  register: mssql_quota
+
+- name: Reboot so WinRM uses the new quota
+  ansible.windows.win_reboot:
+    reboot_timeout: 1200
+  when: mssql_quota.changed
+
+- name: Setup folder
+  ansible.windows.win_file:
+    path: "{{ mssql_setup_dir }}\\media"
+    state: directory
+
+- name: Setup configuration file
+  ansible.windows.win_template:
+    src: sql_conf.ini.j2
+    dest: "{{ mssql_setup_dir }}\\sql_conf.ini"
+  no_log: true
+
+- name: Look for the SQL Server installer
+  ansible.windows.win_stat:
+    path: "{{ mssql_setup_dir }}\\sql_installer.exe"
+  register: mssql_installer
+
+- name: Download the SQL Server installer
+  ansible.windows.win_get_url:
+    url: "{{ mssql_download_url }}"
+    dest: "{{ mssql_setup_dir }}\\sql_installer.exe"
+  when: not mssql_installer.stat.exists
+
+- name: Let the service account log on as a service
+  ansible.windows.win_user_right:
+    name: SeServiceLogonRight
+    users: ["{{ mssql_svc_account }}"]
+    action: add
+
+# Setup checks the domain service account against the DC: run it with the domain Administrator's network
+# credentials (no second hop over the WinRM session otherwise).
+- name: Install SQL Server
+  ansible.windows.win_command: >-
+    {{ mssql_setup_dir }}\sql_installer.exe /configurationfile={{ mssql_setup_dir }}\sql_conf.ini
+    /IACCEPTSQLSERVERLICENSETERMS /MEDIAPATH={{ mssql_setup_dir }}\media /QUIET /HIDEPROGRESSBAR
+  args:
+    chdir: C:\setup
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ netbios }}\\Administrator"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+  register: mssql_setup
+  until: mssql_setup is not failed
+  retries: 3
+  delay: 120

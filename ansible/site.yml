@@ -101,3 +101,16 @@
       when: ca
       tags: [adcs]
     - settings
+
+# Last: the extension service roles, on the hosts whose services list them. Free: SQL Server setup on
+# one host does not hold the others.
+- name: services
+  hosts: windows
+  gather_facts: false
+  strategy: free
+  tags: [services]
+  roles:
+    - role: mssql
+      when: "'mssql' in services | default({})"
+    - role: iis
+      when: "'iis' in services | default({})"

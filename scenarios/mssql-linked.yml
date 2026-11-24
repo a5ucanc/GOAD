@@ -1,0 +1,24 @@
+description: "Linked server to the SQL Server of the other forest, mapped to its sa"
+requires: mssql
+target: service:mssql
+# Literal hosts, no {target}: castelblack (north) always links to braavos (essos), so the scenario
+# applies only where both exist (2forests) and has one entry, on srv02. srv03 is named so that a lab
+# without it offers no target.
+fragment:
+  domains:
+    north.sevenkingdoms.local:
+      users:
+        scn-sql-link:
+          firstname: scn
+          surname: sql-link
+          description: "SQL login mapped to sa on a linked server"
+          password: "Aa1234567890!"
+  hosts:
+    srv02:
+      services:
+        mssql:
+          linked:
+          - {name: BRAAVOS, remote: srv03, local_login: 'NORTH\scn-sql-link', remote_login: sa}
+    srv03:
+      services:
+        mssql: {}

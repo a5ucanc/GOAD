@@ -1,0 +1,25 @@
+- name: Look for SQL Server Management Studio
+  ansible.windows.win_stat:
+    path: "{{ mssql_ssms_dir }}"
+  register: mssql_ssms
+
+- name: Install SQL Server Management Studio
+  when: not mssql_ssms.stat.exists
+  block:
+    - name: Look for the SSMS installer
+      ansible.windows.win_stat:
+        path: "{{ mssql_setup_dir }}\\SSMS_installer.exe"
+      register: mssql_ssms_installer
+
+    - name: Download the SSMS installer
+      ansible.windows.win_get_url:
+        url: "{{ mssql_ssms_url }}"
+        dest: "{{ mssql_setup_dir }}\\SSMS_installer.exe"
+      when: not mssql_ssms_installer.stat.exists
+
+    - name: Run the SSMS installer
+      ansible.windows.win_command: "{{ mssql_setup_dir }}\\SSMS_installer.exe /install /quiet /norestart"
+
+    - name: Reboot after the SSMS install
+      ansible.windows.win_reboot:
+        reboot_timeout: 600

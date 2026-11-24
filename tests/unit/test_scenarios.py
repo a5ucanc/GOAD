@@ -277,3 +277,26 @@ def test_add_entry_requires_and_expands_extension(tmp_path, monkeypatch):
     raw['extensions'] = ['mssql']
     _, target = scenario_ops.add_entry(yaml.safe_dump(raw), 'dbscn', None)
     assert target == 'srv02'
+
+
+def test_targets_skip_fragment_naming_missing_host():
+    from goad.lab.scenarios import targets
+    sc = _sc({'hosts': {'srv02': {'settings': {'smb.signing': 'optional'}}, 'srv03': {'settings': {'smb.signing': 'optional'}}}},
+             kind='server')
+    assert targets(lab('2domains'), sc) == []
+    # target-independent fragment: one entry, on the first kind target
+    assert targets(lab('2forests'), sc) == ['srv02']
+
+
+def test_targets_keep_target_dependent_fragments():
+    from goad.lab.scenarios import targets
+    sc = _sc({'hosts': {'{target}': {'settings': {'smb.signing': 'optional'}}}}, kind='server')
+    assert targets(lab('2forests'), sc) == valid_targets(lab('2forests'), 'server')
+
+
+def test_expand_refuses_duplicate_target_independent_entry():
+    sc = _sc({'hosts': {'srv02': {'settings': {'smb.signing': 'optional'}}}}, kind='server')
+    raw = lab('2forests')
+    raw['scenarios'] = [{'name': 'a', 'target': 'srv03'}]
+    with pytest.raises(GoadError, match=r"choose one of \['srv02'\]"):
+        expand(raw, 'x', {'a': sc})

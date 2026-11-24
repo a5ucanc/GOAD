@@ -13,13 +13,15 @@ from goad.lab.provision import ANSIBLE_ENV
 from goad.lab.settings_catalog import SETTINGS
 
 ANSIBLE = REPO / 'ansible'
-PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign members', 'post-join', 'settings']
+PLAYS = ['common', 'forest', 'child', 'trust', 'join and content', 'foreign members', 'post-join', 'settings',
+         'services']
 
 
 def test_play_order():
     plays = yaml.safe_load((ANSIBLE / 'site.yml').read_text())
     assert [p['name'] for p in plays] == PLAYS
-    assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc', 'dc', 'dc:member', 'dc', 'windows', 'windows']
+    assert [p['hosts'] for p in plays] == ['windows', 'forest_root', 'child_dc', 'dc', 'dc:member', 'dc', 'windows', 'windows',
+                                                'windows']
     assert all(p['gather_facts'] is False for p in plays)
 
 
@@ -32,9 +34,12 @@ def test_no_fixed_waits():
 
 @pytest.mark.skipif(shutil.which(ansible_bin('ansible-playbook')) is None, reason='ansible not installed')
 @pytest.mark.parametrize('name', LAB_NAMES)
-def test_site_syntax(name, tmp_path):
+@pytest.mark.parametrize('extensions', ['', 'extensions: [mssql, iis]\n'])
+def test_site_syntax(name, extensions, tmp_path):
+    from goad.lab.definition import parse_lab
     inv = tmp_path / 'inventory.yml'
-    inv.write_text(yaml.safe_dump(render_inventory(load_lab(shipped_lab(name)), '192.168.56')))
+    lab = parse_lab(shipped_lab(name).read_text() + extensions, name)
+    inv.write_text(yaml.safe_dump(render_inventory(lab, '192.168.56')))
     result = subprocess.run([ansible_bin('ansible-playbook'), '--syntax-check', '-i', str(inv), str(ANSIBLE / 'site.yml')],
                             capture_output=True, text=True, env={**os.environ, **ANSIBLE_ENV})
     assert result.returncode == 0, result.stdout + result.stderr
@@ -415,3 +420,16 @@ def test_ace_script_knows_enroll_but_lab_acls_do_not():
     assert "'Enroll'" in (ANSIBLE / 'roles' / 'ad_acls' / 'files' / 'ace.ps1').read_text()
     assert '0e10c968-78fb-11d2-90d4-00c04f79dc55' in (ANSIBLE / 'roles' / 'ad_acls' / 'files' / 'ace.ps1').read_text()
     assert 'Enroll' not in ACL_RIGHTS
+
+
+def test_services_play():
+    play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'services')
+    assert play['hosts'] == 'windows' and play['tags'] == ['services']
+    roles = {r['role']: r for r in play['roles']}
+    assert list(roles) == ['mssql', 'iis']
+    assert "'mssql' in services" in roles['mssql']['when'] and "'iis' in services" in roles['iis']['when']
+
+
+def test_scenario_replay_runs_services():
+    from goad.lab.scenario_ops import ENABLE_TAGS
+    assert 'services' in ENABLE_TAGS

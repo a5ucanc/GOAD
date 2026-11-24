@@ -1,0 +1,17 @@
+description: "Domain user that is sysadmin on SQL Server (xp_cmdshell as the service account)"
+requires: mssql
+target: service:mssql
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-sql-admin:
+          firstname: scn
+          surname: sql-admin
+          description: "Sysadmin login on SQL Server"
+          password: "Aa1234567890!"
+  hosts:
+    '{target}':
+      services:
+        mssql:
+          sysadmins: ['{netbios}\scn-sql-admin']

@@ -3,7 +3,7 @@ import pytest
 import yaml
 
 from goad.lab.definition import LAB_NAMES, REPO, load_lab, parse_lab, shipped_lab
-from goad.lab.scenarios import load_catalogue, valid_targets
+from goad.lab.scenarios import load_catalogue, targets, valid_targets
 
 NAMES = {
     'smb-signing-off', 'llmnr', 'mdns', 'smbv1', 'webdav', 'credssp', 'defender-off', 'firewall-off',
@@ -16,7 +16,10 @@ NAMES = {
     'acl-writedacl-ou', 'acl-writedacl-user', 'acl-writeowner', 'acl-writeproperty', 'anonymous-rpc',
     'writespn', 'rbcd', 'foreign-group-acl', 'gpo-abuse',
     'esc1', 'esc2', 'esc3', 'esc4', 'esc7', 'esc9', 'esc13', 'esc15',
+    'mssql-sysadmin', 'mssql-impersonate-login', 'mssql-impersonate-user', 'mssql-linked', 'iis-upload',
 }
+EXTENSION_SCENARIOS = {'mssql-sysadmin', 'mssql-impersonate-login', 'mssql-impersonate-user', 'mssql-linked',
+                       'iis-upload'}
 
 # name -> (target kind, [(setting key, vulnerable value)]); values as effective_settings reports them
 SETTING_CASES = [
@@ -55,14 +58,92 @@ def test_catalogue_names():
     assert set(load_catalogue()) == NAMES
 
 
+def _ext_text(lab):
+    return _text(lab).rstrip('\n') + '\nextensions: [mssql, iis]\n'
+
+
 def test_every_scenario_expands_everywhere():
+    from goad.lab import extensions
     catalogue = load_catalogue()
     for lab in LAB_NAMES:
-        text = _text(lab)
-        raw = yaml.safe_load(text)
+        text = _ext_text(lab)
+        raw = extensions.expand(yaml.safe_load(text), lab)
         for name, sc in catalogue.items():
-            for target in valid_targets(raw, sc.kind):
+            for target in targets(raw, sc):
                 parse_lab(_with(text, name, target), f'{lab}+{name}@{target}')
+
+
+def test_targets_equal_kind_targets_for_base_scenarios():
+    # the fragment filter of targets() changes nothing for the scenarios that need no extension
+    for lab in LAB_NAMES:
+        raw = yaml.safe_load(_text(lab))
+        for name, sc in load_catalogue().items():
+            if name not in EXTENSION_SCENARIOS:
+                assert targets(raw, sc) == valid_targets(raw, sc.kind), (lab, name)
+
+
+def test_extension_scenarios_require_their_extension():
+    catalogue = load_catalogue()
+    for name in EXTENSION_SCENARIOS:
+        want = 'iis' if name.startswith('iis') else 'mssql'
+        assert catalogue[name].requires == want and catalogue[name].kind == f'service:{want}'
+        for lab in LAB_NAMES:
+            assert targets(yaml.safe_load(_text(lab)), catalogue[name]) == []
+
+
+def _ext_targets(lab, name):
+    from goad.lab import extensions
+    return targets(extensions.expand(yaml.safe_load(_ext_text(lab)), lab), load_catalogue()[name])
+
+
+def test_extension_scenario_targets():
+    for name in EXTENSION_SCENARIOS - {'mssql-linked', 'iis-upload'}:
+        assert _ext_targets('1domain', name) == ['srv02']
+        assert _ext_targets('2domains', name) == ['srv02']
+        assert _ext_targets('2forests', name) == ['srv02', 'srv03']
+    for lab in LAB_NAMES:
+        assert _ext_targets(lab, 'iis-upload') == ['srv02']
+    assert _ext_targets('1domain', 'mssql-linked') == []
+    assert _ext_targets('2domains', 'mssql-linked') == []
+    assert _ext_targets('2forests', 'mssql-linked') == ['srv02']
+
+
+MSSQL_CASES = [
+    ('mssql-sysadmin', 'scn-sql-admin', lambda nb: {'sysadmins': [f'{nb}\\scn-sql-admin']}),
+    ('mssql-impersonate-login', 'scn-sql-imp',
+     lambda nb: {'impersonate_login': [{'login': 'sa', 'grantee': f'{nb}\\scn-sql-imp'}]}),
+    ('mssql-impersonate-user', 'scn-sql-dbo',
+     lambda nb: {'impersonate_user': [{'database': 'msdb', 'user': 'dbo', 'grantee': f'{nb}\\scn-sql-dbo'}]}),
+]
+
+
+@pytest.mark.parametrize('name,user,want', MSSQL_CASES)
+@pytest.mark.parametrize('lab_name,target', [('1domain', 'srv02'), ('2domains', 'srv02'), ('2forests', 'srv02'),
+                                             ('2forests', 'srv03')])
+def test_mssql_scenarios_set_services(name, user, want, lab_name, target):
+    base = parse_lab(_ext_text(lab_name), lab_name)
+    lab = parse_lab(_with(_ext_text(lab_name), name, target), lab_name)
+    host = lab.hosts[target]
+    netbios = lab.domains[host.domain].netbios
+    expected = dict(base.hosts[target].services['mssql'], **want(netbios))
+    assert host.services['mssql'] == expected
+    u = lab.domains[host.domain].users[user]
+    assert u.password == 'Aa1234567890!'
+
+
+def test_mssql_linked_links_srv02_to_srv03():
+    base = parse_lab(_ext_text('2forests'), '2forests')
+    lab = parse_lab(_with(_ext_text('2forests'), 'mssql-linked', 'srv02'), '2forests')
+    assert lab.hosts['srv02'].services['mssql']['linked'] == [
+        {'name': 'BRAAVOS', 'remote': 'srv03', 'local_login': 'NORTH\\scn-sql-link', 'remote_login': 'sa'}]
+    assert lab.hosts['srv03'].services == base.hosts['srv03'].services
+    assert lab.domains['north.sevenkingdoms.local'].users['scn-sql-link'].password == 'Aa1234567890!'
+
+
+@pytest.mark.parametrize('lab_name', LAB_NAMES)
+def test_iis_upload_sets_upload(lab_name):
+    lab = parse_lab(_with(_ext_text(lab_name), 'iis-upload', 'srv02'), lab_name)
+    assert lab.hosts['srv02'].services['iis'] == {'upload': True}
 
 
 def test_descriptions_present():

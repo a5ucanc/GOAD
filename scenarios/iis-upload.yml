@@ -1,0 +1,9 @@
+description: "IIS site with an unrestricted file upload page (webshell)"
+requires: iis
+target: service:iis
+fragment:
+  hosts:
+    '{target}':
+      services:
+        iis:
+          upload: true

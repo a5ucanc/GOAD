@@ -1,0 +1,32 @@
+description: "SQL Server Express on castelblack (and braavos on 2forests), SSMS on castelblack"
+# No VM: the mssql role installs SQL Server on the hosts whose services list mssql. SQL Server runs as
+# the domain user sql_svc of its host's domain. No vulnerable settings: the mssql scenarios add those.
+credentials:
+- {account: '<NETBIOS>\sql_svc', password: 'Aa1234567890!', scope: 'mssql service account (domain of each SQL host)'}
+- {account: sa, password: 'Aa1234567890!', scope: 'mssql sa login (each SQL host, port 1433)'}
+labs:
+  1domain:
+    domains:
+      sevenkingdoms.local:
+        users:
+          sql_svc: &sql_svc {firstname: sql, surname: svc, description: "SQL Server service account", password: 'Aa1234567890!'}
+    hosts:
+      srv02: {services: {mssql: {ssms: true}}}
+  2domains:
+    domains:
+      north.sevenkingdoms.local:
+        users:
+          sql_svc: *sql_svc
+    hosts:
+      srv02: {services: {mssql: {ssms: true}}}
+  2forests:
+    domains:
+      north.sevenkingdoms.local:
+        users:
+          sql_svc: *sql_svc
+      essos.local:
+        users:
+          sql_svc: *sql_svc
+    hosts:
+      srv02: {services: {mssql: {ssms: true}}}
+      srv03: {services: {mssql: {}}}

@@ -1,0 +1,18 @@
+description: "SQL login that can impersonate dbo in msdb (TRUSTWORTHY)"
+requires: mssql
+target: service:mssql
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-sql-dbo:
+          firstname: scn
+          surname: sql-dbo
+          description: "msdb user with IMPERSONATE on dbo"
+          password: "Aa1234567890!"
+  hosts:
+    '{target}':
+      services:
+        mssql:
+          impersonate_user:
+          - {database: msdb, user: dbo, grantee: '{netbios}\scn-sql-dbo'}

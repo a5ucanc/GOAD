@@ -1,0 +1,84 @@
+# SQL Server Express on a host whose services list mssql (extension mssql), then the options the mssql
+# scenarios set. Ported from main's mssql and mssql_ssms roles. Setup is skipped once the service exists.
+- name: Look for the SQL Server service
+  ansible.windows.win_service_info:
+    name: "{{ mssql_service }}"
+  register: mssql_service_info
+
+- name: Install SQL Server
+  ansible.builtin.include_tasks: install.yml
+  when: not mssql_service_info.exists
+
+- name: Listen on TCP 1433
+  ansible.windows.win_regedit:
+    path: "{{ mssql_instance_key }}\\SuperSocketNetLib\\Tcp\\IPAll"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: string
+  loop:
+    - {name: TcpPort, data: '1433'}
+    - {name: TcpDynamicPorts, data: ''}
+  register: mssql_port
+
+- name: Allow SQL Server and Windows authentication
+  ansible.windows.win_regedit:
+    path: "{{ mssql_instance_key }}"
+    name: LoginMode
+    data: 2
+    type: dword
+  register: mssql_login_mode
+
+- name: Restart SQL Server for the port or the authentication mode
+  ansible.windows.win_service:
+    name: "{{ mssql_service }}"
+    force_dependent_services: true
+    state: restarted
+  when: mssql_port.changed or mssql_login_mode.changed
+
+- name: Start SQL Server
+  ansible.windows.win_service:
+    name: "{{ mssql_service }}"
+    start_mode: auto
+    state: started
+
+- name: Open TCP 1433 and UDP 1434 in the firewall
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      foreach ($r in @(@('Access for MSSQL (TCP-In)', 'TCP', '1433', 'Opens the listener port for MSSQL'),
+                       @('Access for MSSQL (UDP-In)', 'UDP', '1434', 'Opens the discover port for MSSQL'))) {
+          $name, $protocol, $port, $description = $r
+          if (-not (Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {
+              New-NetFirewallRule -DisplayName $name -Direction Inbound -Protocol $protocol -LocalPort $port `
+                  -Profile Domain -Action Allow -Description $description | Out-Null
+              $Ansible.Changed = $true
+          }
+      }
+
+- name: Wait for SQL Server on port 1433
+  ansible.windows.win_wait_for:
+    port: 1433
+    timeout: 300
+
+- name: Apply the sa login and the scenario options
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'options.ps1') }}"
+    parameters:
+      SaPassword: "{{ mssql_sa_password }}"
+      Sysadmins: "{{ services.mssql.sysadmins | default([]) }}"
+      ImpersonateLogin: "{{ services.mssql.impersonate_login | default([]) }}"
+      ImpersonateUser: "{{ services.mssql.impersonate_user | default([]) }}"
+      Linked: "{{ services.mssql.linked | default([]) }}"
+      # FQDN of each linked remote host, in the order of Linked
+      LinkedSources: >-
+        {{ services.mssql.linked | default([]) | map(attribute='remote') | map('extract', hostvars)
+           | map(attribute='hostname') | zip(services.mssql.linked | default([]) | map(attribute='remote')
+           | map('extract', hostvars) | map(attribute='domain')) | map('join', '.') | list }}
+      # sa of every SQL host has the lab password
+      RemotePassword: "{{ lab_password }}"
+  no_log: true
+
+- name: Install SQL Server Management Studio
+  ansible.builtin.include_tasks: ssms.yml
+  when: services.mssql.ssms | default(false)

@@ -128,11 +128,11 @@ def test_extension_hosts_excludes_lab_hosts(catdir):
 
 
 def test_services_parse():
-    text = shipped_lab('1domain').read_text().replace("octet: 22,", "octet: 22, services: {mssql: {sa: x}},")
+    text = shipped_lab('1domain').read_text().replace("octet: 22,", "octet: 22, services: {mssql: {ssms: true}},")
     lab = parse_lab(text, 'lab.yml')
-    assert lab.hosts['srv02'].services == {'mssql': {'sa': 'x'}}
+    assert lab.hosts['srv02'].services == {'mssql': {'ssms': True}}
     entry = render_inventory(lab, '192.168.56')['all']['children']['server']['hosts']['srv02']
-    assert entry['services'] == {'mssql': {'sa': 'x'}}
+    assert entry['services'] == {'mssql': {'ssms': True}}
 
 
 def test_services_unknown_name_refused():
@@ -167,3 +167,61 @@ def test_os_kali_is_linux():
     from goad.settings import OS_NAMES
     from goad.templates.store import OS_FAMILY
     assert 'kali' in OS_NAMES and OS_FAMILY['kali'] == 'linux'
+
+
+SQL_HOSTS = {'1domain': {'srv02': 'sevenkingdoms.local'}, '2domains': {'srv02': 'north.sevenkingdoms.local'},
+             '2forests': {'srv02': 'north.sevenkingdoms.local', 'srv03': 'essos.local'}}
+
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_mssql_and_iis_extensions(name):
+    text = shipped_lab(name).read_text() + 'extensions: [mssql, iis]\n'
+    lab = parse_lab(text, 'lab.yml')
+    base = load_lab(shipped_lab(name))
+    assert set(lab.hosts) == set(base.hosts)   # no VM
+    for host, domain in SQL_HOSTS[name].items():
+        assert lab.hosts[host].services['mssql'] == ({'ssms': True} if host == 'srv02' else {})
+        user = lab.domains[domain].users['sql_svc']
+        assert user.password == 'Aa1234567890!'
+    assert lab.hosts['srv02'].services['iis'] == {}
+    assert [h for h in lab.hosts if lab.hosts[h].services] == list(SQL_HOSTS[name])
+    raw = yaml.safe_load(text)
+    assert extension_hosts(raw, 'mssql') == [] and extension_hosts(raw, 'iis') == []
+    entry = render_inventory(lab, '192.168.56')['all']['children']['server']['hosts']['srv02']
+    assert entry['services'] == {'mssql': {'ssms': True}, 'iis': {}}
+
+
+def test_mssql_extension_lists_sql_svc_credential():
+    creds = load_catalogue()['mssql'].credentials
+    assert any(account.endswith('sql_svc') and password == 'Aa1234567890!' for account, password, _ in creds)
+
+
+def _svc(services):
+    return shipped_lab('2forests').read_text().replace(
+        "srv03: {hostname: braavos,", "srv03: {services: {mssql: {}}, hostname: braavos,").replace(
+        "octet: 22,", f"octet: 22, services: {services},")
+
+
+@pytest.mark.parametrize('services, message', [
+    ('{mssql: {bogus: 1}}', 'unknown keys'),
+    ('{mssql: {ssms: yes please}}', 'ssms'),
+    ('{mssql: {sysadmins: x}}', 'sysadmins'),
+    ('{mssql: {impersonate_login: [{login: sa}]}}', 'impersonate_login'),
+    ('{mssql: {impersonate_user: [{database: msdb, user: dbo}]}}', 'impersonate_user'),
+    ('{mssql: {linked: [{name: B, remote: nope, local_login: a, remote_login: sa}]}}', 'nope'),
+    ('{mssql: {linked: [{name: B, remote: dc01, local_login: a, remote_login: sa}]}}', 'dc01'),
+    ('{mssql: {linked: [{name: B, remote: srv03}]}}', 'linked'),
+    ('{iis: {upload: 1}}', 'upload'),
+    ('{iis: {bogus: true}}', 'unknown keys'),
+])
+def test_service_options_validated(services, message):
+    with pytest.raises(GoadError, match=message):
+        parse_lab(_svc(services), 'lab.yml')
+
+
+def test_service_options_accepted():
+    lab = parse_lab(_svc("{mssql: {ssms: true, sysadmins: ['NORTH\\a'], impersonate_login: [{login: sa, grantee: 'NORTH\\b'}], "
+                         "impersonate_user: [{database: msdb, user: dbo, grantee: 'NORTH\\c'}], "
+                         "linked: [{name: BRAAVOS, remote: srv03, local_login: 'NORTH\\d', remote_login: sa}]}, "
+                         "iis: {upload: true}}"), 'lab.yml')
+    assert lab.hosts['srv02'].services['iis'] == {'upload': True}

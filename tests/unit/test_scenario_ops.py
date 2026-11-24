@@ -145,7 +145,7 @@ def test_enable_writes_then_provisions(settings, fake, deployed, calls):
     written = working_lab_path(settings).read_text()
     assert yaml.safe_load(written)['scenarios'] == [{'name': 'newuser', 'target': 'dc02'}]
     assert calls == [('provision', scenario_ops.ENABLE_TAGS, written)]
-    assert scenario_ops.ENABLE_TAGS == ['content', 'local_groups', 'settings']
+    assert scenario_ops.ENABLE_TAGS == ['content', 'local_groups', 'settings', 'services']
 
 
 def test_enable_error_writes_nothing(settings, fake, deployed, calls):

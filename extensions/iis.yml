@@ -1,0 +1,8 @@
+description: "IIS web server and management features on castelblack"
+# No VM: the iis role installs IIS with a default index.html on the hosts whose services list iis.
+labs:
+  1domain: &srv02
+    hosts:
+      srv02: {services: {iis: {}}}
+  2domains: *srv02
+  2forests: *srv02

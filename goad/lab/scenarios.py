@@ -84,6 +84,21 @@ def valid_targets(raw: Dict[str, Any], kind: str) -> List[str]:
     return out
 
 
+def targets(raw: Dict[str, Any], scenario: 'Scenario') -> List[str]:
+    """valid_targets of the scenario's kind, keeping only those whose fragment names existing hosts, and one
+    target per distinct fragment: a fragment that names its hosts literally (mssql-linked) applies once."""
+    hosts = raw.get('hosts') or {}
+    out: List[str] = []
+    seen: List[Any] = []
+    for target in valid_targets(raw, scenario.kind):
+        fragment = substitute(scenario.fragment, placeholders(raw, target))
+        if any(h not in hosts for h in fragment.get('hosts') or {}) or fragment in seen:
+            continue
+        seen.append(fragment)
+        out.append(target)
+    return out
+
+
 def check_requires(scenario: 'Scenario', raw: Dict[str, Any], source: str) -> None:
     from goad.lab import extensions  # function-local: extensions imports this module
     req = scenario.requires
@@ -212,7 +227,7 @@ def expand(raw: Dict[str, Any], source: str, catalogue: Optional[Dict[str, Scena
             raise GoadError(f'{source}: unknown host {target!r} in scenario {name}')
         scenario = catalogue[name]
         check_requires(scenario, raw, source)
-        valid = valid_targets(raw, scenario.kind)
+        valid = targets(raw, scenario)
         if target not in valid:
             choice = f'choose one of {valid}' if valid else 'none in this lab'
             raise GoadError(f'{source}: scenario {name} needs a {scenario.kind} target: {choice}')

@@ -9,8 +9,9 @@ from goad.lab.definition import parse_lab
 from goad.state import LabState, load_state, working_lab_path
 
 # Plays that carry every scenario primitive: 'join and content' and 'foreign members' (content),
-# 'post-join' (local_groups), 'settings' (settings; adcs runs inside content and settings).
-ENABLE_TAGS = ['content', 'local_groups', 'settings']
+# 'post-join' (local_groups), 'settings' (settings; adcs runs inside content and settings), 'services'
+# (the extension service roles: mssql and iis scenarios set their options).
+ENABLE_TAGS = ['content', 'local_groups', 'settings', 'services']
 SOURCE = 'lab.yml'
 
 
@@ -45,7 +46,7 @@ def add_entry(text: str, name: str, target: Optional[str]) -> Tuple[str, str]:
     scenarios.check_requires(catalogue[name], raw, 'lab.yml')
     kind = catalogue[name].kind
     expanded = extensions.expand(raw, SOURCE)
-    valid = scenarios.valid_targets(expanded, kind)
+    valid = scenarios.targets(expanded, catalogue[name])
     if target is None:
         if not valid:
             raise GoadError(f'scenario {name} needs a {kind} target: none in this lab')
@@ -218,7 +219,7 @@ def listing(text: Optional[str]) -> List[Tuple[str, str, str, str, str]]:
         if raw is None:
             valid = enabled = ''
         else:
-            valid = ', '.join(scenarios.valid_targets(expanded, scenario.kind))
+            valid = ', '.join(scenarios.targets(expanded, scenario))
             enabled = ', '.join(e['target'] for e in _entries(raw) if e['name'] == name)
         description = scenario.description
         if scenario.requires:

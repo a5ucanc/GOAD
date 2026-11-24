@@ -1,0 +1,65 @@
+# IIS on a host whose services list iis (extension iis); services.iis.upload adds the upload page
+# (scenario iis-upload). Ported from main's iis role and iis-upload scenario.
+- name: Install IIS management features
+  ansible.windows.win_feature:
+    name: [Web-Mgmt-Tools, Web-Mgmt-Console, Web-Scripting-Tools, Web-Mgmt-Service]
+    state: present
+  register: iis_mgmt
+
+- name: Give SYSTEM full control of the machine keys (IIS 6 compatibility components need it)
+  ansible.windows.win_acl:
+    path: C:\ProgramData\Microsoft\Crypto\RSA\MachineKeys\
+    user: SYSTEM
+    rights: FullControl
+    type: allow
+    state: present
+    inherit: ContainerInherit, ObjectInherit
+    propagation: InheritOnly
+
+- name: Install IIS 6 compatibility features
+  ansible.windows.win_feature:
+    name: [Web-Mgmt-Compat, Web-Metabase, Web-Lgcy-Mgmt-Console, Web-Lgcy-Scripting, Web-WMI]
+    state: present
+  register: iis_compat
+
+- name: Install the IIS web server with its sub features and management tools
+  ansible.windows.win_feature:
+    name: Web-Server
+    state: present
+    include_sub_features: true
+    include_management_tools: true
+  register: iis_server
+
+- name: Reboot if a feature install asks for it
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: iis_mgmt.reboot_required or iis_compat.reboot_required or iis_server.reboot_required
+
+- name: Default index.html
+  ansible.windows.win_copy:
+    src: index.html
+    dest: C:\inetpub\wwwroot\index.html
+
+- name: Upload page (Default.aspx, Web.config)
+  ansible.windows.win_copy:
+    src: "upload/{{ item }}"
+    dest: "C:\\inetpub\\wwwroot\\{{ item }}"
+  loop: [Default.aspx, Web.config]
+  when: services.iis.upload | default(false)
+
+- name: Upload folder
+  ansible.windows.win_file:
+    path: C:\inetpub\wwwroot\upload
+    state: directory
+  when: services.iis.upload | default(false)
+
+- name: Give IIS_IUSRS full control of the upload folder
+  ansible.windows.win_acl:
+    path: C:\inetpub\wwwroot\upload
+    user: IIS_IUSRS
+    rights: FullControl
+    type: allow
+    state: present
+    inherit: ContainerInherit, ObjectInherit
+    propagation: None
+  when: services.iis.upload | default(false)

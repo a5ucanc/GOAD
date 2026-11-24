@@ -17,7 +17,7 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 | Host checks, VM templates (`goad check`, `goad template ...`) | available |
 | Labs `1domain` (dc01 kingslanding, srv02 castelblack), `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | available |
 | Release gate (2domains) | accepted 2026-11-23 with one deploy 40 s over the limit, see docs/release-gate/ |
-| Scenarios (52, one YAML file each in `scenarios/`) | available |
+| Scenarios (57, one YAML file each in `scenarios/`; 5 need an extension) | available |
 | Extensions | available |
 
 ## Host requirements
@@ -129,7 +129,7 @@ goad scenario disable kerberoast --target dc01      # --target needed if enabled
 ```
 
 - The list of enabled scenarios lives in the `scenarios:` key of `~/.goad/lab.yml`, as mappings, e.g. `scenarios: [{name: kerberoast, target: dc01}]`. `goad snapshot list` shows them as `name@target`.
-- `enable` appends the entry to the working `lab.yml` and provisions with tags `content,local_groups,settings`.
+- `enable` appends the entry to the working `lab.yml` and provisions with tags `content,local_groups,settings,services`.
   It takes no snapshot. Run `goad snapshot take [label]` first if you want a fixed point to return to.
   If provisioning fails, the entry stays; run `goad lab provision` again or disable the scenario.
 - `disable` removes the entry, resets the lab to the newest snapshot whose content is contained in the new
@@ -138,7 +138,10 @@ goad scenario disable kerberoast --target dc01      # --target needed if enabled
 - A snapshot's `lab.yml` is expanded with the current scenario files, so editing a scenario file can change
   which snapshot `disable` picks.
 - `goad snapshot list` has a Scenarios column. `goad creds` also lists scenario users.
-- Five scenarios wait for extensions and are not in `scenarios/` yet: `mssql-impersonate-login`, `mssql-impersonate-user`, `mssql-linked`, `mssql-sysadmin`, `iis-upload`.
+- Five scenarios need an extension (`goad scenario list` says which): `mssql-sysadmin`, `mssql-impersonate-login`,
+  `mssql-impersonate-user` (extension `mssql`; srv02, or `--target srv03` on 2forests), `mssql-linked` (`mssql`,
+  2forests only: links castelblack to braavos) and `iis-upload` (extension `iis`). `enable` refuses until the
+  extension is installed.
 
 ## Extensions
 
@@ -171,6 +174,7 @@ deployed lab. Plays run in this order:
 | foreign members | DCs | `content` | foreign_members (cross-forest group members) |
 | post-join | all Windows hosts | `laps`, `local_groups` | laps_schema, laps_dc, local_groups, laps_host |
 | settings | all Windows hosts | `settings`, `adcs` | adcs (CA hosts: waits for the AD CS role install, then the CA), settings (the lab.yml `settings` catalogue) |
+| services | all Windows hosts | `services` | mssql, iis (hosts whose `services` lists them: extensions and their scenarios) |
 
 ```bash
 goad lab provision                       # every play

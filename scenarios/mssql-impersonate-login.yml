@@ -1,0 +1,18 @@
+description: "SQL login that can impersonate sa"
+requires: mssql
+target: service:mssql
+fragment:
+  domains:
+    '{domain}':
+      users:
+        scn-sql-imp:
+          firstname: scn
+          surname: sql-imp
+          description: "SQL login with IMPERSONATE on sa"
+          password: "Aa1234567890!"
+  hosts:
+    '{target}':
+      services:
+        mssql:
+          impersonate_login:
+          - {login: sa, grantee: '{netbios}\scn-sql-imp'}
