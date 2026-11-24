@@ -1,0 +1,33 @@
+description: "Exchange Server SE on srv01 the-eyrie, mailboxes for the sevenkingdoms.local users, mail reading bot"
+# Port of main's extensions/exchange (roles ludus_exchange and exchange_bot). The exchange role installs
+# the prerequisites and Exchange Server SE (unlicensed 180-day trial) on the host whose services list
+# exchange, prepares the schema and AD as the forest root Administrator, enables a mailbox for every
+# sevenkingdoms.local user, and schedules a bot that opens the attachments mailed to lysa.arryn.
+# The Arryn users, group and local groups come from main's data/config.json.
+credentials:
+- {account: 'SEVENKINGDOMS\lysa.arryn', password: 'Aa1234567890!', scope: 'exchange mailbox read by the bot every minute (https://{range}.21/owa)'}
+labs:
+  1domain: &exchange
+    domains:
+      sevenkingdoms.local:
+        groups:
+          Arryn: {scope: global, ou: Vale, managed_by: lysa.arryn}
+        users:
+          lysa.arryn: {firstname: Lysa, surname: Arryn, city: The Eyries, description: Lysa Arryn, ou: Vale, groups: [Arryn], password: 'Aa1234567890!'}
+          robin.arryn: {firstname: Robin, surname: Arryn, city: The Eyries, description: Robin Arryn, ou: Vale, groups: [Arryn], password: 'Aa1234567890!'}
+    hosts:
+      srv01:
+        hostname: the-eyrie
+        os: win2022
+        role: server
+        domain: sevenkingdoms.local
+        octet: 21
+        cpus: 4
+        memory: 12288
+        local_groups:
+          Administrators: ['SEVENKINGDOMS\lysa.arryn']
+          Remote Desktop Users: ['SEVENKINGDOMS\Arryn']
+        services:
+          exchange: {}
+  2domains: *exchange
+  2forests: *exchange

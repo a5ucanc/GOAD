@@ -1,0 +1,27 @@
+# main's exchange_bot role: a scheduled task opens the attachments mailed to the bot user every minute.
+- name: Bot folder
+  ansible.windows.win_file:
+    path: "{{ exchange_bot_dir }}"
+    state: directory
+
+- name: Copy the mail reading bot
+  ansible.windows.win_copy:
+    src: readMail.ps1
+    dest: "{{ exchange_bot_dir }}\\readMail.ps1"
+
+- name: Schedule the mail reading bot as the bot user
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'bot_task.ps1') }}"
+    parameters:
+      User: "{{ netbios }}\\{{ exchange_bot_user }}"
+      Password: "{{ goad_domains[domain].users[exchange_bot_user].password | default(lab_password) }}"
+      Script: "{{ exchange_bot_dir }}\\readMail.ps1"
+  # no_log hides the password; bot_task.ps1 reports a failure without it in result.error, raised below
+  no_log: true
+  register: exchange_bot_task
+  ignore_errors: true
+
+- name: Report a failed bot schedule
+  ansible.builtin.fail:
+    msg: "{{ exchange_bot_task.result.error | default('bot_task.ps1 failed without a message') }}"
+  when: exchange_bot_task.result.error is defined or exchange_bot_task.failed | default(false)

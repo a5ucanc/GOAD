@@ -1,0 +1,87 @@
+# Exchange Server SE on a host whose services list exchange (extension exchange). Ported from main's
+# ludus_exchange and exchange_bot roles. Prerequisites and setup are skipped once Get-ExchangeServer lists
+# the host; mailboxes are enabled only for the users that have none.
+#
+# Every task that reads or writes AD runs with the network credentials of the forest root Administrator
+# (become runas, logon_type=new_credentials, as the mssql role does): the WinRM logon of the same account
+# has its groups (local admin, Schema and Enterprise Admins) but no credentials for a second hop to the DC.
+- name: Raise the WinRM shell memory quota for Exchange setup
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      foreach ($path in 'WSMan:\localhost\Shell\MaxMemoryPerShellMB',
+                        'WSMan:\localhost\Plugin\microsoft.powershell\Quotas\MaxMemoryPerShellMB') {
+          if ([int](Get-Item $path).Value -lt 4096) {
+              Set-Item $path 4096 -WarningAction SilentlyContinue
+              $Ansible.Changed = $true
+          }
+      }
+  register: exchange_quota
+
+- name: Reboot so WinRM uses the new quota
+  ansible.windows.win_reboot:
+    reboot_timeout: 1200
+  when: exchange_quota.changed
+
+- name: Look for Exchange Server on this host
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'state.ps1') }}"
+    parameters:
+      Name: "{{ hostname }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ exchange_admin }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+  register: exchange_state
+
+- name: Install the Exchange prerequisites
+  ansible.builtin.include_tasks: prereqs.yml
+  when: not exchange_state.result.installed
+
+- name: Install Exchange Server
+  ansible.builtin.include_tasks: install.yml
+  when: not exchange_state.result.installed
+
+- name: Start the Exchange services
+  ansible.windows.win_service:
+    name: "{{ item }}"
+    state: started
+  loop: [MSExchangeIS, MSExchangeTransport, MSExchangeFrontendTransport]
+
+# The mailbox database mounts a while after the Information Store starts (and after setup).
+- name: Enable a mailbox for every domain user
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'mailboxes.ps1') }}"
+    parameters:
+      DomainDn: "{{ goad_domains[domain].dn }}"
+      Exclude: "{{ exchange_mailbox_exclude }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ exchange_admin }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+  register: exchange_mailboxes
+  until: exchange_mailboxes is succeeded
+  retries: 20
+  delay: 30
+
+- name: Resolve names through the lab adapter for Exchange transport
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'dns_adapter.ps1') }}"
+    parameters:
+      Name: "{{ hostname }}"
+      LabAddress: "{{ ansible_host }}"
+      Forwarder: "{{ dns_forwarder }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ exchange_admin }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+
+- name: Install the mail reading bot
+  ansible.builtin.include_tasks: bot.yml

@@ -1,0 +1,70 @@
+# Exchange Server SE RTM (15.2.2562), the only Exchange release supported with Windows Server 2025 DCs.
+# Unlicensed: a 180-day trial. Installer media and prerequisites come from the Microsoft Download Center.
+exchange_iso_url: https://download.microsoft.com/download/ad9b1e53-f28e-4a82-987d-6c88803795b2/ExchangeServerSE-x64.iso
+# Prerequisites of the Mailbox role (learn.microsoft.com/exchange/plan-and-deploy/prerequisites). Windows
+# Server 2022 ships .NET Framework 4.8, which Exchange SE supports.
+# Visual C++ 2012 Update 4 and 2013 (12.0.40664) x64 redistributables
+exchange_vcredist2012_url: https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe
+exchange_vcredist2013_url: https://download.microsoft.com/download/2/E/6/2E61CFA4-993B-4DD4-91DA-3737CD5CD6E3/vcredist_x64.exe
+# IIS URL Rewrite Module 2.1
+exchange_rewrite_url: https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi
+# Unified Communications Managed API 4.0 runtime
+exchange_ucma_url: https://download.microsoft.com/download/2/C/4/2C47A5C1-A1F3-4843-B9FE-84C0032C61EC/UcmaRuntimeSetup.exe
+exchange_setup_dir: C:\setup\exchange
+exchange_iso: "{{ exchange_setup_dir }}\\ExchangeServerSE-x64.iso"
+# The Windows features of the Mailbox role on Windows Server with the Desktop Experience
+exchange_features:
+  - Server-Media-Foundation
+  - NET-Framework-45-Core
+  - NET-Framework-45-ASPNET
+  - NET-WCF-HTTP-Activation45
+  - NET-WCF-Pipe-Activation45
+  - NET-WCF-TCP-Activation45
+  - NET-WCF-TCP-PortSharing45
+  - RPC-over-HTTP-proxy
+  - RSAT-Clustering
+  - RSAT-Clustering-CmdInterface
+  - RSAT-Clustering-Mgmt
+  - RSAT-Clustering-PowerShell
+  - WAS-Process-Model
+  - Web-Asp-Net45
+  - Web-Basic-Auth
+  - Web-Client-Auth
+  - Web-Digest-Auth
+  - Web-Dir-Browsing
+  - Web-Dyn-Compression
+  - Web-Http-Errors
+  - Web-Http-Logging
+  - Web-Http-Redirect
+  - Web-Http-Tracing
+  - Web-ISAPI-Ext
+  - Web-ISAPI-Filter
+  - Web-Metabase
+  - Web-Mgmt-Console
+  - Web-Mgmt-Service
+  - Web-Net-Ext45
+  - Web-Request-Monitor
+  - Web-Server
+  - Web-Stat-Compression
+  - Web-Static-Content
+  - Web-Windows-Auth
+  - Web-WMI
+  - Windows-Identity-Foundation
+  - RSAT-ADDS
+# The Exchange organization, named as on main
+exchange_organization: "{{ domain.split('.')[0] }}"
+# Schema and AD preparation need Schema and Enterprise Admins: the Administrator of the host's domain,
+# sevenkingdoms.local, the forest root in every lab.
+exchange_admin: "{{ netbios }}\\Administrator"
+exchange_dc: "{{ goad_domains[domain].dc_hostname }}"
+# Users that get no mailbox (main skipped its provisioning accounts the same way)
+exchange_mailbox_exclude: [Administrator, Guest, krbtgt, DefaultAccount]
+# The mail reading bot of main's exchange_bot role
+exchange_bot_user: lysa.arryn
+exchange_bot_dir: C:\setup\exchange_bot
+# The prerequisite packages prereqs.ps1 looks for, with their silent install arguments
+exchange_prereq_packages:
+  - {name: vcredist2012, url: "{{ exchange_vcredist2012_url }}", file: vcredist2012_x64.exe, args: /install /quiet /norestart}
+  - {name: vcredist2013, url: "{{ exchange_vcredist2013_url }}", file: vcredist2013_x64.exe, args: /install /quiet /norestart}
+  - {name: rewrite, url: "{{ exchange_rewrite_url }}", file: rewrite_amd64_en-US.msi, args: /quiet /norestart}
+  - {name: ucma, url: "{{ exchange_ucma_url }}", file: UcmaRuntimeSetup.exe, args: /q /norestart}

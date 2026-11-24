@@ -1,0 +1,95 @@
+# Exchange Server SE setup from the ISO: schema, AD (organization), then the Mailbox role, unattended.
+- name: Look for the Exchange ISO
+  ansible.windows.win_stat:
+    path: "{{ exchange_iso }}"
+    get_checksum: false
+  register: exchange_iso_file
+
+# About 6 GB, downloaded once
+- name: Download the Exchange ISO
+  ansible.windows.win_get_url:
+    url: "{{ exchange_iso_url }}"
+    dest: "{{ exchange_iso }}"
+    force: false
+  when: not exchange_iso_file.stat.exists
+
+- name: Look for a pending reboot
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'pending_reboot.ps1') }}"
+  register: exchange_pending
+
+# Setup refuses to run while Windows waits for a reboot
+- name: Reboot before setup
+  ansible.windows.win_reboot:
+    reboot_timeout: 1800
+  when: exchange_pending.result.pending
+
+- name: Mount the Exchange ISO
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'mount.ps1') }}"
+    parameters:
+      Path: "{{ exchange_iso }}"
+  register: exchange_mount
+
+# Setup with the Administrator's network credentials (see main.yml). The three steps rerun safely.
+- name: Prepare the schema
+  ansible.windows.win_command: >-
+    {{ exchange_mount.result }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /PrepareSchema
+    /DomainController:{{ exchange_dc }}
+  args:
+    chdir: "{{ exchange_setup_dir }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ exchange_admin }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+
+- name: Prepare Active Directory
+  ansible.windows.win_command: >-
+    {{ exchange_mount.result }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /PrepareAD
+    /OrganizationName:{{ exchange_organization }} /DomainController:{{ exchange_dc }}
+  args:
+    chdir: "{{ exchange_setup_dir }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ exchange_admin }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+
+# 30 to 60 minutes
+- name: Install the Mailbox role
+  ansible.windows.win_command: >-
+    {{ exchange_mount.result }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /Mode:Install
+    /Roles:Mailbox /DomainController:{{ exchange_dc }}
+  args:
+    chdir: "{{ exchange_setup_dir }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ exchange_admin }}"
+  become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+
+- name: Reboot after Exchange setup
+  ansible.windows.win_reboot:
+    reboot_timeout: 1800
+
+- name: Dismount the Exchange ISO
+  ansible.windows.win_powershell:
+    script: |
+      param([string]$Path)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if ((Get-DiskImage -ImagePath $Path).Attached) {
+          Dismount-DiskImage -ImagePath $Path | Out-Null
+          $Ansible.Changed = $true
+      }
+    parameters:
+      Path: "{{ exchange_iso }}"
+
+- name: Remove the Exchange ISO
+  ansible.windows.win_file:
+    path: "{{ exchange_iso }}"
+    state: absent

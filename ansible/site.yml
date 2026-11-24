@@ -114,6 +114,9 @@
       when: "'mssql' in services | default({})"
     - role: iis
       when: "'iis' in services | default({})"
+    # Exchange Server SE on srv01 (extension exchange)
+    - role: exchange
+      when: "'exchange' in services | default({})"
 
 # Linux hosts (extensions lx01, kali) over SSH as goad. Only those with a domain join it (realmd, sssd).
 - name: linux

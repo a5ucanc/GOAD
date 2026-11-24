@@ -35,7 +35,7 @@ def test_no_fixed_waits():
 @pytest.mark.skipif(shutil.which(ansible_bin('ansible-playbook')) is None, reason='ansible not installed')
 @pytest.mark.parametrize('name', LAB_NAMES)
 @pytest.mark.parametrize('extensions', ['', 'extensions: [mssql, iis]\n', 'extensions: [ws01, lx01, kali]\n',
-                                        'extensions: [elk, wazuh]\n'])
+                                        'extensions: [elk, wazuh]\n', 'extensions: [exchange]\n'])
 def test_site_syntax(name, extensions, tmp_path):
     from goad.lab.definition import parse_lab
     inv = tmp_path / 'inventory.yml'
@@ -429,8 +429,9 @@ def test_services_play():
     play = next(p for p in yaml.safe_load((ANSIBLE / 'site.yml').read_text()) if p['name'] == 'services')
     assert play['hosts'] == 'windows' and play['tags'] == ['services']
     roles = {r['role']: r for r in play['roles']}
-    assert list(roles) == ['mssql', 'iis']
+    assert list(roles) == ['mssql', 'iis', 'exchange']
     assert "'mssql' in services" in roles['mssql']['when'] and "'iis' in services" in roles['iis']['when']
+    assert "'exchange' in services" in roles['exchange']['when']
 
 
 def test_scenario_replay_runs_services():
@@ -659,3 +660,62 @@ def test_sql_conf_keys_hold_one_quoted_value():
     for line in text.splitlines():
         if re.match(r'^[A-Za-z0-9_]+=', line):
             assert '" "' not in line, line
+
+
+EXCHANGE = ANSIBLE / 'roles' / 'exchange'
+
+
+def _exchange_tasks(name):
+    return yaml.safe_load((EXCHANGE / 'tasks' / name).read_text())
+
+
+def test_exchange_setup_runs_only_when_not_installed():
+    tasks = _exchange_tasks('main.yml')
+    names = [t['name'] for t in tasks]
+    state = tasks[names.index('Look for Exchange Server on this host')]
+    # the state script asks Get-ExchangeServer through the Exchange snap-in
+    assert 'state.ps1' in state['ansible.windows.win_powershell']['script']
+    assert 'Get-ExchangeServer' in (EXCHANGE / 'files' / 'state.ps1').read_text()
+    for name in ('Install the Exchange prerequisites', 'Install Exchange Server'):
+        task = tasks[names.index(name)]
+        assert task['when'] == 'not exchange_state.result.installed', name
+    assert names.index('Install the Exchange prerequisites') < names.index('Install Exchange Server') < names.index(
+        'Enable a mailbox for every domain user')
+
+
+def test_exchange_domain_steps_run_as_the_forest_administrator():
+    # Schema and AD preparation need Schema and Enterprise Admins: the forest root Administrator's network
+    # credentials (the mssql pattern), on every task that talks to AD
+    tasks = _exchange_tasks('install.yml') + _exchange_tasks('main.yml')
+    setup = [t for t in tasks if 'Setup.exe' in str(t.get('ansible.windows.win_command', ''))]
+    assert [s for t in setup for s in ('/PrepareSchema', '/PrepareAD', '/Mode:Install') if s in t['ansible.windows.win_command']] == [
+        '/PrepareSchema', '/PrepareAD', '/Mode:Install']
+    for t in setup + [t for t in tasks if 'state.ps1' in str(t) or 'mailboxes.ps1' in str(t)]:
+        assert t['become'] is True and t['become_user'] == '{{ exchange_admin }}', t['name']
+        assert t['become_flags'] == 'logon_type=new_credentials logon_flags=netcredentials_only', t['name']
+        assert '_DiagnosticDataOFF' in str(t) or 'win_powershell' in str(t), t['name']
+    defaults = yaml.safe_load((EXCHANGE / 'defaults' / 'main.yml').read_text())
+    assert defaults['exchange_admin'] == '{{ netbios }}\\Administrator'
+
+
+def test_exchange_downloads_come_from_microsoft():
+    defaults = yaml.safe_load((EXCHANGE / 'defaults' / 'main.yml').read_text())
+    urls = {k: v for k, v in defaults.items() if k.endswith('_url')}
+    assert urls['exchange_iso_url'].endswith('/ExchangeServerSE-x64.iso')
+    assert set(urls) == {'exchange_iso_url', 'exchange_vcredist2012_url', 'exchange_vcredist2013_url',
+                         'exchange_rewrite_url', 'exchange_ucma_url'}
+    assert all(u.startswith('https://download.microsoft.com/') for u in urls.values())
+    assert defaults['exchange_setup_dir'] == 'C:\\setup\\exchange'
+
+
+def test_exchange_reboots_where_setup_needs_one():
+    prereqs = [t['name'] for t in _exchange_tasks('prereqs.yml') if 'ansible.windows.win_reboot' in t]
+    install = [t['name'] for t in _exchange_tasks('install.yml') if 'ansible.windows.win_reboot' in t]
+    assert prereqs and len(install) == 2
+    for t in _exchange_tasks('prereqs.yml') + _exchange_tasks('install.yml'):
+        if 'ansible.windows.win_reboot' in t:
+            assert t['ansible.windows.win_reboot']['reboot_timeout'] >= 1200, t['name']
+
+
+def test_exchange_bot_password_is_reported_without_no_log():
+    _reported(_exchange_tasks('bot.yml'), 'Schedule the mail reading bot as the bot user')

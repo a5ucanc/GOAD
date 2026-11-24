@@ -1,0 +1,52 @@
+# The Mailbox role prerequisites: Windows features, Visual C++ 2012 and 2013, IIS URL Rewrite and UCMA 4.0
+# (learn.microsoft.com/exchange/plan-and-deploy/prerequisites). Remote Registry must not be disabled.
+- name: Install the Windows features of the Mailbox role
+  ansible.windows.win_feature:
+    name: "{{ exchange_features }}"
+    state: present
+  register: exchange_features_result
+
+- name: Reboot after the Windows features
+  ansible.windows.win_reboot:
+    reboot_timeout: 1800
+  when: exchange_features_result.reboot_required
+
+- name: Start Remote Registry automatically
+  ansible.windows.win_service:
+    name: RemoteRegistry
+    start_mode: auto
+    state: started
+
+- name: Setup folder
+  ansible.windows.win_file:
+    path: "{{ exchange_setup_dir }}"
+    state: directory
+
+- name: Look for the installed prerequisites
+  ansible.windows.win_powershell:
+    script: "{{ lookup('ansible.builtin.file', 'prereqs.ps1') }}"
+  register: exchange_prereqs
+
+- name: Download the missing prerequisites
+  ansible.windows.win_get_url:
+    url: "{{ item.url }}"
+    dest: "{{ exchange_setup_dir }}\\{{ item.file }}"
+    force: false
+  loop: "{{ exchange_prereq_packages | selectattr('name', 'in', exchange_prereqs.result.missing) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install the missing prerequisites
+  ansible.windows.win_command: >-
+    {{ 'msiexec.exe /i ' if item.file.endswith('.msi') else '' }}{{ exchange_setup_dir }}\{{ item.file }} {{ item.args }}
+  loop: "{{ exchange_prereq_packages | selectattr('name', 'in', exchange_prereqs.result.missing) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: exchange_prereq_install
+  # 3010: installed, reboot pending; 1638: a newer version is installed
+  failed_when: exchange_prereq_install.rc not in [0, 3010, 1638]
+
+- name: Reboot after the prerequisites
+  ansible.windows.win_reboot:
+    reboot_timeout: 1800
+  when: exchange_prereq_install.changed

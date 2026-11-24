@@ -335,3 +335,37 @@ def test_elk_and_wazuh_credentials_render_with_the_range():
     rows = [(c.account, c.password, c.scope) for c in _extension_credentials(text, '10.2.0')]
     assert rows == [('elastic', 'Aa1234567890!', 'elk (http://10.2.0.50:5601)'),
                     ('admin', 'Aa1234567890!', 'wazuh (https://10.2.0.51)')]
+
+
+@pytest.mark.parametrize('name', LAB_NAMES)
+def test_exchange_extension(name):
+    text = shipped_lab(name).read_text() + 'extensions: [exchange]\n'
+    lab = parse_lab(text, 'lab.yml')
+    base = load_lab(shipped_lab(name))
+    assert set(lab.hosts) - set(base.hosts) == {'srv01'}
+    h = lab.hosts['srv01']
+    # Global Constraints
+    assert (h.hostname, h.os, h.role, h.domain, h.octet, h.cpus, h.memory) == (
+        'the-eyrie', 'win2022', 'server', 'sevenkingdoms.local', 21, 4, 12288)
+    assert h.services == {'exchange': {}}
+    # main's data/config.json: the Arryn users, lysa local admin, Arryn on RDP
+    assert h.local_groups == {'Administrators': ('SEVENKINGDOMS\\lysa.arryn',),
+                              'Remote Desktop Users': ('SEVENKINGDOMS\\Arryn',)}
+    domain = lab.domains['sevenkingdoms.local']
+    assert {'lysa.arryn', 'robin.arryn'} <= set(domain.users)
+    assert domain.users['lysa.arryn'].groups == ('Arryn',) and domain.users['lysa.arryn'].ou == 'Vale'
+    assert domain.groups['Arryn'].managed_by == 'lysa.arryn'
+    assert extension_hosts(yaml.safe_load(text), 'exchange') == ['srv01']
+    inv = render_inventory(lab, '192.168.56')
+    assert inv['all']['vars']['goad_extensions'] == ['exchange']
+    children = inv['all']['children']
+    for group in ('windows', 'server', 'member'):
+        assert 'srv01' in children[group]['hosts']
+    entry = children['windows']['hosts']['srv01']
+    assert entry['services'] == {'exchange': {}} and entry['ansible_host'] == '192.168.56.21'
+    assert entry['ansible_user'] == 'SEVENKINGDOMS\\Administrator'
+
+
+def test_exchange_extension_lists_lysa_credential():
+    creds = load_catalogue()['exchange'].credentials
+    assert [(a, p) for a, p, _ in creds] == [('SEVENKINGDOMS\\lysa.arryn', 'Aa1234567890!')]
