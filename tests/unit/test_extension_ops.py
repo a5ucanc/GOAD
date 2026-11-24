@@ -205,6 +205,21 @@ def test_add_reuses_usable_snapshot_from_failed_run(env):
     assert load_state(env.settings).pending_extension is None
 
 
+def test_add_retakes_usable_snapshot_missing_on_a_recloned_host(env):
+    text = text_with('a')
+    state = load_state(env.settings)
+    working_lab_path(env.settings).write_text(text)
+    state.pending_extension = 'a'
+    state.snapshots.append(SnapshotRecord('ext-a', '2026-11-24T00:00:00Z', 'ext-a', text))
+    save_state(env.settings, state)
+    env.runner._responses.insert(0, (lambda a: a[3] == 'listSnapshots' and r'\x\x.vmx' in a[4],
+                                     Result(0, 'Total snapshots: 1\nbase\n', '')))
+    record = extension_ops.add(env.settings, env.runner, env.store, 'a', probes=env.probes)
+    assert [a for a in env.runner.calls if a[3] == 'deleteSnapshot']
+    assert [a for a in env.runner.calls if a[3] == 'snapshot']
+    assert load_state(env.settings).pending_extension is None
+
+
 def test_add_refuses_ip_in_use(env):
     env.probes.is_up = lambda ip: ip == X_IP
     with pytest.raises(GoadError) as e:
@@ -251,8 +266,8 @@ def test_add_refuses_while_another_is_pending(env):
         extension_ops.add(env.settings, env.runner, env.store, 'a', probes=env.probes)
     with pytest.raises(GoadError) as e:
         extension_ops.add(env.settings, env.runner, env.store, 'novm', probes=env.probes)
-    assert str(e.value) == ('extension a is half added: run goad extension add a again to resume, '
-                            'or goad extension remove a')
+    assert str(e.value) == ('extension a is half added or half removed: run goad extension add a '
+                            'to resume the add, or goad extension remove a to finish the removal')
 
 
 def test_add_refuses_undeployed(env):

@@ -73,8 +73,8 @@ def add(settings, runner, store, name: str, probes=None) -> SnapshotRecord:
     text = path.read_text()
     pending = state.pending_extension
     if pending and pending != name:
-        raise GoadError(f'extension {pending} is half added: run goad extension add {pending} again to resume, '
-                        f'or goad extension remove {pending}')
+        raise GoadError(f'extension {pending} is half added or half removed: run goad extension add {pending} '
+                        f'to resume the add, or goad extension remove {pending} to finish the removal')
     if pending != name:
         text = add_entry(text, name, state.lab)   # validates before anything is recorded
         # pending first: a crash before lab.yml is written leaves a resumable add, never a silent entry
@@ -92,7 +92,8 @@ def add(settings, runner, store, name: str, probes=None) -> SnapshotRecord:
         add_hosts(lab, store, probes, new)
         step_provision(lab, probes)
         record = lab.state.snapshot(label)
-        if record is not None and snapshots.unusable(record, text) is not None:
+        if record is not None and (snapshots.unusable(record, text) is not None
+                                   or snapshots.missing_on(lab, label)):
             snapshots.delete(lab, label)
             record = None
         if record is None:
