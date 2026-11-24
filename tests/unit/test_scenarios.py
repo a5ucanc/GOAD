@@ -18,8 +18,8 @@ def test_valid_targets_2forests():
     assert valid_targets(raw, 'trust') == ['dc01', 'dc03']
 
 
-def test_valid_targets_1domain_has_no_server():
-    assert valid_targets(lab('1domain'), 'server') == []
+def test_valid_targets_1domain_server_is_srv02():
+    assert valid_targets(lab('1domain'), 'server') == ['srv02']
 
 
 def test_placeholders_dc02():

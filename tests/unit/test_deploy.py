@@ -315,7 +315,7 @@ def test_firstboot_times_out_when_never_done(env, monkeypatch):
     env.probes.sleep = sleep
     with pytest.raises(GoadError, match='first boot did not finish in 30s'):
         deploy('1domain', env.settings, env.fake, env.store, probes=env.probes)
-    assert clock[0] == 30
+    assert clock[0] == 30 * 2  # shared fake clock, 1domain has two hosts
 
 
 def test_step_check_requires_ansible(env):

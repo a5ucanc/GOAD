@@ -225,6 +225,35 @@ all:
           - 192.168.56.10
           dc_forwarder: 1.1.1.1
           laps_schema: false
+        srv02:
+          ansible_host: 192.168.56.22
+          hostname: castelblack
+          domain: sevenkingdoms.local
+          netbios: SEVENKINGDOMS
+          goad_settings:
+            net.llmnr: disabled
+            net.nbtns: disabled
+            net.mdns: disabled
+            smb.signing: required
+            smb.v1: disabled
+            kerberos.rc4: disabled
+            ntlm.lmcompat: '5'
+            defender.realtime: 'on'
+            firewall.state: 'on'
+            lsa.ppl: 'on'
+            host.tier: '1'
+            winrm.credssp: disabled
+            net.webclient: absent
+            defender.asr_lsass: block
+          laps: false
+          ca: false
+          local_groups:
+            Administrators:
+            - SEVENKINGDOMS\T1-ServerAdmins
+            Remote Desktop Users:
+            - SEVENKINGDOMS\Lannister
+          ansible_user: SEVENKINGDOMS\Administrator
+          local_user: Administrator
       vars:
         ansible_connection: psrp
         ansible_psrp_auth: ntlm
@@ -270,7 +299,36 @@ all:
           dc_forwarder: 1.1.1.1
           laps_schema: false
     server:
-      hosts: {}
+      hosts:
+        srv02:
+          ansible_host: 192.168.56.22
+          hostname: castelblack
+          domain: sevenkingdoms.local
+          netbios: SEVENKINGDOMS
+          goad_settings:
+            net.llmnr: disabled
+            net.nbtns: disabled
+            net.mdns: disabled
+            smb.signing: required
+            smb.v1: disabled
+            kerberos.rc4: disabled
+            ntlm.lmcompat: '5'
+            defender.realtime: 'on'
+            firewall.state: 'on'
+            lsa.ppl: 'on'
+            host.tier: '1'
+            winrm.credssp: disabled
+            net.webclient: absent
+            defender.asr_lsass: block
+          laps: false
+          ca: false
+          local_groups:
+            Administrators:
+            - SEVENKINGDOMS\T1-ServerAdmins
+            Remote Desktop Users:
+            - SEVENKINGDOMS\Lannister
+          ansible_user: SEVENKINGDOMS\Administrator
+          local_user: Administrator
     workstation:
       hosts: {}
     forest_root:
@@ -311,4 +369,33 @@ all:
     child_dc:
       hosts: {}
     member:
-      hosts: {}
+      hosts:
+        srv02:
+          ansible_host: 192.168.56.22
+          hostname: castelblack
+          domain: sevenkingdoms.local
+          netbios: SEVENKINGDOMS
+          goad_settings:
+            net.llmnr: disabled
+            net.nbtns: disabled
+            net.mdns: disabled
+            smb.signing: required
+            smb.v1: disabled
+            kerberos.rc4: disabled
+            ntlm.lmcompat: '5'
+            defender.realtime: 'on'
+            firewall.state: 'on'
+            lsa.ppl: 'on'
+            host.tier: '1'
+            winrm.credssp: disabled
+            net.webclient: absent
+            defender.asr_lsass: block
+          laps: false
+          ca: false
+          local_groups:
+            Administrators:
+            - SEVENKINGDOMS\T1-ServerAdmins
+            Remote Desktop Users:
+            - SEVENKINGDOMS\Lannister
+          ansible_user: SEVENKINGDOMS\Administrator
+          local_user: Administrator

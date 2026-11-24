@@ -15,7 +15,7 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 | Part | State |
 |------|-------|
 | Host checks, VM templates (`goad check`, `goad template ...`) | available |
-| Labs `1domain`, `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | available |
+| Labs `1domain` (dc01 kingslanding, srv02 castelblack), `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | available |
 | Release gate (2domains) | accepted 2026-11-23 with one deploy 40 s over the limit, see docs/release-gate/ |
 | Scenarios (52, one YAML file each in `scenarios/`) | available |
 | Extensions | later, ported one at a time |

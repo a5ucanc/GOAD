@@ -7,6 +7,8 @@ from goad.lab.definition import LAB_NAMES, REPO, load_lab, shipped_lab
 from goad.lab.settings_catalog import normalize_value
 
 ASR_LSASS = 'block lsass stealing'
+# hosts lab.yml adds beyond the upstream reference config.json
+EXTRA_HOSTS = {'1domain': ('srv02',)}
 
 
 def _ou(path):
@@ -79,7 +81,10 @@ def reference_view(config, lab_name):
 @pytest.mark.parametrize('name', LAB_NAMES)
 def test_lab_yml_matches_reference(name):
     config = json.loads((REPO / 'labs' / name / 'reference' / 'config.json').read_text())['lab']
-    assert lab_view(load_lab(shipped_lab(name))) == reference_view(config, name)
+    view = lab_view(load_lab(shipped_lab(name)))
+    for extra in EXTRA_HOSTS.get(name, ()):
+        del view['hosts'][extra]
+    assert view == reference_view(config, name)
 
 
 def test_spot_values():
@@ -92,3 +97,13 @@ def test_spot_values():
     assert lab.effective_settings('dc02')['ldap.channel_binding'] == 'always'
     assert 'trust.sid_history' not in lab.effective_settings('dc02')
     assert 'AcrossTheNarrowSea' in load_lab(shipped_lab('1domain')).domains['sevenkingdoms.local'].groups
+
+
+def test_1domain_has_srv02():
+    lab = load_lab(shipped_lab('1domain'))
+    h = lab.hosts['srv02']
+    assert (h.hostname, h.os, h.role, h.domain, h.octet, h.cpus, h.memory) == \
+        ('castelblack', 'win2022', 'server', 'sevenkingdoms.local', 22, 2, 4096)
+    assert h.local_groups == {'Administrators': ('SEVENKINGDOMS\\T1-ServerAdmins',),
+                              'Remote Desktop Users': ('SEVENKINGDOMS\\Lannister',)}
+    assert lab.effective_settings('srv02')['defender.asr_lsass'] == 'block'

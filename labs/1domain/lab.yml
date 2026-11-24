@@ -57,5 +57,11 @@ settings:
     dc.spooler: disabled
     dc.strong_cert_binding: 2
     dc.cert_mapping: absent
+  server:
+    host.tier: 1
+    winrm.credssp: disabled
+    net.webclient: absent
+    defender.asr_lsass: block
 hosts:
   dc01: {hostname: kingslanding, os: win2025, role: dc, domain: sevenkingdoms.local, octet: 10, cpus: 2, memory: 4096, ca: true, settings: {adcs.web_enrollment: 'off', adcs.editf_san: 'off', adcs.enforce_encrypt: 'on'}}
+  srv02: {hostname: castelblack, os: win2022, role: server, domain: sevenkingdoms.local, octet: 22, cpus: 2, memory: 4096, local_groups: {Administrators: ['SEVENKINGDOMS\T1-ServerAdmins'], Remote Desktop Users: ['SEVENKINGDOMS\Lannister']}}
