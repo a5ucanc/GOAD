@@ -514,3 +514,10 @@ def test_linux_join_creates_resolved_dir_and_reports_join_failure():
     assert 'stderr' in report['ansible.builtin.fail']['msg'] and 'no_log' not in report
     step = next(t for t in tasks if t['name'] == 'Step the clock at any offset')
     assert step['ansible.builtin.lineinfile']['path'] == '/etc/chrony/chrony.conf'
+
+
+def test_sql_conf_keys_hold_one_quoted_value():
+    text = (ANSIBLE / 'roles' / 'mssql' / 'templates' / 'sql_conf.ini.j2').read_text()
+    for line in text.splitlines():
+        if re.match(r'^[A-Za-z0-9_]+=', line):
+            assert '" "' not in line, line
