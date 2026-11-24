@@ -188,7 +188,9 @@ def import_kali(settings: Settings, runner: Runner, store: TemplateStore, url: s
             vmrun.stop(vmx, hard=True)
         except VmrunError:
             pass   # already off
-        raise GoadError(f'{e} (the unfinished VM is kept in {settings.template_root}\\{BUILD_DIR}\\{name})') from e
+        raise GoadError(f'{e}: the unfinished VM (several GB) is kept in '
+                        f'{settings.template_root}\\{BUILD_DIR}\\{name}: delete that folder '
+                        f'and run goad template import kali again') from e
 
     final = store.root / name
     _move_built(built, final, f'{settings.template_root}\\{BUILD_DIR}\\{name}')

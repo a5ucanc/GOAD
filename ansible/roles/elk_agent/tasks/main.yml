@@ -146,6 +146,15 @@
       Version: "{{ elk_agent_winlogbeat_version }}"
       Dir: "{{ elk_agent_winlogbeat_dir }}\\{{ elk_agent_winlogbeat_name }}"
   throttle: 1
+  # no_log hides the elastic password; the next task reports a failure without it
+  no_log: true
+  register: elk_agent_setup
+  ignore_errors: true
+
+- name: Report a failed winlogbeat setup
+  ansible.builtin.fail:
+    msg: "winlogbeat setup failed: {{ (elk_agent_setup.error | default([]) | map(attribute='output') | join('; ')) or 'no error record' }}"
+  when: elk_agent_setup.failed | default(false)
 
 - name: Start winlogbeat
   ansible.windows.win_service:

@@ -101,8 +101,9 @@ def delete(lab: Lab, name: str) -> None:
     lab.save()
 
 
-def recorded_extensions(lab_yml: str) -> List[str]:
-    """The raw extensions: list of a lab.yml text; empty when absent or unreadable."""
+def recorded_extensions(lab_yml: str, strict: bool = True) -> List[str]:
+    """The raw extensions: list of a lab.yml text; empty when absent or unreadable.
+    A malformed list raises GoadError, or reads as empty when strict is False."""
     import yaml
 
     from goad.lab.extensions import entries
@@ -110,12 +111,23 @@ def recorded_extensions(lab_yml: str) -> List[str]:
         raw = yaml.safe_load(lab_yml)
     except yaml.YAMLError:
         return []
-    return entries(raw) if isinstance(raw, dict) else []
+    if not isinstance(raw, dict):
+        return []
+    try:
+        return entries(raw)
+    except GoadError:
+        if strict:
+            raise
+        return []
 
 
 def unusable(record: SnapshotRecord, current_text: str) -> Optional[str]:
     """Why a snapshot cannot be a reset target, or None when its extension list matches the current one."""
-    held, current = recorded_extensions(record.lab_yml), recorded_extensions(current_text)
+    try:
+        held = recorded_extensions(record.lab_yml)
+    except GoadError as e:
+        return f'has an invalid lab.yml: {e}'   # one bad record must not block disable, remove or list
+    current = recorded_extensions(current_text)
     if held == current:
         return None
     newer = [x for x in current if x not in held]

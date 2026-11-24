@@ -409,3 +409,70 @@ def test_remove_expands_service_scenario_from_other_extension(env, resets, monke
     save_state(env.settings, state)
     env.runner._responses.insert(0, (lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 1\next-svc\n', '')))
     assert extension_ops.remove(env.settings, env.runner, 'novm', yes=True, ask=lambda q, y: True) == 'ext-svc'
+
+
+def test_add_saves_pending_before_writing_lab_yml(env, monkeypatch):
+    seen = []
+    real = extension_ops.save_state
+
+    def save(settings, state):
+        seen.append((state.pending_extension, 'extensions' in yaml.safe_load(working_lab_path(settings).read_text())))
+        real(settings, state)
+    monkeypatch.setattr(extension_ops, 'save_state', save)
+    extension_ops.add(env.settings, env.runner, env.store, 'a', probes=env.probes)
+    assert seen[0] == ('a', False)
+
+
+def test_add_resumes_when_pending_saved_but_lab_yml_not_written(env):
+    state = load_state(env.settings)
+    state.pending_extension = 'a'
+    save_state(env.settings, state)
+    record = extension_ops.add(env.settings, env.runner, env.store, 'a', probes=env.probes)
+    assert record.name == 'ext-a' and [c[-1] for c in clones(env)] == ['-cloneName=2domains-x']
+    assert yaml.safe_load(working_lab_path(env.settings).read_text())['extensions'] == ['a']
+    assert load_state(env.settings).pending_extension is None
+
+
+def test_remove_failed_reset_says_remove_again_and_recovers(env, installed, resets, monkeypatch):
+    from goad.lab import provision as provisioning
+
+    failing = [True]
+
+    def reset(lab, name, wait=None, current_text=None):
+        if failing[0]:
+            raise GoadError('revert to base failed on dc01')
+        working_lab_path(lab.settings).write_text(lab.state.snapshot(name).lab_yml)
+    monkeypatch.setattr('goad.lab.snapshots.reset', reset)
+    with pytest.raises(GoadError) as e:
+        extension_ops.remove(env.settings, env.runner, 'a', yes=True, ask=lambda q, y: True)
+    assert str(e.value) == 'revert to base failed on dc01: run goad extension remove a again'
+    state = load_state(env.settings)
+    assert 'x' not in state.hosts and state.pending_extension == 'a'
+    # lab.yml still lists the extension: provision points to the extension commands, not to a redeploy
+    with pytest.raises(GoadError) as e:
+        provisioning.check_compatible(extension_ops.parse_lab(installed, 'lab.yml'), state)
+    assert 'goad extension remove a' in str(e.value) and 'redeploy' not in str(e.value)
+    failing[0] = False
+    assert extension_ops.remove(env.settings, env.runner, 'a', yes=True, ask=lambda q, y: True) == 'base'
+    state = load_state(env.settings)
+    assert state.pending_extension is None and [s.name for s in state.snapshots] == ['base']
+    assert 'extensions' not in yaml.safe_load(working_lab_path(env.settings).read_text())
+
+
+def test_remove_failed_held_snapshot_delete_still_replays(env, resets, monkeypatch):
+    monkeypatch.setattr('goad.lab.provision.provision', env.probes.provision)
+    text = text_with('novm', scenario_entries=[('srvset', 'srv02')])
+    working_lab_path(env.settings).write_text(text)
+    state = load_state(env.settings)
+    state.snapshots.append(SnapshotRecord('ext-novm', '2026-11-24T00:00:00Z', 'ext-novm', text_with('novm')))
+    save_state(env.settings, state)
+
+    def broken(lab, name):
+        raise GoadError(f'delete snapshot {name} failed')
+    monkeypatch.setattr('goad.lab.snapshots.delete', broken)
+    with pytest.raises(GoadError) as e:
+        extension_ops.remove(env.settings, env.runner, 'novm', yes=True, ask=lambda q, y: True)
+    assert 'goad snapshot delete' in str(e.value) and 'ext-novm' in str(e.value)
+    assert [p[0] for p in env.provisions] == [scenario_ops.ENABLE_TAGS]
+    assert 'extensions' not in yaml.safe_load(working_lab_path(env.settings).read_text())
+    assert load_state(env.settings).pending_extension is None

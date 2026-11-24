@@ -54,6 +54,18 @@ def test_added_host_refused(settings, deployed):
         check_compatible(lab, deployed)
 
 
+def test_pending_extension_names_extension_commands(settings, deployed):
+    data = yaml.safe_load(working_lab_path(settings).read_text())
+    data['hosts']['srv09'] = {'hostname': 'newhost', 'os': 'win2022', 'role': 'server',
+                              'domain': 'north.sevenkingdoms.local', 'octet': 30, 'cpus': 2, 'memory': 4096}
+    deployed.pending_extension = 'elk'
+    with pytest.raises(GoadError) as e:
+        check_compatible(parse_lab(yaml.safe_dump(data), 'lab.yml'), deployed)
+    assert str(e.value) == ('host srv09 was added to lab.yml: extension elk is half added or half removed: '
+                            'run goad extension add elk or goad extension remove elk')
+    assert 'redeploy' not in str(e.value)
+
+
 def test_provision_env_and_binary(settings, fake, deployed, tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(fake, 'stream', lambda argv, log, env=None: seen.update(argv=argv, env=env) or 0)

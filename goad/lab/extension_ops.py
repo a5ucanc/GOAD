@@ -71,16 +71,19 @@ def add(settings, runner, store, name: str, probes=None) -> SnapshotRecord:
     state = _deployed(settings)
     path = working_lab_path(settings)
     text = path.read_text()
-    resume = state.pending_extension == name and name in extensions.entries(_load(text))
-    if not resume:
-        pending = state.pending_extension
-        if pending and pending != name:
-            raise GoadError(f'extension {pending} is half added: run goad extension add {pending} again to resume, '
-                            f'or goad extension remove {pending}')
-        text = add_entry(text, name, state.lab)
-        path.write_text(text)
+    pending = state.pending_extension
+    if pending and pending != name:
+        raise GoadError(f'extension {pending} is half added: run goad extension add {pending} again to resume, '
+                        f'or goad extension remove {pending}')
+    if pending != name:
+        text = add_entry(text, name, state.lab)   # validates before anything is recorded
+        # pending first: a crash before lab.yml is written leaves a resumable add, never a silent entry
         state.pending_extension = name
         save_state(settings, state)
+        path.write_text(text)
+    elif name not in extensions.entries(_load(text)):
+        text = add_entry(text, name, state.lab)   # pending saved, lab.yml not yet written
+        path.write_text(text)
     label = f'ext-{name}'
     lab = None
     try:
@@ -141,19 +144,31 @@ def remove(settings, runner, name: str, yes: bool, ask: Callable[[str, bool], bo
     question = f'Delete VMs {", ".join(doomed)} and {question}' if doomed else question[0].upper() + question[1:]
     if not ask(question, yes):
         raise GoadError('cancelled')
-    if doomed:
-        delete_vms(settings, lab.vmrun, {h: lab.state.hosts[h].vmx for h in doomed})
-        for host in doomed:
-            del lab.state.hosts[host]
-        lab.state.templates = sorted({h.template for h in lab.state.hosts.values()})
-        lab.save()
-    snapshots.reset(lab, snap, current_text=new_text)
-    for held in [r.name for r in lab.state.snapshots if name in snapshots.recorded_extensions(r.lab_yml)]:
-        snapshots.delete(lab, held)
+    try:
+        if doomed:
+            # pending while lab.yml still lists hosts the state no longer has: errors point to this command
+            lab.state.pending_extension = name
+            lab.save()
+            delete_vms(settings, lab.vmrun, {h: lab.state.hosts[h].vmx for h in doomed})
+            for host in doomed:
+                del lab.state.hosts[host]
+            lab.state.templates = sorted({h.template for h in lab.state.hosts.values()})
+            lab.save()
+        snapshots.reset(lab, snap, current_text=new_text)
+    except GoadError as e:
+        raise GoadError(f'{e}: run goad extension remove {name} again') from e
+    path.write_text(new_text)
     if lab.state.pending_extension == name:
         lab.state.pending_extension = None
         lab.save()
-    path.write_text(new_text)
+    held = [r.name for r in lab.state.snapshots if name in snapshots.recorded_extensions(r.lab_yml, strict=False)]
+    left = None
+    try:
+        for snapshot in held:
+            snapshots.delete(lab, snapshot)
+    except GoadError as e:
+        left = GoadError(f'{e}: extension {name} removed; snapshots {", ".join(held)} may still hold it '
+                         f'(listed as unusable): delete them with goad snapshot delete')
     if scenarios.expand(_load(new_text), SOURCE) != scenarios.expand(_load(record.lab_yml), SOURCE):
         from goad.lab import provision as provisioning
         try:
@@ -161,4 +176,6 @@ def remove(settings, runner, name: str, yes: bool, ask: Callable[[str, bool], bo
         except GoadError as e:
             raise GoadError(f'{e}: lab reset to {snap}; extension {name} removed from lab.yml: '
                             f'run goad lab provision') from e
+    if left is not None:
+        raise left
     return snap

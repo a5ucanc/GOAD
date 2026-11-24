@@ -17,22 +17,31 @@ ANSIBLE_ENV = {'ANSIBLE_CALLBACKS_ENABLED': 'ansible.posix.profile_roles', 'ANSI
 _TAIL = 'destroy and redeploy to change hosts'
 
 
+def _tail(state: LabState) -> str:
+    pending = state.pending_extension
+    if pending:   # a half added or half removed extension, not a hand edit: finishing it restores the match
+        return (f'extension {pending} is half added or half removed: '
+                f'run goad extension add {pending} or goad extension remove {pending}')
+    return _TAIL
+
+
 def check_compatible(lab: LabDef, state: LabState) -> None:
+    tail = _tail(state)
     for name in state.hosts:
         if name not in lab.hosts:
-            raise GoadError(f'host {name} was removed from lab.yml: {_TAIL}')
+            raise GoadError(f'host {name} was removed from lab.yml: {tail}')
     for name, h in lab.hosts.items():
         deployed = state.hosts.get(name)
         if deployed is None:
-            raise GoadError(f'host {name} was added to lab.yml: {_TAIL}')
+            raise GoadError(f'host {name} was added to lab.yml: {tail}')
         if h.hostname != deployed.hostname:
-            raise GoadError(f'host {name}: hostname changed from {deployed.hostname} to {h.hostname}: {_TAIL}')
+            raise GoadError(f'host {name}: hostname changed from {deployed.hostname} to {h.hostname}: {tail}')
         ip = lab.ip(name, state.ip_range)
         if ip != deployed.ip:
-            raise GoadError(f'host {name}: ip changed from {deployed.ip} to {ip}: {_TAIL}')
+            raise GoadError(f'host {name}: ip changed from {deployed.ip} to {ip}: {tail}')
         deployed_os = deployed.template.rsplit('-v', 1)[0]
         if h.os != deployed_os:
-            raise GoadError(f'host {name}: os changed from {deployed_os} to {h.os}: {_TAIL}')
+            raise GoadError(f'host {name}: os changed from {deployed_os} to {h.os}: {tail}')
 
 
 def provision(settings: Settings, runner: Runner, lab: LabDef, state: LabState,

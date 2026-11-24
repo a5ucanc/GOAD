@@ -544,6 +544,19 @@ def test_agents_play_runs_only_with_the_extension():
     assert roles['wazuh_agent']['when'] == "'wazuh' in goad_extensions | default([])"
 
 
+def test_winlogbeat_setup_hides_password_but_reports_failure():
+    tasks = _tasks('elk_agent')
+    names = [t['name'] for t in tasks]
+    index = names.index('Run winlogbeat setup once for the cluster')
+    setup, report = tasks[index], tasks[index + 1]
+    assert 'Password' in setup['ansible.windows.win_powershell']['parameters']
+    assert setup['no_log'] is True and setup['ignore_errors'] is True and 'failed_when' not in setup
+    assert setup['register'] == 'elk_agent_setup'
+    assert 'elk_agent_setup.failed' in report['when'] and 'no_log' not in report
+    assert 'elk_agent_setup.error' in report['ansible.builtin.fail']['msg']
+    assert 'password' not in report['ansible.builtin.fail']['msg'].lower()
+
+
 def _defaults(role):
     return yaml.safe_load((ANSIBLE / 'roles' / role / 'defaults' / 'main.yml').read_text())
 

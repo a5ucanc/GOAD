@@ -174,7 +174,9 @@ deployed lab. Plays run in this order:
 | foreign members | DCs | `content` | foreign_members (cross-forest group members) |
 | post-join | all Windows hosts | `laps`, `local_groups` | laps_schema, laps_dc, local_groups, laps_host |
 | settings | all Windows hosts | `settings`, `adcs` | adcs (CA hosts: waits for the AD CS role install, then the CA), settings (the lab.yml `settings` catalogue) |
-| services | all Windows hosts | `services` | mssql, iis (hosts whose `services` lists them: extensions and their scenarios) |
+| services | all Windows hosts | `services` | mssql, iis, exchange (hosts whose `services` lists them: extensions and their scenarios) |
+| linux | Linux hosts (extensions) | `linux` | linux_join (hosts with a domain), elk, wazuh_manager (hosts whose `services` lists them) |
+| agents | all Windows hosts | `agents` | elk_agent, wazuh_agent (when the elk or wazuh extension is installed) |
 
 ```bash
 goad lab provision                       # every play
@@ -188,6 +190,10 @@ goad lab provision --tags laps,adcs      # a tag selects whole plays; the connec
   to a clean state. Adding, removing or renaming hosts, or changing their OS or address, needs a
   destroy and redeploy.
 - A second run on an unchanged lab reports `changed=0` on every host.
+- `goad scenario enable` and `disable` replay only the `content`, `local_groups`, `settings` and `services`
+  tags. The `linux` and `agents` plays are outside that set: scenarios never change them. The `services`
+  replay is idempotent, but slower when the exchange extension is installed (the exchange role checks
+  its whole setup again).
 - Each run writes `~/.goad/logs/provision-<date>.log`. It ends with the `PLAY RECAP` and a per-role
   duration table (the `profile_roles` callback), for example `forest ---- 1280.16s` on a fresh 2forests deploy.
 - Hosts with `laps: true` get native Windows LAPS. `goad creds` reads the current password from the

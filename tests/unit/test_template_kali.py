@@ -176,10 +176,12 @@ def test_tools_timeout_stops_vm_and_raises(store, settings, fake, monkeypatch):
     fake.respond(lambda a: a[-1] == '/bin/true', Result(1, '', 'not ready'))  # answers before _host's
     _host(store, fake)
     monkeypatch.setattr(kali, 'TOOLS_TIMEOUT', 0)
-    with pytest.raises(GoadError, match='VMware Tools'):
+    with pytest.raises(GoadError, match='VMware Tools') as e:
         _import(settings, fake, store)
     assert 'stop' in [_verb(c) for c in fake.calls]
     assert store.list() == []
+    assert str(e.value).endswith(f'the unfinished VM (several GB) is kept in {settings.template_root}\\.build\\kali-v1: '
+                                 'delete that folder and run goad template import kali again')
 
 
 def test_failed_checks_stop_before_download(store, settings, fake):

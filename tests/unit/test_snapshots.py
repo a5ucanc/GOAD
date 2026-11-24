@@ -186,3 +186,13 @@ def test_unusable_reasons():
     assert unusable(rec('extensions: [a]\n'), 'extensions: [a, b, c]\n') == \
         'predates extension c: run goad extension remove c first'
     assert unusable(rec('extensions: [a, x]\n'), 'extensions: [a]\n') == 'holds extension x, which is not installed'
+
+
+def test_unusable_malformed_record_is_unusable_not_an_error():
+    from goad.lab.snapshots import recorded_extensions, unusable
+    from goad.state import SnapshotRecord
+    bad = SnapshotRecord('r', '2026-11-21T00:00:00Z', '', 'extensions: [a, a]\n')
+    assert unusable(bad, 'a: 1\n') == 'has an invalid lab.yml: extensions must be a list of unique extension names'
+    with pytest.raises(GoadError, match='unique'):
+        recorded_extensions(bad.lab_yml)
+    assert recorded_extensions(bad.lab_yml, strict=False) == []

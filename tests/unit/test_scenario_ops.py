@@ -294,6 +294,12 @@ def test_pick_snapshot_skips_unusable(tmp_path, monkeypatch):
     assert scenario_ops.pick_snapshot(state, ext) == 'ext-mssql'
 
 
+def test_pick_snapshot_skips_malformed_extensions_record():
+    base = base_text()
+    state = _state(('base', base), ('bad', base + 'extensions: oops\n'))
+    assert scenario_ops.pick_snapshot(state, base) == 'base'
+
+
 def test_pick_snapshot_only_base_with_extension_refuses(tmp_path, monkeypatch):
     _mssql_catalogue(tmp_path, monkeypatch)
     base = base_text()

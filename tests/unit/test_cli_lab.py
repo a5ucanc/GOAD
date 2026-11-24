@@ -204,6 +204,20 @@ def test_snapshot_list_marks_unusable(cli, settings, deployed, capsys, monkeypat
     assert 'Extensions' in out and 'base (unusable)' in out and 'pre (unusable)' not in out
 
 
+def test_snapshot_list_survives_missing_lab_yml_and_bad_record(cli, settings, deployed, capsys, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '200')
+    from goad.state import SnapshotRecord, working_lab_path
+    deployed.snapshots.append(SnapshotRecord('bad', '2026-11-21T01:00:00Z', '', 'extensions: [a, a]\n'))
+    save_state(settings, deployed)
+    cli.respond(lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 2\nbase\nbad\n', ''))
+    assert main(['snapshot', 'list']) == 0
+    assert 'bad (unusable)' in flat(capsys.readouterr().out)
+    working_lab_path(settings).unlink()
+    assert main(['snapshot', 'list']) == 0
+    out = flat(capsys.readouterr().out)
+    assert 'unusable snapshots are not marked' in out and 'base' in out and '(unusable)' not in out
+
+
 @pytest.fixture
 def ext_catalogue(monkeypatch, tmp_path):
     from goad.lab import extensions

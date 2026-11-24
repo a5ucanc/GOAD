@@ -204,11 +204,19 @@ def _snapshot_list(args, ctx) -> int:
     from goad.state import working_lab_path
     table = Table('Name', 'Taken', 'Label', 'Scenarios', 'Extensions', 'Missing on')
     lab = _open(ctx, need_definition=False)
-    current = working_lab_path(ctx.settings).read_text()
+    path = working_lab_path(ctx.settings)
+    try:
+        current: Optional[str] = path.read_text()
+        snapshots.recorded_extensions(current)
+    except (OSError, GoadError) as e:
+        current = None   # without a readable working lab.yml no snapshot can be judged unusable
+        Console().print(f'cannot read the extensions of {path} ({e}): unusable snapshots are not marked')
     for row in snapshots.list_snapshots(lab):
-        name = row.record.name + (' (unusable)' if snapshots.unusable(row.record, current) else '')
+        marked = current is not None and snapshots.unusable(row.record, current)
+        name = row.record.name + (' (unusable)' if marked else '')
         table.add_row(name, row.record.taken_at, row.record.label, _recorded_scenarios(row.record.lab_yml),
-                      ', '.join(snapshots.recorded_extensions(row.record.lab_yml)), ', '.join(row.missing_on))
+                      ', '.join(snapshots.recorded_extensions(row.record.lab_yml, strict=False)),
+                      ', '.join(row.missing_on))
     Console().print(table)
     return 0
 
