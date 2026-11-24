@@ -142,6 +142,12 @@ def test_laps_tasks_retry_while_ad_settles():
         assert task['until'] == f"{task['register']} is not failed"
 
 
+def test_laps_schema_syncs_before_extending():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'laps_schema' / 'tasks' / 'main.yml').read_text())
+    script = tasks[0]['ansible.windows.win_powershell']['script']
+    assert 0 < script.index('repadmin /syncall /AdeP') < script.index('Update-LapsADSchema')
+
+
 def test_every_setting_has_a_task_file():
     # _<name>.yml: a helper the setting files include, not a setting
     files = {p.stem for p in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml')
