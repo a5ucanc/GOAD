@@ -99,7 +99,7 @@ def _wait_http(url: str, timeout: float = 300) -> int:
 
 
 MSSQL_PROBES = {
-    'mssql-sysadmin': ('srv02', "SELECT IS_SRVROLEMEMBER('sysadmin', 'NORTH\\scn-sql-admin')", '1'),
+    'mssql-sysadmin': ('srv02', "SELECT ISNULL(IS_SRVROLEMEMBER('sysadmin', 'NORTH\\scn-sql-admin'), 0)", '1'),
     'mssql-impersonate-login': ('srv02', "SELECT COUNT(*) FROM sys.server_permissions p JOIN sys.server_principals g "
                                          "ON p.grantee_principal_id = g.principal_id JOIN sys.server_principals t "
                                          "ON p.major_id = t.principal_id WHERE p.permission_name = 'IMPERSONATE' "
@@ -169,8 +169,9 @@ def test_mssql_iis_and_scenarios_live():
         _goad('lab', 'reset', 'base')
         _wait_all({h: v for h, v in _logins(load_state(settings)).items()})
         assert load_state(settings).current == 'base'
-        with pytest.raises(AssertionError):
-            _service(_logins(load_state(settings)), 'srv02', SQL_BASE)   # no SQL service back on base
+        base_logins = _logins(load_state(settings))
+        assert _service(base_logins, 'srv02', "@(Get-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue).Count") == '0', \
+            'SQL service still on srv02 after reset to base'
         raw = yaml.safe_load(load_text(settings))
         assert not raw.get('extensions') and not raw.get('scenarios')
 

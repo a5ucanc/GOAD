@@ -1,5 +1,6 @@
 """Helpers shared by the live tests: PSRP into lab hosts and lab health checks."""
 import os
+import subprocess
 import time
 
 from goad.lab import lifecycle
@@ -77,7 +78,6 @@ def marker_exists(dc_ip: str, name: str) -> bool:
 
 def ssh(ip: str, command: str, user: str = 'goad', password: str = PASSWORD, timeout: float = 120) -> str:
     """Run command on a Linux lab host over SSH (password login through sshpass); return stdout."""
-    import subprocess
     done = subprocess.run(['sshpass', '-e', 'ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null',
                            '-o', 'LogLevel=ERROR', '-o', 'ConnectTimeout=15', f'{user}@{ip}', command],
                           env={**os.environ, 'SSHPASS': password}, capture_output=True, text=True,
