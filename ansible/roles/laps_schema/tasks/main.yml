@@ -1,6 +1,8 @@
 # Windows LAPS stores the password in schema attributes the forest does not have by default.
 # Runs on forest-root DCs whose forest has a laps host (laps_schema in the inventory).
 # AD can reject schema operations for a while after the DCs are restored from a snapshot.
+# repadmin makes RPC calls to the DCs, which need the full logon of become (WinRM's network logon
+# cannot hop).
 - name: Extend the schema for Windows LAPS
   ansible.windows.win_powershell:
     script: |
@@ -17,6 +19,11 @@
           Update-LapsADSchema -Confirm:$false
           $Ansible.Changed = $true
       }
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ netbios }}\\Administrator"
+  vars:
+    ansible_become_password: "{{ lab_password }}"
   register: laps_schema_extend
   retries: 10
   delay: 30

@@ -147,6 +147,9 @@ def test_laps_schema_syncs_before_extending():
     script = tasks[0]['ansible.windows.win_powershell']['script']
     assert 0 < script.index('repadmin /syncall $env:COMPUTERNAME /Ade') < script.index('Update-LapsADSchema')
     assert '/AdeP' not in script
+    assert tasks[0]['become'] is True
+    assert tasks[0]['become_method'] == 'ansible.builtin.runas'
+    assert 'become_flags' not in tasks[0]
 
 
 def test_every_setting_has_a_task_file():
