@@ -38,7 +38,7 @@ def _cache(store):
 
 
 def _host(store, fake, archive_data=DATA, sums_hash=None):
-    """Fake host: curl.exe writes SHA256SUMS and the archive, 7z.exe writes the VM folder, tools are running."""
+    """Fake host: curl.exe writes SHA256SUMS and the archive, 7z.exe writes the VM folder, guest commands work."""
     sums_hash = sums_hash or hashlib.sha256(DATA).hexdigest()
 
     def on_curl(argv):
@@ -63,7 +63,6 @@ def _host(store, fake, archive_data=DATA, sums_hash=None):
         (vm / 'disk.vmdk').write_text('')
         return True
     fake.respond(on_extract, Result(0, 'Everything is Ok\n', ''))
-    fake.respond(lambda a: 'checkToolsState' in a, Result(0, 'running\n', ''))
 
 
 def _import(settings, fake, store, checks_ok=True):
@@ -112,7 +111,7 @@ def test_import_runs_extract_guest_copy_guest_run_snapshot_in_order(store, setti
     template = _import(settings, fake, store)
 
     verbs = [_verb(c) if c[0] != SEVENZIP else '7z' for c in fake.calls if c[0] != 'curl.exe']
-    order = ['7z', 'start', 'copyFileFromHostToGuest', 'runProgramInGuest', 'snapshot']
+    order = ['7z', 'start', 'runProgramInGuest', 'copyFileFromHostToGuest', 'runProgramInGuest', 'snapshot']
     assert [v for v in verbs if v in order] == order
 
     extract = next(c for c in fake.calls if c[0] == SEVENZIP)
@@ -124,7 +123,9 @@ def test_import_runs_extract_guest_copy_guest_run_snapshot_in_order(store, setti
     copy = next(c for c in fake.calls if _verb(c) == 'copyFileFromHostToGuest')
     assert copy[3:] == ['-gu', 'kali', '-gp', 'kali', 'copyFileFromHostToGuest', build_vmx,
                         r'C:\goad\templates\.build\kali\kali-prep.sh', '/tmp/kali-prep.sh']
-    run = next(c for c in fake.calls if _verb(c) == 'runProgramInGuest')
+    probe = next(c for c in fake.calls if _verb(c) == 'runProgramInGuest')
+    assert probe[3:] == ['-gu', 'kali', '-gp', 'kali', 'runProgramInGuest', build_vmx, '/bin/true']
+    run = next(c for c in fake.calls if '/bin/bash' in c)
     assert run[3:] == ['-gu', 'kali', '-gp', 'kali', 'runProgramInGuest', build_vmx,
                        '/bin/bash', '/tmp/kali-prep.sh', 'kali']
     snap = next(c for c in fake.calls if _verb(c) == 'snapshot')
@@ -152,54 +153,33 @@ def test_second_import_is_next_version(store, settings, fake):
 
 def test_waits_for_tools_and_power_off(store, settings, fake):
     _host(store, fake)
-    tools = iter(['unknown\n', 'installed\n', 'running\n'])
+    probes = iter([Result(1, '', 'not ready'), Result(1, '', 'not ready'), Result(0, '', '')])
     running = iter(['Total running VMs: 1\nC:\\goad\\templates\\.build\\kali-v1\\kali-v1.vmx\n'] * 2
                    + ['Total running VMs: 0\n'])
     original = fake.run
 
     def run(argv, timeout=None):
-        if 'checkToolsState' in argv:
+        if _verb(argv) == 'runProgramInGuest' and argv[-1] == '/bin/true':
             fake.calls.append(list(argv))
-            return Result(0, next(tools), '')
+            return next(probes)
         if argv[3:] == ['list']:
             fake.calls.append(list(argv))
             return Result(0, next(running), '')
         return original(argv, timeout)
     fake.run = run
     _import(settings, fake, store)
-    assert len([c for c in fake.calls if 'checkToolsState' in c]) == 3
+    assert len([c for c in fake.calls if c[-1] == '/bin/true']) == 3
     assert len([c for c in fake.calls if c[3:] == ['list']]) == 3
 
 
 def test_tools_timeout_stops_vm_and_raises(store, settings, fake, monkeypatch):
-    fake.respond(lambda a: 'checkToolsState' in a, Result(0, 'installed\n', ''))  # answers before _host's
+    fake.respond(lambda a: a[-1] == '/bin/true', Result(1, '', 'not ready'))  # answers before _host's
     _host(store, fake)
-    monkeypatch.setattr(kali, 'TOOLS_FIRST_TIMEOUT', 0)
     monkeypatch.setattr(kali, 'TOOLS_TIMEOUT', 0)
     with pytest.raises(GoadError, match='VMware Tools'):
         _import(settings, fake, store)
     assert 'stop' in [_verb(c) for c in fake.calls]
     assert store.list() == []
-
-
-def test_tools_never_running_on_first_boot_resets_once(store, settings, fake, monkeypatch):
-    _host(store, fake)
-    monkeypatch.setattr(kali, 'TOOLS_FIRST_TIMEOUT', 0)
-    original = fake.run
-    state = {'reset': False}
-
-    def run(argv, timeout=None):
-        if 'checkToolsState' in argv:
-            fake.calls.append(list(argv))
-            return Result(0, 'running\n' if state['reset'] else 'installed\n', '')
-        if 'reset' in argv:
-            state['reset'] = True
-        return original(argv, timeout)
-    fake.run = run
-    _import(settings, fake, store)
-    verbs = [_verb(c) for c in fake.calls]
-    assert verbs.count('reset') == 1
-    assert [c for c in fake.calls if _verb(c) == 'reset'][0][-1] == 'hard'
 
 
 def test_failed_checks_stop_before_download(store, settings, fake):
@@ -255,7 +235,8 @@ def test_ca_certs_copied_into_guest_before_prep(store, settings, fake, tmp_path)
     kali.import_kali(settings, fake, store, checks=lambda *a, **k: [],
                      cert_files=lambda folder: [tmp_path / 'Corp Root.cer', tmp_path / 'b.crt'])
     guest = [c[9:] for c in fake.calls if _verb(c) in ('copyFileFromHostToGuest', 'runProgramInGuest')]
-    assert guest == [[r'C:\goad\templates\.build\kali\kali-prep.sh', '/tmp/kali-prep.sh'],
+    assert guest == [['/bin/true'],
+                     [r'C:\goad\templates\.build\kali\kali-prep.sh', '/tmp/kali-prep.sh'],
                      [r'C:\certs\Corp Root.cer', '/tmp/goad-ca-0.cer'],
                      [r'C:\certs\b.crt', '/tmp/goad-ca-1.crt'],
                      ['/bin/bash', '/tmp/kali-prep.sh', 'kali']]

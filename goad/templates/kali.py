@@ -32,8 +32,7 @@ CACHE = 'kali'   # <template_root>\.build\kali\: archive, SHA256SUMS, extraction
 
 DOWNLOAD_TIMEOUT = 6 * 3600    # ~3 GB
 EXTRACT_TIMEOUT = 3600
-TOOLS_FIRST_TIMEOUT = 300      # first boot: Tools often never comes up; a reset fixes it
-TOOLS_TIMEOUT = 900            # power-on until VMware Tools answers
+TOOLS_TIMEOUT = 900            # power-on until a guest command runs
 PREP_TIMEOUT = 3600            # apt-get update + install inside the guest
 POWEROFF_TIMEOUT = 900         # kali-prep.sh powers the guest off shortly after it exits
 POLL_INTERVAL = 10
@@ -131,8 +130,10 @@ def _wait(condition: Callable[[], bool], timeout: float, what: str) -> None:
 
 
 def _tools_running(store: TemplateStore, vmx: str) -> bool:
+    # checkToolsState stays 'installed' on this image although guest operations work: probe with a command
     try:
-        return store.vmrun.tools_state(vmx) == 'running'
+        store.vmrun.run_in_guest(vmx, KALI_USER, KALI_PASSWORD, '/bin/true', [], timeout=60)
+        return True
     except VmrunError:
         return False
 
@@ -171,12 +172,7 @@ def import_kali(settings: Settings, runner: Runner, store: TemplateStore, url: s
     try:
         vmrun.start(vmx)
         console.print(f'{name} started, waiting for VMware Tools')
-        try:
-            _wait(lambda: _tools_running(store, vmx), TOOLS_FIRST_TIMEOUT, f'VMware Tools not running in {name}')
-        except GoadError:
-            console.print(f'VMware Tools not running in {name} after {TOOLS_FIRST_TIMEOUT:.0f}s, resetting the VM')
-            vmrun.reset(vmx, hard=True)
-            _wait(lambda: _tools_running(store, vmx), TOOLS_TIMEOUT, f'VMware Tools not running in {name}')
+        _wait(lambda: _tools_running(store, vmx), TOOLS_TIMEOUT, f'VMware Tools not running in {name}')
         vmrun.copy_to_guest(vmx, KALI_USER, KALI_PASSWORD, f'{windows_cache}\\kali-prep.sh', GUEST_SCRIPT)
         # ca_certs_dir: trusted by every template; kali-prep.sh imports /tmp/goad-ca-*
         certs = cert_files(settings.ca_certs_dir) if settings.ca_certs_dir else []
