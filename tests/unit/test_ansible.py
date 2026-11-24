@@ -486,3 +486,10 @@ def test_new_settings_are_idempotent_powershell_or_registry():
     assert asr[0]['ansible.windows.win_powershell']['parameters']['Id'] == 'd1e49aac-8f56-4280-b9ba-993a6d77406c'
     policy, = yaml.safe_load((SETTINGS_TASKS / 'powershell_execution_policy.yml').read_text())
     assert policy['ansible.windows.win_regedit']['name'] == 'ExecutionPolicy'
+
+
+def test_no_win_template():
+    # win_template (ansible.windows 2.5.0, ansible-core 2.22) copies the file without rendering it.
+    # Use ansible.builtin.template with newline_sequence instead.
+    for path in ANSIBLE.rglob('*.yml'):
+        assert 'win_template' not in path.read_text(), path

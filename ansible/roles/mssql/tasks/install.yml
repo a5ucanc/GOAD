@@ -26,9 +26,10 @@
     state: directory
 
 - name: Setup configuration file
-  ansible.windows.win_template:
+  ansible.builtin.template:
     src: sql_conf.ini.j2
     dest: "{{ mssql_setup_dir }}\\sql_conf.ini"
+    newline_sequence: "\r\n"
   no_log: true
 
 - name: Look for the SQL Server installer
