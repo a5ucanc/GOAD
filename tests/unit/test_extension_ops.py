@@ -393,3 +393,19 @@ def test_remove_refuses_scenario_requiring_extension(monkeypatch):
     raw['scenarios'] = [{'name': 'needs', 'target': 'srv02'}]
     with pytest.raises(GoadError, match=r'disable needs@srv02 first'):
         extension_ops.remove_entry(yaml.safe_dump(raw, sort_keys=False), 'novm')
+
+
+def test_remove_expands_service_scenario_from_other_extension(env, resets, monkeypatch):
+    monkeypatch.setattr('goad.lab.provision.provision', env.probes.provision)
+    _write_ext(extensions.EXTENSION_DIR, 'svc', {'hosts': {'srv02': {'services': {'mssql': {}}}}})
+    svcscn = Scenario('svcscn', '', 'service:mssql',
+                      {'hosts': {'{target}': {'settings': {'smb.signing': 'optional'}}}}, requires='svc')
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: dict(CATALOGUE, svcscn=svcscn))
+    old = text_with('svc', scenario_entries=[('svcscn', 'srv02')])
+    text = text_with('svc', 'novm', scenario_entries=[('svcscn', 'srv02')])
+    working_lab_path(env.settings).write_text(text)
+    state = load_state(env.settings)
+    state.snapshots.append(SnapshotRecord('ext-svc', '2026-11-24T00:00:00Z', 'ext-svc', old))
+    save_state(env.settings, state)
+    env.runner._responses.insert(0, (lambda a: a[3] == 'listSnapshots', Result(0, 'Total snapshots: 1\next-svc\n', '')))
+    assert extension_ops.remove(env.settings, env.runner, 'novm', yes=True, ask=lambda q, y: True) == 'ext-svc'

@@ -85,7 +85,7 @@ def valid_targets(raw: Dict[str, Any], kind: str) -> List[str]:
 
 
 def check_requires(scenario: 'Scenario', raw: Dict[str, Any], source: str) -> None:
-    from goad.lab import extensions
+    from goad.lab import extensions  # function-local: extensions imports this module
     req = scenario.requires
     if req and req not in extensions.entries(raw):
         raise GoadError(f'{source}: scenario {scenario.name} needs extension {req}: run goad extension add {req}')
@@ -189,6 +189,9 @@ def _union(base: List[Any], items: List[Any]) -> None:
 
 
 def expand(raw: Dict[str, Any], source: str, catalogue: Optional[Dict[str, Scenario]] = None) -> Dict[str, Any]:
+    from goad.lab import extensions  # extensions imports this module at call time: function-local avoids the cycle
+    # raw is the lab as written: extension fragments (hosts, services) merge in before any scenario is checked
+    raw = extensions.expand(raw, source)
     result = copy.deepcopy(raw)
     entries = result.get('scenarios')
     if entries is None or entries == []:

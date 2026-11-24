@@ -455,8 +455,7 @@ def parse_lab(text: str, source: str) -> LabDef:
         raise GoadError(f'{source}: invalid YAML: {e}')
     raw = _mapping(raw, source, 'lab definition')
     from goad.lab import extensions as _extensions, scenarios as _scenarios  # both import this module
-    raw = _extensions.expand(raw, source)
-    raw = _scenarios.expand(raw, source)
+    raw = _scenarios.expand(raw, source)  # expands extensions first, then scenarios
     _check_keys(raw, _TOP_KEYS, _TOP_REQUIRED, source, 'lab definition')
     name = _str(raw['name'], source, 'lab definition', 'name')
     if not _NAME.match(name):

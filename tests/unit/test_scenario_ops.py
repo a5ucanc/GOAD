@@ -299,3 +299,42 @@ def test_pick_snapshot_only_base_with_extension_refuses(tmp_path, monkeypatch):
     base = base_text()
     with pytest.raises(GoadError, match='predates extension mssql'):
         scenario_ops.pick_snapshot(_state(('base', base)), base + 'extensions: [mssql]\n')
+
+
+def _service_scenario(tmp_path, monkeypatch):
+    from goad.lab import extensions
+    (tmp_path / 'svc.yml').write_text(yaml.safe_dump({'description': 't', 'labs': {
+        '2domains': {'hosts': {'srv02': {'services': {'mssql': {}}}}}}}), encoding='utf-8')
+    monkeypatch.setattr(extensions, 'EXTENSION_DIR', tmp_path)
+    svcscn = Scenario('svcscn', '', 'service:mssql', {'hosts': {'{target}': {'settings': {'smb.signing': 'optional'}}}},
+                      requires='svc')
+    monkeypatch.setattr(scenarios, 'load_catalogue', lambda *a, **k: dict(CATALOGUE, svcscn=svcscn))
+    raw = yaml.safe_load(base_text())
+    raw['extensions'] = ['svc']
+    raw['scenarios'] = [{'name': 'svcscn', 'target': 'srv02'}, {'name': 'newuser', 'target': 'dc02'}]
+    return yaml.safe_dump(raw, sort_keys=False)
+
+
+def test_contained_with_extension_service_scenario(tmp_path, monkeypatch):
+    text = _service_scenario(tmp_path, monkeypatch)
+    assert scenario_ops.contained(text, text) is None
+
+
+def test_disable_with_extension_service_scenario(settings, fake, deployed, calls, tmp_path, monkeypatch):
+    from goad.state import load_state, save_state
+    text = _service_scenario(tmp_path, monkeypatch)
+    state = load_state(settings)
+    raw = yaml.safe_load(text)
+    raw['scenarios'] = raw['scenarios'][:1]
+    state.snapshots.append(SnapshotRecord('s1', '2026-11-22T00:00:00Z', '', yaml.safe_dump(raw, sort_keys=False)))
+    save_state(settings, state)
+    _set_working(settings, text)
+    snap = scenario_ops.disable(settings, fake, 'newuser', 'dc02', yes=True, ask=lambda q, y: True)
+    assert snap == 's1'
+    assert yaml.safe_load(working_lab_path(settings).read_text())['scenarios'] == [
+        {'name': 'svcscn', 'target': 'srv02'}]
+
+
+def test_scenario_accounts_sees_extension_hosts(tmp_path, monkeypatch):
+    text = _service_scenario(tmp_path, monkeypatch)
+    assert scenario_ops.scenario_accounts(text) == [('NORTH\\scn.user', yaml.safe_load(text)['password'], 'scenario newuser@dc02')]

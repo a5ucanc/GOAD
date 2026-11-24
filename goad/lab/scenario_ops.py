@@ -229,12 +229,13 @@ def listing(text: Optional[str]) -> List[Tuple[str, str, str, str, str]]:
 
 def scenario_accounts(text: str) -> List[Tuple[str, str, str]]:
     """(NETBIOS\\user, password, scope) for each user a scenario fragment adds (absent from the lab before expansion)."""
-    raw = _load(text)
-    entries = _entries(raw)
+    written = _load(text)
+    entries = _entries(written)
     if not entries:
         return []
+    raw = extensions.expand(written, SOURCE)   # placeholders and existing users see extension hosts
     catalogue = scenarios.load_catalogue()
-    expanded = scenarios.expand(raw, SOURCE, catalogue)
+    expanded = scenarios.expand(written, SOURCE, catalogue)
     rows = []
     for entry in entries:
         name, target = entry['name'], entry['target']
