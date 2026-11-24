@@ -225,6 +225,15 @@ def test_prep_script_contents():
         assert needed in text, needed
 
 
+def test_prep_boots_read_write_and_starts_cloud_init():
+    text = kali.PREP_SCRIPT.read_text()
+    assert "GRUB_CMDLINE_LINUX" in text and ' rw"' in text
+    assert text.index('/etc/default/grub') < text.index('update-grub')
+    assert 'mkdir -p /etc/systemd/system/multi-user.target.wants' in text
+    assert ('ln -sf /usr/lib/systemd/system/cloud-init.target '
+            '/etc/systemd/system/multi-user.target.wants/cloud-init.target') in text
+
+
 def test_cli_build_and_test_accept_kali():
     # build reaches build_template, which refuses with the import hint; test smoke-tests the imported template
     assert build_parser().parse_args(['template', 'build', 'kali']).os == 'kali'

@@ -66,6 +66,16 @@ rm -f /etc/NetworkManager/system-connections/*
 # the cloud-init package enables its own units; Kali ships sshd disabled
 systemctl enable ssh
 
+# systemd 261 on Kali leaves the root filesystem read-only after boot (grub emits "ro", nothing remounts it):
+# cloud-init and sshd host key generation then fail on clones. The last of ro/rw on the cmdline wins.
+grep -q '^GRUB_CMDLINE_LINUX=.*\brw\b' /etc/default/grub || \
+    sed -i -E 's/^(GRUB_CMDLINE_LINUX=")(.*)"$/\1\2 rw"/' /etc/default/grub
+grep -q '^GRUB_CMDLINE_LINUX=' /etc/default/grub || echo 'GRUB_CMDLINE_LINUX="rw"' >> /etc/default/grub
+update-grub
+# cloud-init's generator output is not run on clones: pull cloud-init.target into boot directly
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /usr/lib/systemd/system/cloud-init.target /etc/systemd/system/multi-user.target.wants/cloud-init.target
+
 truncate -s 0 /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 rm -f /etc/ssh/ssh_host_*
