@@ -145,7 +145,8 @@ def test_laps_tasks_retry_while_ad_settles():
 def test_laps_schema_syncs_before_extending():
     tasks = yaml.safe_load((ANSIBLE / 'roles' / 'laps_schema' / 'tasks' / 'main.yml').read_text())
     script = tasks[0]['ansible.windows.win_powershell']['script']
-    assert 0 < script.index('repadmin /syncall /AdeP') < script.index('Update-LapsADSchema')
+    assert 0 < script.index('repadmin /syncall $env:COMPUTERNAME /Ade') < script.index('Update-LapsADSchema')
+    assert '/AdeP' not in script
 
 
 def test_every_setting_has_a_task_file():

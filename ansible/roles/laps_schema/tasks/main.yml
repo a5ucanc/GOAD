@@ -8,10 +8,11 @@
       $Ansible.Changed = $false
       $schema = (Get-ADRootDSE).schemaNamingContext
       if (-not (Get-ADObject -SearchBase $schema -LDAPFilter '(lDAPDisplayName=msLAPS-Password)')) {
-          # After a snapshot restore the schema master refuses schema changes until it has replicated
-          # with a partner, and AD's own retry can take an hour. Force the sync; its exit code is
-          # ignored (native exit codes do not throw), a failed sync only shows up as the update failing.
-          repadmin /syncall /AdeP | Out-Null
+          # After a snapshot restore the schema master refuses schema changes (event 2092) until it has
+          # replicated with a partner, and AD's own retry can take an hour. Pull the partitions inbound
+          # so the schema master validates its FSMO role; the exit code is ignored (native exit codes
+          # do not throw), a failed sync only shows up as the update failing.
+          repadmin /syncall $env:COMPUTERNAME /Ade | Out-Null
           $global:LASTEXITCODE = 0
           Update-LapsADSchema -Confirm:$false
           $Ansible.Changed = $true
