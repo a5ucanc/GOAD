@@ -17,10 +17,13 @@ $Ansible.Changed = $false
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine')
 
 function Invoke-Sql([string]$Step, [string]$Query, [switch]$Secret) {
+    # resolve sqlcmd first: a missing one must not pass on a stale $LASTEXITCODE
+    $sqlcmd = Get-Command SqlCmd.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $sqlcmd) { throw "mssql step '$Step' failed: SqlCmd.exe not found on the machine PATH" }
     # Continue: PowerShell 5.1 turns redirected native stderr into an error record, which Stop would throw
     # before the exit code check (and past the Secret withholding)
     $ErrorActionPreference = 'Continue'
-    $out = & SqlCmd -S 127.0.0.1,1433 -E -b -Q $Query 2>&1
+    $out = & $sqlcmd.Source -S 127.0.0.1,1433 -E -b -Q $Query 2>&1
     $ErrorActionPreference = 'Stop'
     if ($LASTEXITCODE -ne 0) {
         $detail = if ($Secret) { '(output withheld: the statement holds a password)' } else { "$out" }

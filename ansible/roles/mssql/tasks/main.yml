@@ -80,7 +80,9 @@
   # no_log hides the passwords; options.ps1 reports a failure without them in result.error, raised below
   no_log: true
   register: mssql_options
-  failed_when: false
+  # not failed_when: false, which would clear a failure outside the script's try (parse or parameter
+  # binding error); the next task raises every failure
+  ignore_errors: true
 
 - name: Report a failed sa login or scenario option
   ansible.builtin.fail:

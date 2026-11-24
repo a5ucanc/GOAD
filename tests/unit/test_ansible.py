@@ -456,6 +456,8 @@ def test_mssql_options_failure_is_reported_without_no_log():
     names = [t['name'] for t in tasks]
     options = tasks[names.index('Apply the sa login and the scenario options')]
     report = tasks[names.index('Apply the sa login and the scenario options') + 1]
-    assert options['no_log'] is True and options['failed_when'] is False
+    # ignore_errors, not failed_when: false, so a failure outside the script's try still reaches the report
+    assert options['no_log'] is True and options['ignore_errors'] is True and 'failed_when' not in options
+    assert 'mssql_options.failed' in report['when']
     assert 'ansible.builtin.fail' in report and 'no_log' not in report
     assert 'mssql_options.result.error' in report['ansible.builtin.fail']['msg']
