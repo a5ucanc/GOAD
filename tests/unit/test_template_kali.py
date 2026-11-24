@@ -103,6 +103,7 @@ def test_bad_cached_archive_is_downloaded_again(store, settings, fake):
     _import(settings, fake, store)
     curls = [c for c in fake.calls if c[0] == 'curl.exe']
     assert [c[-1] for c in curls] == [kali.KALI_SUMS, kali.KALI_URL]
+    assert all('--ssl-revoke-best-effort' in c for c in curls)
     assert (_cache(store) / ARCHIVE).read_bytes() == DATA
 
 

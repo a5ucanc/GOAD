@@ -56,8 +56,9 @@ def _expected_sha(sums: Path, filename: str) -> str:
 
 
 def _download(runner: Runner, url: str, windows_dest: str, timeout: float) -> None:
-    result = runner.run(['curl.exe', '-L', '--fail', '--retry', '5', '--retry-all-errors', '-C', '-',
-                         '-o', windows_dest, url], timeout=timeout)
+    # schannel revocation check is unreachable behind TLS interception; best-effort still checks when reachable
+    result = runner.run(['curl.exe', '--ssl-revoke-best-effort', '-L', '--fail', '--retry', '5',
+                         '--retry-all-errors', '-C', '-', '-o', windows_dest, url], timeout=timeout)
     if not result.ok:
         raise GoadError(f'download of {url} failed ({result.stderr.strip() or result.code}); '
                         f'run goad template import kali again to resume')
