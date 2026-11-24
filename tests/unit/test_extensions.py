@@ -248,6 +248,8 @@ def test_ws01_lx01_kali_extensions(name):
         assert extension_hosts(raw, key) == [key]
     children = render_inventory(lab, '192.168.56')['all']['children']
     assert set(children['linux']['hosts']) == {'lx01', 'kali'}
+    assert children['linux']['vars']['ansible_ssh_common_args'] == (
+        '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null')
     for group in ('windows', 'workstation', 'member'):
         assert 'ws01' in children[group]['hosts']
     assert 'lx01' not in children['member']['hosts'] and 'kali' not in children['member']['hosts']

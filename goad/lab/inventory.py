@@ -98,6 +98,9 @@ def _domains(lab: LabDef, ip_range: str) -> Dict[str, Any]:
     return out
 
 
+SSH_COMMON_ARGS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+
 def render_inventory(lab: LabDef, ip_range: str) -> Dict[str, Any]:
     def entry(name: str) -> Dict[str, Any]:
         h = lab.hosts[name]
@@ -138,6 +141,9 @@ def render_inventory(lab: LabDef, ip_range: str) -> Dict[str, Any]:
                                                'ansible_psrp_protocol': 'http'}},
         'linux': {**group(linux), 'vars': {'ansible_connection': 'ssh', 'ansible_user': 'goad'}},
     }
+    if linux:
+        # Lab VMs are re-cloned at fixed host-only IPs, so their SSH host keys change by design.
+        children['linux']['vars']['ansible_ssh_common_args'] = SSH_COMMON_ARGS
     for role in ('dc', 'server', 'workstation'):
         children[role] = group([n for n in names if lab.hosts[n].role == role])
     children['forest_root'] = group([n for n in dcs if not lab.domains[lab.hosts[n].domain].parent])
