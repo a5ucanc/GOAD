@@ -1,10 +1,7 @@
-# Wazuh version, as on main (4.14 installation assistant, agent 4.14.10). The 4.14 assistant installs the
-# packages of its own version: the role refuses an assistant of another version. The Windows agents (role
-# wazuh_agent) use the same version: an agent must not be newer than its manager.
-wazuh_version: '4.14.10'
+# wazuh_version and wazuh_admin_password: ansible/group_vars/all/monitoring.yml (shared with role
+# wazuh_agent). The admin password replaces the random one of wazuh-install.sh. It is set through hash.sh
+# and securityadmin.sh: wazuh-passwords-tool.sh rejects passwords without one of .*+?-
+# The installation assistant of the version's minor line. It installs the packages of its own
+# wazuh_version: the role rewrites that line to the pinned version (the apt repository keeps old builds).
 wazuh_install_script_url: "https://packages.wazuh.com/{{ wazuh_version.rsplit('.', 1)[0] }}/wazuh-install.sh"
 wazuh_dir: /opt/wazuh
-# Password of the indexer admin user, the dashboard login (the extension credential). Replaces the random
-# one of wazuh-install.sh. Set through hash.sh + securityadmin.sh: wazuh-passwords-tool.sh rejects
-# passwords without one of .*+?-
-wazuh_admin_password: 'Aa1234567890!'

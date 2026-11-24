@@ -541,13 +541,21 @@ def _defaults(role):
     return yaml.safe_load((ANSIBLE / 'roles' / role / 'defaults' / 'main.yml').read_text())
 
 
-def test_monitoring_versions_are_pinned_and_match():
-    elk, agent = _defaults('elk'), _defaults('elk_agent')
-    assert re.fullmatch(r'9\.\d+\.\d+', elk['elk_version'])
-    assert agent['elk_agent_winlogbeat_version'] == elk['elk_version']
-    manager, wazuh_agent = _defaults('wazuh_manager'), _defaults('wazuh_agent')
-    assert re.fullmatch(r'4\.\d+\.\d+', manager['wazuh_version'])
-    assert f"wazuh-agent-{manager['wazuh_version']}-1.msi" in wazuh_agent['wazuh_agent_msi_url']
+MONITORING_VARS = ANSIBLE / 'group_vars' / 'all' / 'monitoring.yml'
+
+
+def test_monitoring_versions_are_pinned_and_shared():
+    shared = yaml.safe_load(MONITORING_VARS.read_text())
+    assert re.fullmatch(r'9\.\d+\.\d+', shared['elk_version'])
+    assert re.fullmatch(r'4\.\d+\.\d+', shared['wazuh_version'])
+    assert shared['elk_elastic_password'] == shared['wazuh_admin_password'] == 'Aa1234567890!'
+    # the server and agent roles take them from the shared file, never their own copy
+    agent = _defaults('elk_agent')
+    assert agent['elk_agent_winlogbeat_version'] == '{{ elk_version }}'
+    assert agent['elk_agent_elastic_password'] == '{{ elk_elastic_password }}'
+    assert '{{ wazuh_version }}' in _defaults('wazuh_agent')['wazuh_agent_msi_url']
+    for role in ('elk', 'wazuh_manager'):
+        assert not set(shared) & set(_defaults(role)), role
     for role in ('elk', 'elk_agent', 'wazuh_manager', 'wazuh_agent'):
         text = (ANSIBLE / 'roles' / role / 'tasks' / 'main.yml').read_text()
         assert '9.x' not in text and 'latest' not in text, role
@@ -575,13 +583,15 @@ def test_agent_server_lookup_resolves(tmp_path):
     playbook = tmp_path / 'lookup.yml'
     playbook.write_text(yaml.safe_dump([{
         'hosts': 'dc01', 'gather_facts': False,
-        'vars_files': [str(ANSIBLE / 'roles' / 'elk_agent' / 'defaults' / 'main.yml'),
+        'vars_files': [str(MONITORING_VARS), str(ANSIBLE / 'roles' / 'elk_agent' / 'defaults' / 'main.yml'),
                        str(ANSIBLE / 'roles' / 'wazuh_agent' / 'defaults' / 'main.yml')],
-        'tasks': [{'ansible.builtin.debug': {'msg': 'elk={{ elk_agent_server }} wazuh={{ wazuh_agent_manager }}'}}]}]))
+        'tasks': [{'ansible.builtin.debug': {'msg': 'elk={{ elk_agent_server }} wazuh={{ wazuh_agent_manager }} '
+                                                    'msi={{ wazuh_agent_msi_url | basename }}'}}]}]))
     result = subprocess.run([ansible_bin('ansible-playbook'), '-i', str(inv), str(playbook)],
                             capture_output=True, text=True, env={**os.environ, **ANSIBLE_ENV})
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'elk=10.9.8.50 wazuh=10.9.8.51' in result.stdout
+    version = yaml.safe_load(MONITORING_VARS.read_text())['wazuh_version']
+    assert f'elk=10.9.8.50 wazuh=10.9.8.51 msi=wazuh-agent-{version}-1.msi' in result.stdout
 
 
 def test_monitoring_passwords_are_set_only_when_they_differ():
@@ -594,6 +604,47 @@ def test_monitoring_passwords_are_set_only_when_they_differ():
     tasks = yaml.safe_load((ANSIBLE / 'roles' / 'wazuh_manager' / 'tasks' / 'main.yml').read_text())
     by_name = {t['name']: t for t in tasks}
     assert by_name['Set the indexer admin user password']['when'] == 'wazuh_admin_check.status != 200'
+    assert 'no_log' not in by_name['Check the indexer admin user password']
+
+
+def _reported(tasks, name):
+    # the mssql pattern: no_log on the task with the secret, ignore_errors, then a fail without no_log
+    names = [t['name'] for t in tasks]
+    task, report = tasks[names.index(name)], tasks[names.index(name) + 1]
+    assert task['no_log'] is True and task['ignore_errors'] is True and 'failed_when' not in task
+    assert 'ansible.builtin.fail' in report and 'no_log' not in report and 'loop' not in report
+    return task, report
+
+
+def test_monitoring_secret_tasks_report_their_failures():
+    elk = yaml.safe_load((ANSIBLE / 'roles' / 'elk' / 'tasks' / 'main.yml').read_text())
+    _reported(elk, 'Create the bootstrap file-realm superuser')
+    _reported(elk, 'Set the built-in users passwords')
+    assert 'no_log' not in next(t for t in elk if t['name'] == 'Check the built-in users passwords')
+    wazuh = yaml.safe_load((ANSIBLE / 'roles' / 'wazuh_manager' / 'tasks' / 'main.yml').read_text())
+    task, report = _reported(wazuh, 'Set the indexer admin user password')
+    assert 'stderr' in report['ansible.builtin.fail']['msg']
+    # the new hash must land in internal_users.yml before securityadmin.sh loads it
+    assert 'grep -qF "hash: \\"$hash\\""' in task['ansible.builtin.shell']
+
+
+def test_wazuh_assistant_is_pinned_not_refused():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'wazuh_manager' / 'tasks' / 'main.yml').read_text())
+    names = [t['name'] for t in tasks]
+    pin = tasks[names.index('Pin the installation assistant to wazuh_version')]['ansible.builtin.replace']
+    assert pin['regexp'] == '^readonly wazuh_version="[^"]*"$'
+    assert pin['replace'] == 'readonly wazuh_version="{{ wazuh_version }}"'
+    assert names.index('Pin the installation assistant to wazuh_version') < names.index(
+        'Refuse an installation assistant that cannot be pinned') < names.index(
+        'Run the Wazuh installation assistant (all in one)')
+    assert not any('ansible.builtin.assert' in t for t in tasks)
+
+
+def test_logstash_is_not_started():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'elk' / 'tasks' / 'main.yml').read_text())
+    for t in tasks:
+        if 'ansible.builtin.service' in t:
+            assert 'logstash' not in str(t.get('loop', '')) + t['ansible.builtin.service']['name'], t['name']
 
 
 def test_monitoring_commands_state_when_they_change():

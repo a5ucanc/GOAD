@@ -1,5 +1,5 @@
 # Port of main's extensions/elk role elk: Elasticsearch, Kibana and Logstash from Elastic's apt
-# repository, security on without TLS (agents ship over http with a password), the elastic and
+# repository (Logstash installed but not started: nothing feeds it, and it would take 1 GB of heap), security on without TLS (agents ship over http with a password), the elastic and
 # kibana_system passwords set through the API by a file-realm superuser.
 - name: Install the apt repository dependencies
   ansible.builtin.apt:
@@ -80,19 +80,27 @@
   register: elk_file_users
   changed_when: false
 
+# no_log hides the password on the command line; the next task reports a failure without it.
 - name: Create the bootstrap file-realm superuser
   ansible.builtin.command: >-
     /usr/share/elasticsearch/bin/elasticsearch-users useradd {{ elk_bootstrap_user }}
     -p {{ elk_bootstrap_password }} -r superuser
   when: elk_file_users.stdout is not search('^' ~ elk_bootstrap_user ~ '\\s', multiline=True)
+  register: elk_useradd
   no_log: true
+  ignore_errors: true
 
-- name: Start and enable Elasticsearch, Kibana and Logstash
+- name: Report a failed bootstrap superuser creation
+  ansible.builtin.fail:
+    msg: "elasticsearch-users useradd failed (rc {{ elk_useradd.rc | default('none') }}): {{ elk_useradd.stderr | default(elk_useradd.msg | default('no message')) }}"
+  when: elk_useradd.failed | default(false)
+
+- name: Start and enable Elasticsearch and Kibana
   ansible.builtin.service:
     name: "{{ item }}"
     state: started
     enabled: true
-  loop: [elasticsearch, logstash, kibana]
+  loop: [elasticsearch, kibana]
 
 - name: Apply a pending Elasticsearch or Kibana restart
   ansible.builtin.meta: flush_handlers
@@ -108,37 +116,50 @@
   retries: 30
   delay: 10
 
+# The items are user names only; uri masks its password option, so no no_log is needed.
 - name: Check the built-in users passwords
   ansible.builtin.uri:
     url: http://localhost:9200/_security/_authenticate
-    user: "{{ item.user }}"
-    password: "{{ item.password }}"
+    user: "{{ item }}"
+    password: "{{ elk_passwords[item] }}"
     force_basic_auth: true
     status_code: [200, 401]
-  loop:
-    - {user: elastic, password: "{{ elk_elastic_password }}"}
-    - {user: kibana_system, password: "{{ elk_kibana_system_password }}"}
-  loop_control:
-    label: "{{ item.user }}"
+  loop: [elastic, kibana_system]
   register: elk_auth
-  no_log: true
+  vars:
+    elk_passwords: {elastic: "{{ elk_elastic_password }}", kibana_system: "{{ elk_kibana_system_password }}"}
 
+# no_log hides the new password in the request body; the next task reports a failure without it.
 - name: Set the built-in users passwords
   ansible.builtin.uri:
-    url: "http://localhost:9200/_security/user/{{ item.item.user }}/_password"
+    url: "http://localhost:9200/_security/user/{{ item.item }}/_password"
     method: POST
     user: "{{ elk_bootstrap_user }}"
     password: "{{ elk_bootstrap_password }}"
     force_basic_auth: true
     body_format: json
     body:
-      password: "{{ item.item.password }}"
+      password: "{{ elk_passwords[item.item] }}"
   loop: "{{ elk_auth.results }}"
   loop_control:
-    label: "{{ item.item.user }}"
+    label: "{{ item.item }}"
   when: item.status != 200
   changed_when: true
+  register: elk_set_passwords
   no_log: true
+  ignore_errors: true
+  vars:
+    elk_passwords: {elastic: "{{ elk_elastic_password }}", kibana_system: "{{ elk_kibana_system_password }}"}
+
+# Not a loop over the results: a fail item would print the whole registered result.
+- name: Report a failed password change
+  ansible.builtin.fail:
+    msg: >-
+      {% for r in elk_failed %}setting the {{ r.item.item }} password failed: HTTP {{ r.status | default('none') }}
+      {{ r.msg | default('') }} {{ r.json | default('') }}; {% endfor %}
+  when: elk_failed | length > 0
+  vars:
+    elk_failed: "{{ elk_set_passwords.results | selectattr('failed', 'defined') | selectattr('failed') | list }}"
 
 # Winlogbeat setup on the Windows hosts loads its dashboards through Kibana: wait until Kibana serves.
 - name: Wait for Kibana

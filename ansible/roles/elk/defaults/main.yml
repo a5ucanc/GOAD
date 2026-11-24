@@ -1,10 +1,6 @@
-# Elastic Stack version, as on main (9.x line). Winlogbeat on the Windows hosts (role elk_agent) uses
-# the same version: Beats must not be newer than Elasticsearch.
-elk_version: '9.5.6'
+# elk_version and elk_elastic_password: ansible/group_vars/all/monitoring.yml (shared with role elk_agent).
 # Elasticsearch heap. Keep it at most half of the VM memory (6144 MB, extensions/elk.yml).
 elk_heap_size: 2g
-# Password of the built-in elastic superuser (Kibana login and winlogbeat output): the extension credential.
-elk_elastic_password: 'Aa1234567890!'
 # Password of the built-in kibana_system user (Kibana to Elasticsearch connection).
 elk_kibana_system_password: 'Aa1234567890!'
 # File-realm superuser used only by ansible to set the built-in users passwords.

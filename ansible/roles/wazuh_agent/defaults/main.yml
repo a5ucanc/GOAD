@@ -1,5 +1,5 @@
 # The Wazuh manager: the inventory host whose services list wazuh (extensions/wazuh.yml).
 wazuh_agent_manager: "{{ groups['all'] | map('extract', hostvars) | selectattr('services', 'defined') | selectattr('services', 'contains', 'wazuh') | map(attribute='ansible_host') | first }}"
-# Same version as the manager (role wazuh_manager, wazuh_version).
-wazuh_agent_msi_url: https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.10-1.msi
+# wazuh_version: ansible/group_vars/all/monitoring.yml, shared with role wazuh_manager.
+wazuh_agent_msi_url: "https://packages.wazuh.com/4.x/windows/wazuh-agent-{{ wazuh_version }}-1.msi"
 wazuh_agent_setup_dir: C:\setup\wazuh

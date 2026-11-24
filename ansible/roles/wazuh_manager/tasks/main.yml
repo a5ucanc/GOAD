@@ -27,19 +27,28 @@
     force: true
   when: wazuh_install
 
-- name: Read the installation assistant version
-  ansible.builtin.command: grep -oP '^readonly wazuh_version="\K[^"]+' {{ wazuh_dir }}/wazuh-install.sh
-  register: wazuh_script_version
-  changed_when: false
+# The assistant at that URL moves to each new patch release and installs the packages of its own
+# wazuh_version: pin it to ours (the apt repository keeps the old builds).
+- name: Pin the installation assistant to wazuh_version
+  ansible.builtin.replace:
+    path: "{{ wazuh_dir }}/wazuh-install.sh"
+    regexp: '^readonly wazuh_version="[^"]*"$'
+    replace: 'readonly wazuh_version="{{ wazuh_version }}"'
   when: wazuh_install
 
-- name: Refuse an installation assistant of another version
-  ansible.builtin.assert:
-    that: wazuh_script_version.stdout == wazuh_version
-    fail_msg: >-
-      {{ wazuh_install_script_url }} installs Wazuh {{ wazuh_script_version.stdout }}, not {{ wazuh_version }}:
-      update wazuh_version (role wazuh_manager) and the agent MSI (role wazuh_agent)
+- name: Check the installation assistant version line
+  ansible.builtin.command: grep -qx 'readonly wazuh_version="{{ wazuh_version }}"' {{ wazuh_dir }}/wazuh-install.sh
+  register: wazuh_script_pinned
+  changed_when: false
+  failed_when: false
   when: wazuh_install
+
+- name: Refuse an installation assistant that cannot be pinned
+  ansible.builtin.fail:
+    msg: >-
+      {{ wazuh_install_script_url }} has no line readonly wazuh_version="...": the assistant changed,
+      so the role cannot pin it to {{ wazuh_version }}
+  when: wazuh_install and wazuh_script_pinned.rc != 0
 
 # An interrupted run leaves its generated certificates and passwords: start over.
 - name: Remove the files of an interrupted installation
@@ -84,7 +93,6 @@
   until: wazuh_admin_check.status in [200, 401]
   retries: 30
   delay: 10
-  no_log: true
 
 # The steps of wazuh-passwords-tool.sh for the admin user, without its symbol check.
 - name: Set the indexer admin user password
@@ -97,7 +105,10 @@
     mkdir -p /etc/wazuh-indexer/backup
     bash $tools/securityadmin.sh -backup /etc/wazuh-indexer/backup -icl -p 9200 -nhnv \
       -cacert $certs/root-ca.pem -cert $certs/admin.pem -key $certs/admin-key.pem -h 127.0.0.1
+    [ -n "$hash" ] || { echo 'hash.sh returned no hash' >&2; exit 1; }
     sed -i "/^admin:/{n;s|hash: .*|hash: \"$hash\"|}" /etc/wazuh-indexer/backup/internal_users.yml
+    grep -qF "hash: \"$hash\"" /etc/wazuh-indexer/backup/internal_users.yml \
+      || { echo 'the admin hash was not written to internal_users.yml' >&2; exit 1; }
     bash $tools/securityadmin.sh -f /etc/wazuh-indexer/backup/internal_users.yml -t internalusers -icl -p 9200 -nhnv \
       -cacert $certs/root-ca.pem -cert $certs/admin.pem -key $certs/admin-key.pem -h 127.0.0.1
     # filebeat and the manager indexer connector log in as admin
@@ -109,4 +120,15 @@
   environment:
     WAZUH_ADMIN_PASSWORD: "{{ wazuh_admin_password }}"
   when: wazuh_admin_check.status != 200
+  register: wazuh_admin_set
+  # no_log hides the password in the environment; the next task reports a failure without it
   no_log: true
+  ignore_errors: true
+
+- name: Report a failed admin password change
+  ansible.builtin.fail:
+    msg: >-
+      setting the indexer admin password failed (rc {{ wazuh_admin_set.rc | default('none') }}):
+      {{ (wazuh_admin_set.stderr | default(wazuh_admin_set.msg | default('no message')))[-2000:] }}
+      {{ (wazuh_admin_set.stdout | default(''))[-2000:] }}
+  when: wazuh_admin_set.failed | default(false)

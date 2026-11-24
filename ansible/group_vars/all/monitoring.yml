@@ -1,0 +1,13 @@
+# Shared by the server and agent roles of the elk and wazuh extensions, so the two sides do not drift.
+
+# Elastic Stack version, as on main (9.x line): Elasticsearch and Kibana (role elk) and Winlogbeat on the
+# Windows hosts (role elk_agent). Beats must not be newer than Elasticsearch.
+elk_version: '9.5.6'
+# Password of the built-in elastic superuser: Kibana login and winlogbeat output (the extension credential).
+elk_elastic_password: 'Aa1234567890!'
+
+# Wazuh version, as on main: manager, indexer and dashboard (role wazuh_manager) and the Windows agent
+# (role wazuh_agent). An agent must not be newer than its manager.
+wazuh_version: '4.14.10'
+# Password of the indexer admin user, the dashboard login (the extension credential).
+wazuh_admin_password: 'Aa1234567890!'

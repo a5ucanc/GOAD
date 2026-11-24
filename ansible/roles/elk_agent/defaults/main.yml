@@ -1,9 +1,8 @@
 # The elk server: the inventory host whose services list elk (extensions/elk.yml).
 elk_agent_server: "{{ groups['all'] | map('extract', hostvars) | selectattr('services', 'defined') | selectattr('services', 'contains', 'elk') | map(attribute='ansible_host') | first }}"
-# Password of the Elasticsearch elastic user (role elk, the extension credential).
-elk_agent_elastic_password: 'Aa1234567890!'
-# Same version as the stack (role elk, elk_version).
-elk_agent_winlogbeat_version: '9.5.6'
+# Shared with role elk: ansible/group_vars/all/monitoring.yml.
+elk_agent_elastic_password: "{{ elk_elastic_password }}"
+elk_agent_winlogbeat_version: "{{ elk_version }}"
 elk_agent_winlogbeat_name: "winlogbeat-{{ elk_agent_winlogbeat_version }}-windows-x86_64"
 elk_agent_winlogbeat_url: "https://artifacts.elastic.co/downloads/beats/winlogbeat/{{ elk_agent_winlogbeat_name }}.zip"
 elk_agent_winlogbeat_dir: C:\Program Files\Elastic\winlogbeat
