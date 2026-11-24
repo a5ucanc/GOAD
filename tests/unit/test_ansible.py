@@ -128,7 +128,9 @@ def test_laps_processing_reruns_without_password():
 
 
 def test_every_setting_has_a_task_file():
-    files = {p.stem for p in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml')} - {'main'}
+    # _<name>.yml: a helper the setting files include, not a setting
+    files = {p.stem for p in (ANSIBLE / 'roles' / 'settings' / 'tasks').glob('*.yml')
+             if not p.stem.startswith('_')} - {'main'}
     assert files == {key.replace('.', '_') for key in SETTINGS}
 
 
@@ -482,8 +484,15 @@ def test_linux_join_is_guarded_by_realm_list():
 
 
 def test_new_settings_are_idempotent_powershell_or_registry():
-    asr = yaml.safe_load((SETTINGS_TASKS / 'defender_asr_psexec_wmi.yml').read_text())
-    assert asr[0]['ansible.windows.win_powershell']['parameters']['Id'] == 'd1e49aac-8f56-4280-b9ba-993a6d77406c'
+    for key, rule in (('defender_asr_lsass', '9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2'),
+                      ('defender_asr_psexec_wmi', 'd1e49aac-8f56-4280-b9ba-993a6d77406c')):
+        task, = yaml.safe_load((SETTINGS_TASKS / f'{key}.yml').read_text())
+        assert task['ansible.builtin.include_tasks'] == '_asr_rule.yml'
+        assert task['vars']['asr_rule_id'] == rule
+    shared, = yaml.safe_load((SETTINGS_TASKS / '_asr_rule.yml').read_text())
+    # Defender's WMI provider fails until WinDefend is up, e.g. right after a reboot
+    assert (shared['retries'], shared['delay'], shared['until']) == (10, 15, 'asr_rule is not failed')
+    assert shared['ansible.windows.win_powershell']['parameters']['Id'] == '{{ asr_rule_id }}'
     policy, = yaml.safe_load((SETTINGS_TASKS / 'powershell_execution_policy.yml').read_text())
     assert policy['ansible.windows.win_regedit']['name'] == 'ExecutionPolicy'
 
@@ -493,3 +502,15 @@ def test_no_win_template():
     # Use ansible.builtin.template with newline_sequence instead.
     for path in ANSIBLE.rglob('*.yml'):
         assert 'win_template' not in path.read_text(), path
+
+
+def test_linux_join_creates_resolved_dir_and_reports_join_failure():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'linux_join' / 'tasks' / 'main.yml').read_text())
+    names = [t['name'] for t in tasks]
+    assert names.index('Create the systemd-resolved drop-in directory') < names.index('Send the lab domains to the DC resolver')
+    join = tasks[names.index('Join the realm')]
+    assert join['ignore_errors'] is True and join['register'] == 'linux_join_result'
+    report = tasks[names.index('Join the realm') + 1]
+    assert 'stderr' in report['ansible.builtin.fail']['msg'] and 'no_log' not in report
+    step = next(t for t in tasks if t['name'] == 'Step the clock at any offset')
+    assert step['ansible.builtin.lineinfile']['path'] == '/etc/chrony/chrony.conf'

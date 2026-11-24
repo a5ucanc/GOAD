@@ -29,6 +29,13 @@
     cache_valid_time: 3600
 
 # Two NICs: nat gets its resolver from DHCP. Route the lab domains to the DC on any link.
+# Stock Ubuntu 24.04 ships no resolved.conf.d.
+- name: Create the systemd-resolved drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    mode: '0755'
+
 - name: Send the lab domains to the DC resolver
   ansible.builtin.copy:
     dest: /etc/systemd/resolved.conf.d/goad.conf
@@ -81,15 +88,23 @@
           .{{ domain }} = {{ domain | upper }}
           {{ domain }} = {{ domain | upper }}
 
-# Kerberos refuses a clock more than 5 minutes off the DC: take time from the DC only, step at any offset.
+# Kerberos refuses a clock more than 5 minutes off the DC: take time from the DC only.
 - name: Take time from the DC only
   ansible.builtin.copy:
     dest: /etc/chrony/conf.d/goad.conf
     mode: '0644'
     content: |
       server {{ linux_join_dc.dc_ip }} iburst prefer
-      makestep 1 -1
   register: linux_join_chrony_conf
+
+# Step the clock at any offset, not only in the first updates. chrony.conf already has a makestep
+# line and only one makestep applies: change that line rather than adding another.
+- name: Step the clock at any offset
+  ansible.builtin.lineinfile:
+    path: /etc/chrony/chrony.conf
+    regexp: '^makestep\s'
+    line: makestep 1 -1
+  register: linux_join_chrony_step
 
 - name: Drop the distribution NTP pools
   ansible.builtin.replace:
@@ -100,7 +115,7 @@
 
 - name: Restart chrony and wait for the first sync
   ansible.builtin.shell: systemctl restart chrony && chronyc waitsync 12 1
-  when: linux_join_chrony_conf is changed or linux_join_chrony_pools is changed
+  when: linux_join_chrony_conf is changed or linux_join_chrony_pools is changed or linux_join_chrony_step is changed
   # Not fatal: VMware Tools keeps the clock close to the host's, which the DC also follows.
   failed_when: false
 
@@ -114,7 +129,15 @@
     cmd: "realm join --membership-software=adcli --client-software=sssd -U Administrator {{ domain }}"
     stdin: "{{ lab_password }}"
   when: domain | lower not in linux_join_realms.stdout_lines | map('lower') | list
+  # no_log hides the password; its failure (clock skew, DNS, credentials) is raised below from stderr
   no_log: true
+  register: linux_join_result
+  ignore_errors: true
+
+- name: Report a failed realm join
+  ansible.builtin.fail:
+    msg: "realm join {{ domain }} failed (rc {{ linux_join_result.rc }}): {{ linux_join_result.stderr | default('') }}"
+  when: linux_join_result is failed
 
 - name: Use short user names and /home/<user>
   ansible.builtin.lineinfile:
