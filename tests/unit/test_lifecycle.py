@@ -174,3 +174,18 @@ def test_endpoints_without_definition(lab):
     lab.definition = None
     assert lab.endpoints() == {'dc01': ('192.168.56.10', 5985), 'dc02': ('192.168.56.11', 5985),
                                'srv02': ('192.168.56.22', 5985)}
+
+
+def test_creds_lists_extension_credentials(lab, monkeypatch, tmp_path):
+    from goad.lab import extensions
+    from goad.state import working_lab_path
+    directory = tmp_path / 'extensions'
+    directory.mkdir()
+    (directory / 'elk.yml').write_text(
+        'description: elk\nlabs:\n  2domains: {}\ncredentials:\n'
+        '  - {account: elastic, password: "Aa1234567890!", scope: "elk (http://{range}.50:5601)"}\n')
+    monkeypatch.setattr(extensions, 'EXTENSION_DIR', directory)
+    path = working_lab_path(lab.settings)
+    path.write_text(path.read_text() + 'extensions: [elk]\n')
+    rows = [(c.account, c.password, c.scope) for c in creds(lab)]
+    assert ('elastic', 'Aa1234567890!', 'elk (http://192.168.56.50:5601)') in rows

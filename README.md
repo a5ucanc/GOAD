@@ -18,7 +18,7 @@ This branch (`goad-v2`) is a rewrite. The original multi-provider GOAD lives on 
 | Labs `1domain` (dc01 kingslanding, srv02 castelblack), `2domains`, `2forests` (`goad lab ...`, `goad snapshot ...`) | available |
 | Release gate (2domains) | accepted 2026-11-23 with one deploy 40 s over the limit, see docs/release-gate/ |
 | Scenarios (52, one YAML file each in `scenarios/`) | available |
-| Extensions | later, ported one at a time |
+| Extensions | available |
 
 ## Host requirements
 
@@ -138,6 +138,22 @@ goad scenario disable kerberoast --target dc01      # --target needed if enabled
   which snapshot `disable` picks.
 - `goad snapshot list` has a Scenarios column. `goad creds` also lists scenario users.
 - Five scenarios wait for extensions and are not in `scenarios/` yet: `mssql-impersonate-login`, `mssql-impersonate-user`, `mssql-linked`, `mssql-sysadmin`, `iis-upload`.
+
+## Extensions
+
+An extension adds VMs and services to a lab (one YAML file each in `extensions/`). You add and remove them
+on a running lab.
+
+```bash
+goad extension list                  # name, description, applies to this lab, installed
+goad extension add elk               # add to lab.yml, create the VMs, provision, snapshot ext-elk
+goad extension remove elk            # --yes skips the prompt
+```
+
+- The installed list lives in the `extensions:` key of `~/.goad/lab.yml`. `goad creds` lists extension accounts; `goad snapshot list` has an Extensions column.
+- A snapshot taken with a different extension list than the current `lab.yml` is unusable: `goad lab reset` refuses it, and `goad snapshot list` marks it `(unusable)`.
+- `add` is resumable: if it fails, run the same command again. Another extension cannot be added while one is half added.
+- `remove` works newest first: remove the last extension added before an older one. It refuses while scenarios depend on the extension, deletes only the VMs it brought, resets to the newest snapshot without it and replays the remaining scenarios.
 
 ## Provisioning
 

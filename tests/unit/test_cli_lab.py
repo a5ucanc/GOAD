@@ -202,3 +202,62 @@ def test_snapshot_list_marks_unusable(cli, settings, deployed, capsys, monkeypat
     assert main(['snapshot', 'list']) == 0
     out = flat(capsys.readouterr().out)
     assert 'Extensions' in out and 'base (unusable)' in out and 'pre (unusable)' not in out
+
+
+@pytest.fixture
+def ext_catalogue(monkeypatch, tmp_path):
+    from goad.lab import extensions
+    directory = tmp_path / 'extensions'
+    directory.mkdir()
+    (directory / 'a.yml').write_text('description: ext a\nlabs:\n  2domains: {}\n')
+    (directory / 'elk.yml').write_text(
+        'description: elk\nlabs:\n  2domains: {}\ncredentials:\n'
+        '  - {account: elastic, password: "Aa1234567890!", scope: "elk (http://{range}.50:5601)"}\n')
+    monkeypatch.setattr(extensions, 'EXTENSION_DIR', directory)
+    return directory
+
+
+def test_extension_list_without_lab(cli, settings, ext_catalogue, capsys, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '200')
+    assert main(['extension', 'list']) == 0
+    out = capsys.readouterr().out
+    assert 'a' in out and 'ext a' in out and 'elk' in out
+
+
+def test_extension_list_marks_applies_and_installed(cli, settings, deployed, ext_catalogue, capsys, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '200')
+    path = working_lab_path(settings)
+    path.write_text(path.read_text() + 'extensions: [a]\n')
+    assert main(['extension', 'list']) == 0
+    rows = {line.split()[1]: [t for t in line.split() if t != '│'] for line in capsys.readouterr().out.splitlines() if line.startswith('│ ')}
+    assert rows['a'][-2:] == ['yes', 'yes']
+    assert rows['elk'][-2:] == ['yes', 'no']
+
+
+def test_extension_add(cli, settings, deployed, ext_catalogue, monkeypatch, capsys):
+    from goad.lab import extension_ops
+    from goad.state import SnapshotRecord
+    calls = []
+    monkeypatch.setattr(extension_ops, 'add', lambda s, r, store, name: calls.append(name) or SnapshotRecord('ext-a', '', '', ''))
+    monkeypatch.setattr('goad.cli._store', lambda ctx: None)
+    assert main(['extension', 'add', 'a']) == 0
+    assert calls == ['a']
+    assert 'extension a added (snapshot ext-a)' in capsys.readouterr().out
+
+
+def test_extension_remove(cli, settings, deployed, ext_catalogue, monkeypatch, capsys):
+    from goad.lab import extension_ops
+    path = working_lab_path(settings)
+    path.write_text(path.read_text() + 'extensions: [a]\n')
+    seen = []
+    monkeypatch.setattr(extension_ops, 'remove', lambda s, r, name, yes, ask: seen.append((name, yes)) or 'base')
+    assert main(['extension', 'remove', 'a', '--yes']) == 0
+    assert seen == [('a', True)]
+    assert 'extension a removed (lab reset to base)' in flat(capsys.readouterr().out)
+
+
+def test_extension_remove_validates_before_prompt(cli, settings, deployed, ext_catalogue, monkeypatch, capsys):
+    from goad.lab import extension_ops
+    monkeypatch.setattr(extension_ops, 'remove', lambda *a, **k: pytest.fail('must validate first'))
+    assert main(['extension', 'remove', 'a']) == 1
+    assert 'extension a is not installed' in capsys.readouterr().err

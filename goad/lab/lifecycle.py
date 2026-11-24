@@ -100,7 +100,27 @@ def creds(lab: Lab, laps: Callable[[str, str, str], str] = laps_password) -> Lis
             rows.extend(Credential(*row) for row in scenario_accounts(path.read_text()))
         except GoadError:
             pass  # a scenario in lab.yml may have left the catalogue: show the rest of the credentials
+        try:
+            rows.extend(_extension_credentials(path.read_text(), lab.state.ip_range))
+        except GoadError:
+            pass  # an extension in lab.yml may have left the catalogue: show the rest of the credentials
     return rows
+
+
+def _extension_credentials(text: str, ip_range: str) -> List[Credential]:
+    import yaml
+
+    from goad.lab import extensions
+    raw = yaml.safe_load(text)
+    names = extensions.entries(raw) if isinstance(raw, dict) else []
+    if not names:
+        return []
+    catalogue = extensions.load_catalogue()
+    missing = [n for n in names if n not in catalogue]
+    if missing:
+        raise GoadError(f'unknown extension {", ".join(missing)}')
+    return [Credential(account, password, scope.replace('{range}', ip_range))
+            for n in names for account, password, scope in catalogue[n].credentials]
 
 
 def _vmx(lab: Lab, host: str) -> str:

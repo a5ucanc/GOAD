@@ -275,6 +275,52 @@ def _scenario_disable(args, ctx) -> int:
     return 0
 
 
+def _extension_list(args, ctx) -> int:
+    from rich.table import Table
+
+    from goad.lab import extensions
+    from goad.state import load_state, working_lab_path
+    state = load_state(ctx.settings)
+    path = working_lab_path(ctx.settings)
+    installed = None
+    if state is not None and path.is_file():
+        import yaml
+        raw = yaml.safe_load(path.read_text())
+        installed = extensions.entries(raw) if isinstance(raw, dict) else []
+    table = Table('Name', 'Description', 'Applies', 'Installed')
+    for name, ext in sorted(extensions.load_catalogue().items()):
+        if installed is None:
+            applies = installed_col = '-'
+        else:
+            applies = 'yes' if state.lab in ext.labs else 'no'
+            installed_col = 'yes' if name in installed else 'no'
+        table.add_row(name, ext.description, applies, installed_col)
+    Console().print(table)
+    return 0
+
+
+def _extension_add(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
+    from goad.lab import extension_ops
+    with keep_host_awake():
+        record = extension_ops.add(ctx.settings, ctx.runner, _store(ctx), args.name)
+    Console().print(f'extension {args.name} added (snapshot {record.name})')
+    return 0
+
+
+def _extension_remove(args, ctx) -> int:
+    from goad.host.awake import keep_host_awake
+    from goad.lab import extension_ops
+    from goad.state import load_state, working_lab_path
+    if load_state(ctx.settings) is None:
+        raise GoadError('no lab deployed: run goad lab deploy <lab>')
+    extension_ops.remove_entry(working_lab_path(ctx.settings).read_text(), args.name)
+    with keep_host_awake():
+        snap = extension_ops.remove(ctx.settings, ctx.runner, args.name, args.yes, ask=confirm)
+    Console().print(f'extension {args.name} removed (lab reset to {snap})')
+    return 0
+
+
 def _vm_start(args, ctx) -> int:
     from goad.lab import lifecycle
     lifecycle.vm_start(_open(ctx, need_definition=False), args.vm)
@@ -313,6 +359,9 @@ HANDLERS: Dict[Tuple[str, ...], Callable[[argparse.Namespace, Context], int]] = 
     ('scenario', 'list'): _scenario_list,
     ('scenario', 'enable'): _scenario_enable,
     ('scenario', 'disable'): _scenario_disable,
+    ('extension', 'list'): _extension_list,
+    ('extension', 'add'): _extension_add,
+    ('extension', 'remove'): _extension_remove,
     ('creds',): _creds,
     ('vm', 'start'): _vm_start,
     ('vm', 'stop'): _vm_stop,
@@ -331,7 +380,7 @@ def _ip_range(value: str) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='goad', description='Deploy and maintain one Active Directory lab on VMware Workstation.')
     parser.add_argument('--version', action='version', version=f'goad {__version__}')
-    groups = parser.add_subparsers(dest='group', required=True, metavar='{check,template,lab,snapshot,scenario,creds,vm}')
+    groups = parser.add_subparsers(dest='group', required=True, metavar='{check,template,lab,snapshot,scenario,extension,creds,vm}')
 
     check = groups.add_parser('check', help='check the host: VMware, Packer, lab network, disk, CA certificates')
     check.set_defaults(command=('check',))
@@ -395,6 +444,18 @@ def build_parser() -> argparse.ArgumentParser:
     scen_disable.add_argument('--target', help='host key; needed when the scenario is enabled on several hosts')
     scen_disable.add_argument('--yes', action='store_true', help='do not ask for confirmation')
     scen_disable.set_defaults(command=('scenario', 'disable'))
+
+    extension = groups.add_parser('extension', help='list, add and remove extensions (extra VMs and services)')
+    ext_actions = extension.add_subparsers(dest='action', required=True)
+    ext_actions.add_parser('list', help='list extensions, whether they apply to the lab and are installed') \
+        .set_defaults(command=('extension', 'list'))
+    ext_add = ext_actions.add_parser('add', help='add an extension to lab.yml, create its VMs and provision it')
+    ext_add.add_argument('name')
+    ext_add.set_defaults(command=('extension', 'add'))
+    ext_remove = ext_actions.add_parser('remove', help='remove the newest extension: delete its VMs, reset to a snapshot')
+    ext_remove.add_argument('name')
+    ext_remove.add_argument('--yes', action='store_true', help='do not ask for confirmation')
+    ext_remove.set_defaults(command=('extension', 'remove'))
 
     groups.add_parser('creds', help='show lab accounts and passwords').set_defaults(command=('creds',))
 
