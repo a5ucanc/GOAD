@@ -16,6 +16,7 @@ echo "kali-prep.sh started $(date -u +%FT%TZ)"
 
 # ca_certs_dir certificates goad copied in, as packer/ubuntu/scripts/import-ca.sh does for ubuntu2404
 count=0
+mkdir -p /usr/local/share/ca-certificates
 for cert in /tmp/goad-ca-*; do
     [ -f "$cert" ] || continue
     name=$(basename "${cert%.*}")
@@ -27,13 +28,19 @@ for cert in /tmp/goad-ca-*; do
     rm -f "$cert"
     count=$((count + 1))
 done
-mkdir -p /usr/local/share/ca-certificates
 update-ca-certificates
 echo "$count certificate(s) imported"
 
+# goad starts this script as soon as VMware Tools answers, which can be before NetworkManager has a DHCP lease
+nm-online -s -q -t 180 || true
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+# packagekit can hold the dpkg lock right after boot: wait for it instead of failing
+for attempt in 1 2 3 4 5; do
+    apt-get -o DPkg::Lock::Timeout=300 update && break
+    [ "$attempt" -lt 5 ] || { echo 'apt-get update failed 5 times' >&2; exit 1; }
+    sleep 15
+done
+apt-get -y -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     install cloud-init openssh-server open-vm-tools
 apt-get clean
 

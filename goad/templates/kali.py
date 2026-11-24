@@ -14,7 +14,7 @@ from typing import Callable, List
 from rich.console import Console
 
 from goad import GoadError
-from goad.host.checks import _cert_files, find_7zip, run_checks
+from goad.host.checks import SEVENZIP_MISSING, _cert_files, find_7zip, run_checks
 from goad.host.runner import Runner
 from goad.settings import Settings
 from goad.templates.iso import _sha256
@@ -36,6 +36,9 @@ TOOLS_TIMEOUT = 900            # power-on until VMware Tools answers
 PREP_TIMEOUT = 3600            # apt-get update + install inside the guest
 POWEROFF_TIMEOUT = 900         # kali-prep.sh powers the guest off shortly after it exits
 POLL_INTERVAL = 10
+# VMware can hold the VM folder open for a moment after the guest powers off
+RENAME_ATTEMPTS = 6
+RENAME_DELAY = 5
 
 console = Console()
 
@@ -91,7 +94,7 @@ def _extract(runner: Runner, archive: str, cache: Path, windows_cache: str) -> P
     """Folder holding the extracted .vmx."""
     sevenzip = find_7zip()
     if sevenzip is None:
-        raise GoadError('7-Zip not found: winget install 7zip.7zip')
+        raise GoadError(SEVENZIP_MISSING)
     target = cache / 'extract'
     if target.exists():
         shutil.rmtree(target)
@@ -103,6 +106,18 @@ def _extract(runner: Runner, archive: str, cache: Path, windows_cache: str) -> P
     if len(found) != 1:
         raise GoadError(f'expected one .vmx in {windows_cache}\\extract, found {len(found)}')
     return found[0].parent
+
+
+def _move_built(built: Path, final: Path, windows_built: str) -> None:
+    for attempt in range(1, RENAME_ATTEMPTS + 1):
+        try:
+            built.rename(final)
+            return
+        except OSError as e:
+            if attempt == RENAME_ATTEMPTS:
+                raise GoadError(f'could not move {windows_built} into place ({e}): the prepared VM stays there; '
+                                f'delete it and run goad template import kali again') from e
+            time.sleep(RENAME_DELAY)
 
 
 def _wait(condition: Callable[[], bool], timeout: float, what: str) -> None:
@@ -173,7 +188,7 @@ def import_kali(settings: Settings, runner: Runner, store: TemplateStore, url: s
         raise GoadError(f'{e} (the unfinished VM is kept in {settings.template_root}\\{BUILD_DIR}\\{name})') from e
 
     final = store.root / name
-    built.rename(final)
+    _move_built(built, final, f'{settings.template_root}\\{BUILD_DIR}\\{name}')
     store.vmrun.snapshot(store.windows_vmx(name), 'base')
     template = Template(name=name, os='kali', version=version, vmx=store.windows_vmx(name),
                         built_at=_now(), packer_sha='')

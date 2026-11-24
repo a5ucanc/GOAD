@@ -238,3 +238,41 @@ def test_ca_certs_copied_into_guest_before_prep(store, settings, fake, tmp_path)
                      [r'C:\certs\b.crt', '/tmp/goad-ca-1.crt'],
                      ['/bin/bash', '/tmp/kali-prep.sh', 'kali']]
     assert '/tmp/goad-ca-' in kali.PREP_SCRIPT.read_text() and 'update-ca-certificates' in kali.PREP_SCRIPT.read_text()
+
+
+def test_prep_waits_for_network_and_dpkg_lock():
+    text = kali.PREP_SCRIPT.read_text()
+    assert text.index('nm-online') < text.index('apt-get update')
+    assert text.count('DPkg::Lock::Timeout=300') == 2
+    assert text.index('mkdir -p /usr/local/share/ca-certificates') < text.index('for cert in /tmp/goad-ca-*')
+
+
+def _locked_rename(monkeypatch, store, failures):
+    """Path.rename of .build\\kali-v1 fails `failures` times, as a Windows lock right after power-off would."""
+    import pathlib
+    real = pathlib.Path.rename
+    left = [failures]
+
+    def rename(self, target):
+        if self == store.root / '.build' / 'kali-v1' and left[0] > 0:
+            left[0] -= 1
+            raise PermissionError(13, 'Permission denied', str(self))
+        return real(self, target)
+    monkeypatch.setattr(pathlib.Path, 'rename', rename)
+    monkeypatch.setattr(kali, 'RENAME_DELAY', 0)
+
+
+def test_final_move_retries_a_windows_lock(store, settings, fake, monkeypatch):
+    _host(store, fake)
+    _locked_rename(monkeypatch, store, failures=2)
+    assert _import(settings, fake, store).name == 'kali-v1'
+    assert (store.root / 'kali-v1' / 'template.json').is_file()
+
+
+def test_final_move_gives_up_naming_build_path(store, settings, fake, monkeypatch):
+    _host(store, fake)
+    _locked_rename(monkeypatch, store, failures=99)
+    with pytest.raises(GoadError, match=r'C:\\goad\\templates\\\.build\\kali-v1'):
+        _import(settings, fake, store)
+    assert store.list() == []
+    assert 'snapshot' not in [_verb(c) for c in fake.calls]
