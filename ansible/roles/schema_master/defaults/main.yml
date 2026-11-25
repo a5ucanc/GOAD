@@ -1,0 +1,2 @@
+# Forest whose schema master (its forest-root DC) is synced; by default the forest of this host.
+schema_master_domain: "{{ goad_domains[domain].forest_root }}"

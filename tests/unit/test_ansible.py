@@ -142,14 +142,46 @@ def test_laps_tasks_retry_while_ad_settles():
         assert task['until'] == f"{task['register']} is not failed"
 
 
+def test_schema_master_sync_pulls_with_a_full_logon():
+    # After a snapshot restore the schema master refuses schema changes (event 2092, 0x21a2) until it
+    # has replicated inbound: pull (no /P) on the forest-root DC, with become (repadmin cannot hop)
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'schema_master' / 'tasks' / 'main.yml').read_text())
+    assert len(tasks) == 1
+    task = tasks[0]
+    script = task['ansible.windows.win_powershell']['script']
+    assert 0 < script.index('repadmin /syncall $env:COMPUTERNAME /Ade') < script.index('repadmin /showrepl')
+    assert '/AdeP' not in script and 'CN=Schema,' in script
+    assert task['delegate_to'] == '{{ goad_domains[schema_master_domain].dc }}'
+    assert task['become'] is True and task['become_method'] == 'ansible.builtin.runas'
+    assert task['become_user'] == '{{ goad_domains[schema_master_domain].netbios }}\\Administrator'
+    assert 'become_flags' not in task
+    assert task['retries'] == 20 and task['delay'] == 30
+    assert task['until'] == 'schema_master_sync is not failed'
+    defaults = yaml.safe_load((ANSIBLE / 'roles' / 'schema_master' / 'defaults' / 'main.yml').read_text())
+    assert defaults['schema_master_domain'] == '{{ goad_domains[domain].forest_root }}'
+
+
+def _index_of_sync(tasks):
+    return next(i for i, t in enumerate(tasks) if t.get('ansible.builtin.include_role', {}).get('name') == 'schema_master')
+
+
 def test_laps_schema_syncs_before_extending():
     tasks = yaml.safe_load((ANSIBLE / 'roles' / 'laps_schema' / 'tasks' / 'main.yml').read_text())
-    script = tasks[0]['ansible.windows.win_powershell']['script']
-    assert 0 < script.index('repadmin /syncall $env:COMPUTERNAME /Ade') < script.index('Update-LapsADSchema')
-    assert '/AdeP' not in script
-    assert tasks[0]['become'] is True
-    assert tasks[0]['become_method'] == 'ansible.builtin.runas'
-    assert 'become_flags' not in tasks[0]
+    sync = _index_of_sync(tasks)
+    extend = next(i for i, t in enumerate(tasks) if 'Update-LapsADSchema' in str(t))
+    assert sync < extend
+    assert tasks[sync]['when'] == 'not laps_schema_state.result.extended'
+    assert 'repadmin' not in str(tasks)
+
+
+def test_exchange_syncs_the_schema_master_before_preparing():
+    tasks = _exchange_tasks('install.yml')
+    names = [t['name'] for t in tasks]
+    assert _index_of_sync(tasks) + 1 == names.index('Prepare the schema')
+    for name, reg in (('Prepare the schema', 'exchange_prepare_schema'), ('Prepare Active Directory', 'exchange_prepare_ad')):
+        task = tasks[names.index(name)]
+        assert task['register'] == reg and task['retries'] == 3 and task['delay'] == 60
+        assert task['until'] == f'{reg}.rc | default(1) == 0'
 
 
 def test_every_setting_has_a_task_file():

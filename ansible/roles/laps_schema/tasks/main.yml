@@ -1,8 +1,21 @@
 # Windows LAPS stores the password in schema attributes the forest does not have by default.
 # Runs on forest-root DCs whose forest has a laps host (laps_schema in the inventory).
-# AD can reject schema operations for a while after the DCs are restored from a snapshot.
-# repadmin makes RPC calls to the DCs, which need the full logon of become (WinRM's network logon
-# cannot hop).
+# AD can reject schema operations for a while after the DCs are restored from a snapshot: the
+# schema_master role syncs this DC first, only when the attributes are missing.
+- name: Look for the Windows LAPS schema attributes
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $schema = (Get-ADRootDSE).schemaNamingContext
+      $Ansible.Result = @{ extended = [bool](Get-ADObject -SearchBase $schema -LDAPFilter '(lDAPDisplayName=msLAPS-Password)') }
+  register: laps_schema_state
+
+- name: Sync the schema master
+  ansible.builtin.include_role:
+    name: schema_master
+  when: not laps_schema_state.result.extended
+
 - name: Extend the schema for Windows LAPS
   ansible.windows.win_powershell:
     script: |
@@ -10,12 +23,6 @@
       $Ansible.Changed = $false
       $schema = (Get-ADRootDSE).schemaNamingContext
       if (-not (Get-ADObject -SearchBase $schema -LDAPFilter '(lDAPDisplayName=msLAPS-Password)')) {
-          # After a snapshot restore the schema master refuses schema changes (event 2092) until it has
-          # replicated with a partner, and AD's own retry can take an hour. Pull the partitions inbound
-          # so the schema master validates its FSMO role; the exit code is ignored (native exit codes
-          # do not throw), a failed sync only shows up as the update failing.
-          repadmin /syncall $env:COMPUTERNAME /Ade | Out-Null
-          $global:LASTEXITCODE = 0
           Update-LapsADSchema -Confirm:$false
           $Ansible.Changed = $true
       }
@@ -24,6 +31,7 @@
   become_user: "{{ netbios }}\\Administrator"
   vars:
     ansible_become_password: "{{ lab_password }}"
+  when: not laps_schema_state.result.extended
   register: laps_schema_extend
   retries: 10
   delay: 30

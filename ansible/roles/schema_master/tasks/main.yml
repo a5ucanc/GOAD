@@ -1,0 +1,36 @@
+# Lets the schema master of a forest accept schema changes. Include it right before one (LAPS, Exchange).
+#
+# After goad restores the DCs from a snapshot (VM-GenerationID change), the schema master refuses schema
+# changes until it has replicated inbound with a partner: event 2092, ldifde 0x21a2 "The FSMO role
+# ownership could not be verified because its directory partition has not replicated successfully with
+# at least one replication partner". AD's own retry, after the DNS failure at boot, can take an hour.
+# Pull every partition inbound (no /P: push would not validate this DC's role), then retry until the
+# last inbound replication of the Schema partition succeeded. A forest with a single DC has no partner
+# and no check to pass.
+#
+# Runs on the forest-root DC (delegated from a member) with the full logon of become: repadmin makes
+# RPC calls to the DCs, which WinRM's network logon cannot (Access is denied, double hop).
+- name: Sync the schema master with its replication partners
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      # Native exit codes do not throw; the replication state below decides
+      repadmin /syncall $env:COMPUTERNAME /Ade | Out-Null
+      $rows = @(repadmin /showrepl $env:COMPUTERNAME /csv | ConvertFrom-Csv)
+      $global:LASTEXITCODE = 0
+      $schema = @($rows | Where-Object { $_.'Naming Context' -like 'CN=Schema,*' })
+      if ($schema.Count -and -not ($schema | Where-Object { $_.'Number of Failures' -eq '0' })) {
+          throw "The Schema partition has not replicated from any partner yet: $($schema | Out-String)"
+      }
+  delegate_to: "{{ goad_domains[schema_master_domain].dc }}"
+  become: true
+  become_method: ansible.builtin.runas
+  become_user: "{{ goad_domains[schema_master_domain].netbios }}\\Administrator"
+  vars:
+    ansible_become_password: "{{ lab_password }}"
+  register: schema_master_sync
+  retries: 20
+  delay: 30
+  until: schema_master_sync is not failed
+  changed_when: false

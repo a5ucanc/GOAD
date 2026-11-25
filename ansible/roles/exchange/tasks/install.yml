@@ -33,7 +33,15 @@
       Path: "{{ exchange_iso }}"
   register: exchange_mount
 
-# Setup with the Administrator's network credentials (see main.yml). The three steps rerun safely.
+# After a snapshot restore the schema master refuses schema changes until it has replicated with a
+# partner (ldifde 0x21a2): sync the forest-root DC of this host's forest first. This file only runs
+# while Exchange is not installed, so a finished install skips the sync.
+- name: Sync the schema master
+  ansible.builtin.include_role:
+    name: schema_master
+
+# Setup with the Administrator's network credentials (see main.yml). The three steps rerun safely, so
+# the AD steps retry once the schema master or replication catches up.
 - name: Prepare the schema
   ansible.windows.win_command: >-
     {{ exchange_mount.result }}Setup.exe /IAcceptExchangeServerLicenseTerms_DiagnosticDataOFF /PrepareSchema
@@ -46,6 +54,10 @@
   become_flags: logon_type=new_credentials logon_flags=netcredentials_only
   vars:
     ansible_become_password: "{{ lab_password }}"
+  register: exchange_prepare_schema
+  retries: 3
+  delay: 60
+  until: exchange_prepare_schema.rc | default(1) == 0
 
 - name: Prepare Active Directory
   ansible.windows.win_command: >-
@@ -59,6 +71,10 @@
   become_flags: logon_type=new_credentials logon_flags=netcredentials_only
   vars:
     ansible_become_password: "{{ lab_password }}"
+  register: exchange_prepare_ad
+  retries: 3
+  delay: 60
+  until: exchange_prepare_ad.rc | default(1) == 0
 
 # 30 to 60 minutes
 - name: Install the Mailbox role
