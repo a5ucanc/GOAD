@@ -4,6 +4,7 @@ so a passing test leaves the lab as it found it. A failing test leaves the lab h
 get back (goad extension remove NAME --yes, or goad lab reset ext-iis first when scenarios are on)."""
 import contextlib
 import os
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -81,8 +82,9 @@ def _service(logins, host: str, expr: str) -> str:
 
 
 def _http(url: str) -> int:
+    ctx = ssl._create_unverified_context() if url.startswith('https:') else None  # self-signed certs
     try:
-        with urllib.request.urlopen(url, timeout=20) as resp:
+        with urllib.request.urlopen(url, timeout=20, context=ctx) as resp:
             return resp.status
     except urllib.error.HTTPError as e:
         return e.code
@@ -273,7 +275,8 @@ def test_vm_extensions_live():
             _goad('extension', 'add', 'exchange')
             logins = _logins_now(settings)
             wait_logon(*logins['srv01'])
-            out = psrp(*logins['srv01'], "Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn; "
-                                         "(Get-ExchangeServer).Name")
-            assert out, 'Get-ExchangeServer returned no server'
+            # no Get-ExchangeServer: a WinRM network logon cannot reach AD (double hop)
+            assert _service(logins, 'srv01', "(Get-Service MSExchangeTransport, MSExchangeIS, MSExchangeADTopology | "
+                                             "Where-Object Status -ne 'Running').Count") == '0'
+            assert _wait_http(f'https://{logins["srv01"][0]}/owa/') in (200, 302)
             _remove(settings, 'exchange')
