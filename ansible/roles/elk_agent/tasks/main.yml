@@ -28,6 +28,7 @@
 - name: Unpack Sysmon
   ansible.windows.win_powershell:
     script: |
+      param([string]$Dir)
       $ErrorActionPreference = 'Stop'
       Expand-Archive -LiteralPath "$Dir\Sysmon.zip" -DestinationPath $Dir -Force
     parameters:
@@ -43,6 +44,7 @@
 - name: Update the Sysmon configuration
   ansible.windows.win_powershell:
     script: |
+      param([string]$Config)
       $ErrorActionPreference = 'Stop'
       & "$env:SystemRoot\Sysmon64.exe" -c $Config
       if ($LASTEXITCODE) { throw "Sysmon64 -c exited with $LASTEXITCODE" }
@@ -70,6 +72,7 @@
 - name: Remove another winlogbeat version
   ansible.windows.win_powershell:
     script: |
+      param([string]$Dir, [string]$Name)
       $ErrorActionPreference = 'Stop'
       if (Get-Service winlogbeat -ErrorAction SilentlyContinue) {
           Stop-Service winlogbeat -Force
@@ -92,6 +95,7 @@
 - name: Unpack winlogbeat
   ansible.windows.win_powershell:
     script: |
+      param([string]$Dir)
       $ErrorActionPreference = 'Stop'
       Expand-Archive -LiteralPath "$Dir\winlogbeat.zip" -DestinationPath $Dir -Force
       Remove-Item -LiteralPath "$Dir\winlogbeat.zip"
@@ -109,6 +113,7 @@
 - name: Install the winlogbeat service
   ansible.windows.win_powershell:
     script: |
+      param([string]$Dir)
       $ErrorActionPreference = 'Stop'
       & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Dir\install-service-winlogbeat.ps1"
       if ($LASTEXITCODE) { throw "install-service-winlogbeat.ps1 exited with $LASTEXITCODE" }
@@ -122,6 +127,7 @@
 - name: Run winlogbeat setup once for the cluster
   ansible.windows.win_powershell:
     script: |
+      param([string]$Server, [string]$Password, [string]$Version, [string]$Dir)
       $ErrorActionPreference = 'Stop'
       $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("elastic:$Password"))
       $url = "http://${Server}:9200/_ingest/pipeline/winlogbeat-$Version-routing"

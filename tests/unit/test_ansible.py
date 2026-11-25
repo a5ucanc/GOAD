@@ -771,3 +771,31 @@ def test_exchange_reboots_where_setup_needs_one():
 
 def test_exchange_bot_password_is_reported_without_no_log():
     _reported(_exchange_tasks('bot.yml'), 'Schedule the mail reading bot as the bot user')
+
+
+def _walk_tasks(tasks):
+    for task in tasks or []:
+        yield task
+        for key in ('block', 'rescue', 'always'):
+            yield from _walk_tasks(task.get(key))
+
+
+def test_inline_powershell_with_parameters_declares_param_block():
+    # win_powershell hands `parameters:` to the script's param() block: without one every value is $null.
+    bad = []
+    for path in (ANSIBLE / 'roles').rglob('*.yml'):
+        if 'tasks' not in path.parts:
+            continue
+        data = yaml.safe_load(path.read_text())
+        if not isinstance(data, list):
+            continue
+        for task in _walk_tasks(data):
+            module = task.get('ansible.windows.win_powershell')
+            if not isinstance(module, dict) or not module.get('parameters'):
+                continue
+            script = str(module.get('script', ''))
+            if 'lookup(' in script:
+                continue
+            if not re.match(r'\s*param\s*\(', script, re.IGNORECASE):
+                bad.append(f"{path.relative_to(ANSIBLE)}: {task.get('name')}")
+    assert not bad, bad

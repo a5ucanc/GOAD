@@ -3,6 +3,7 @@ extensions: pytest -m live tests/live/test_extensions_live.py -s. Each test adds
 so a passing test leaves the lab as it found it. A failing test leaves the lab half changed: its message says how to
 get back (goad extension remove NAME --yes, or goad lab reset ext-iis first when scenarios are on)."""
 import contextlib
+import os
 import time
 import urllib.error
 import urllib.request
@@ -208,56 +209,71 @@ def _vm_ip(settings, host: str) -> str:
     return load_state(settings).hosts[host].ip
 
 
+def _wanted(name: str) -> bool:
+    chosen = {n.strip() for n in os.environ.get('GOAD_LIVE_EXTENSIONS', '').split(',') if n.strip()}
+    return not chosen or name in chosen
+
+
 def test_vm_extensions_live():
+    """Adds, checks and removes each VM extension in turn: ws01, lx01, kali, elk, wazuh, exchange.
+    Optional env GOAD_LIVE_EXTENSIONS (comma-separated names, e.g. elk,wazuh,exchange) limits which ones run;
+    default all."""
     settings, _ = _require_clean_2forests()
-    _kali_template()
+    if _wanted('kali'):
+        _kali_template()
 
-    with _add('ws01'):
-        _goad('extension', 'add', 'ws01')
-        ip = _vm_ip(settings, 'ws01')
-        wait_logon(ip, 'SEVENKINGDOMS\\Administrator')
-        assert psrp(ip, 'SEVENKINGDOMS\\Administrator', '(Get-CimInstance Win32_ComputerSystem).Domain') \
-            == 'sevenkingdoms.local'
-        assert psrp(ip, 'SEVENKINGDOMS\\Administrator', '(Get-CimInstance Win32_ComputerSystem).PartOfDomain') == 'True'
-        _remove(settings, 'ws01')
+    if _wanted('ws01'):
+        with _add('ws01'):
+            _goad('extension', 'add', 'ws01')
+            ip = _vm_ip(settings, 'ws01')
+            wait_logon(ip, 'SEVENKINGDOMS\\Administrator')
+            assert psrp(ip, 'SEVENKINGDOMS\\Administrator', '(Get-CimInstance Win32_ComputerSystem).Domain') \
+                == 'sevenkingdoms.local'
+            assert psrp(ip, 'SEVENKINGDOMS\\Administrator', '(Get-CimInstance Win32_ComputerSystem).PartOfDomain') == 'True'
+            _remove(settings, 'ws01')
 
-    with _add('lx01'):
-        _goad('extension', 'add', 'lx01')
-        ip = _vm_ip(settings, 'lx01')
-        wait_port(ip, 22)
-        assert 'sevenkingdoms.local' in ssh(ip, 'realm list')
-        _remove(settings, 'lx01')
+    if _wanted('lx01'):
+        with _add('lx01'):
+            _goad('extension', 'add', 'lx01')
+            ip = _vm_ip(settings, 'lx01')
+            wait_port(ip, 22)
+            assert 'sevenkingdoms.local' in ssh(ip, 'realm list')
+            _remove(settings, 'lx01')
 
-    with _add('kali'):
-        _goad('extension', 'add', 'kali')
-        ip = _vm_ip(settings, 'kali')
-        wait_port(ip, 22)
-        assert ssh(ip, 'whoami') == 'goad'
-        # NAT internet: a known risk is the NAT NIC under NetworkManager
-        assert 'default' in ssh(ip, 'ip route'), 'kali has no default route'
-        ssh(ip, 'curl -sI --max-time 20 http://http.kali.org')
-        _remove(settings, 'kali')
+    if _wanted('kali'):
+        with _add('kali'):
+            _goad('extension', 'add', 'kali')
+            ip = _vm_ip(settings, 'kali')
+            wait_port(ip, 22)
+            assert ssh(ip, 'whoami') == 'goad'
+            # NAT internet: a known risk is the NAT NIC under NetworkManager
+            assert 'default' in ssh(ip, 'ip route'), 'kali has no default route'
+            ssh(ip, 'curl -sI --max-time 20 http://http.kali.org')
+            _remove(settings, 'kali')
 
-    with _add('elk'):
-        _goad('extension', 'add', 'elk')
-        logins = _logins_now(settings)
-        wait_port(_vm_ip(settings, 'elk'), 5601, timeout=600)
-        assert _wait_http(f'http://{_vm_ip(settings, "elk")}:5601/') in (200, 302, 401)
-        assert _service(logins, 'dc01', "(Get-Service winlogbeat).Status") == 'Running'
-        _remove(settings, 'elk')
+    if _wanted('elk'):
+        with _add('elk'):
+            _goad('extension', 'add', 'elk')
+            logins = _logins_now(settings)
+            wait_port(_vm_ip(settings, 'elk'), 5601, timeout=600)
+            assert _wait_http(f'http://{_vm_ip(settings, "elk")}:5601/') in (200, 302, 401)
+            assert _service(logins, 'dc01', "(Get-Service winlogbeat).Status") == 'Running'
+            _remove(settings, 'elk')
 
-    with _add('wazuh'):
-        _goad('extension', 'add', 'wazuh')
-        logins = _logins_now(settings)
-        wait_port(_vm_ip(settings, 'wazuh'), 443, timeout=600)
-        assert _service(logins, 'dc01', "(Get-Service WazuhSvc).Status") == 'Running'
-        _remove(settings, 'wazuh')
+    if _wanted('wazuh'):
+        with _add('wazuh'):
+            _goad('extension', 'add', 'wazuh')
+            logins = _logins_now(settings)
+            wait_port(_vm_ip(settings, 'wazuh'), 443, timeout=600)
+            assert _service(logins, 'dc01', "(Get-Service WazuhSvc).Status") == 'Running'
+            _remove(settings, 'wazuh')
 
-    with _add('exchange'):
-        _goad('extension', 'add', 'exchange')
-        logins = _logins_now(settings)
-        wait_logon(*logins['srv01'])
-        out = psrp(*logins['srv01'], "Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn; "
-                                     "(Get-ExchangeServer).Name")
-        assert out, 'Get-ExchangeServer returned no server'
-        _remove(settings, 'exchange')
+    if _wanted('exchange'):
+        with _add('exchange'):
+            _goad('extension', 'add', 'exchange')
+            logins = _logins_now(settings)
+            wait_logon(*logins['srv01'])
+            out = psrp(*logins['srv01'], "Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn; "
+                                         "(Get-ExchangeServer).Name")
+            assert out, 'Get-ExchangeServer returned no server'
+            _remove(settings, 'exchange')
