@@ -150,6 +150,9 @@ def test_schema_master_sync_pulls_with_a_full_logon():
     task = tasks[0]
     script = task['ansible.windows.win_powershell']['script']
     assert 0 < script.index('repadmin /syncall $env:COMPUTERNAME /Ade') < script.index('repadmin /showrepl')
+    assert 'repadmin /syncall $env:COMPUTERNAME /Ade 2>&1 | Out-Null' in script
+    assert 'showrepl_ERROR' in script and 'LastBootUpTime' in script and 'Last Success Time' in script
+    assert '(Get-ADForest).Domains' in script and '$dcs.Count -gt 1' in script
     assert '/AdeP' not in script and 'CN=Schema,' in script
     assert task['delegate_to'] == '{{ goad_domains[schema_master_domain].dc }}'
     assert task['become'] is True and task['become_method'] == 'ansible.builtin.runas'
@@ -163,6 +166,13 @@ def test_schema_master_sync_pulls_with_a_full_logon():
 
 def _index_of_sync(tasks):
     return next(i for i, t in enumerate(tasks) if t.get('ansible.builtin.include_role', {}).get('name') == 'schema_master')
+
+
+def test_laps_schema_probe_retries():
+    tasks = yaml.safe_load((ANSIBLE / 'roles' / 'laps_schema' / 'tasks' / 'main.yml').read_text())
+    probe = tasks[0]
+    assert probe['retries'] == 10 and probe['delay'] == 30
+    assert probe['until'] == 'laps_schema_state is not failed'
 
 
 def test_laps_schema_syncs_before_extending():

@@ -10,6 +10,9 @@
       $schema = (Get-ADRootDSE).schemaNamingContext
       $Ansible.Result = @{ extended = [bool](Get-ADObject -SearchBase $schema -LDAPFilter '(lDAPDisplayName=msLAPS-Password)') }
   register: laps_schema_state
+  retries: 10
+  delay: 30
+  until: laps_schema_state is not failed
 
 - name: Sync the schema master
   ansible.builtin.include_role:

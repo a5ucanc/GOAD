@@ -211,8 +211,13 @@ def _vm_ip(settings, host: str) -> str:
     return load_state(settings).hosts[host].ip
 
 
+KNOWN_EXTENSIONS = {'ws01', 'lx01', 'kali', 'elk', 'wazuh', 'exchange'}
+
+
 def _wanted(name: str) -> bool:
     chosen = {n.strip() for n in os.environ.get('GOAD_LIVE_EXTENSIONS', '').split(',') if n.strip()}
+    unknown = chosen - KNOWN_EXTENSIONS
+    assert not unknown, f'unknown GOAD_LIVE_EXTENSIONS {sorted(unknown)}; known: {sorted(KNOWN_EXTENSIONS)}'
     return not chosen or name in chosen
 
 
@@ -277,6 +282,6 @@ def test_vm_extensions_live():
             wait_logon(*logins['srv01'])
             # no Get-ExchangeServer: a WinRM network logon cannot reach AD (double hop)
             assert _service(logins, 'srv01', "(Get-Service MSExchangeTransport, MSExchangeIS, MSExchangeADTopology | "
-                                             "Where-Object Status -ne 'Running').Count") == '0'
+                                             "Where-Object Status -eq 'Running').Count") == '3'
             assert _wait_http(f'https://{logins["srv01"][0]}/owa/') in (200, 302)
             _remove(settings, 'exchange')

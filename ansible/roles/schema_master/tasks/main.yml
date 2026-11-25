@@ -16,12 +16,24 @@
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       # Native exit codes do not throw; the replication state below decides
-      repadmin /syncall $env:COMPUTERNAME /Ade | Out-Null
-      $rows = @(repadmin /showrepl $env:COMPUTERNAME /csv | ConvertFrom-Csv)
+      repadmin /syncall $env:COMPUTERNAME /Ade 2>&1 | Out-Null
+      $rows = @(repadmin /showrepl $env:COMPUTERNAME /csv 2>&1 | ConvertFrom-Csv)
       $global:LASTEXITCODE = 0
+      $errors = @($rows | Where-Object { @($_.PSObject.Properties)[0].Value -eq 'showrepl_ERROR' })
+      if ($errors.Count) { throw "repadmin /showrepl reported errors: $($errors | Out-String)" }
       $schema = @($rows | Where-Object { $_.'Naming Context' -like 'CN=Schema,*' })
-      if ($schema.Count -and -not ($schema | Where-Object { $_.'Number of Failures' -eq '0' })) {
-          throw "The Schema partition has not replicated from any partner yet: $($schema | Out-String)"
+      if (-not $schema.Count) {
+          # No Schema row: only a forest with a single DC has no partner. Anything else is an unsynced or unreadable state
+          $dcs = @((Get-ADForest).Domains | ForEach-Object { Get-ADDomainController -Filter * -Server $_ })
+          if ($dcs.Count -gt 1) { throw "No Schema replication state, but the forest has $($dcs.Count) DCs" }
+      } else {
+          # A success before the boot is stale repsFrom data from before a snapshot restore
+          $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+          $fresh = $schema | Where-Object {
+              $t = [datetime]::MinValue
+              $_.'Number of Failures' -eq '0' -and [datetime]::TryParse($_.'Last Success Time', [ref]$t) -and $t -gt $boot
+          }
+          if (-not $fresh) { throw "The Schema partition has not replicated from any partner since boot yet: $($schema | Out-String)" }
       }
   delegate_to: "{{ goad_domains[schema_master_domain].dc }}"
   become: true
