@@ -636,7 +636,10 @@ def test_monitoring_passwords_are_set_only_when_they_differ():
     tasks = yaml.safe_load((ANSIBLE / 'roles' / 'elk' / 'tasks' / 'main.yml').read_text())
     by_name = {t['name']: t for t in tasks}
     check = by_name['Check the built-in users passwords']
-    assert check['ansible.builtin.uri']['status_code'] == [200, 401]
+    # 503 while the security index starts: accepted per attempt, retried until 200 or 401
+    assert check['ansible.builtin.uri']['status_code'] == [200, 401, 503]
+    assert check['until'] == 'elk_auth.status | default(0) in [200, 401]'
+    assert check['retries'] == 30 and check['delay'] == 10
     setter = by_name['Set the built-in users passwords']
     assert setter['loop'] == '{{ elk_auth.results }}' and setter['when'] == 'item.status != 200'
     tasks = yaml.safe_load((ANSIBLE / 'roles' / 'wazuh_manager' / 'tasks' / 'main.yml').read_text())

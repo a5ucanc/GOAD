@@ -117,15 +117,20 @@
   delay: 10
 
 # The items are user names only; uri masks its password option, so no no_log is needed.
+# Right after the restart the security index can still answer 503: accept it per attempt and retry
+# until 200 or 401. Retries exhausted still fails the task, so a final 503 is never accepted.
 - name: Check the built-in users passwords
   ansible.builtin.uri:
     url: http://localhost:9200/_security/_authenticate
     user: "{{ item }}"
     password: "{{ elk_passwords[item] }}"
     force_basic_auth: true
-    status_code: [200, 401]
+    status_code: [200, 401, 503]
   loop: [elastic, kibana_system]
   register: elk_auth
+  until: elk_auth.status | default(0) in [200, 401]
+  retries: 30
+  delay: 10
   vars:
     elk_passwords: {elastic: "{{ elk_elastic_password }}", kibana_system: "{{ elk_kibana_system_password }}"}
 
